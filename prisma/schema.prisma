@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  name      String
+  createdAt DateTime  @default(now())
+  batches   Batch[]
+  contacts  Contact[]
+}
+
+model Batch {
+  id        String   @id @default(cuid())
+  name      String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  status    String   @default("pending")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  jobs      Job[]
+}
+
+model Job {
+  id             String       @id @default(cuid())
+  batchId        String
+  batch          Batch        @relation(fields: [batchId], references: [id])
+  linkedinUrl    String
+  personName     String?
+  status         String       @default("pending")
+  recommendation String?
+  confidence     Int?
+  result         String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  events         AgentEvent[]
+  contact        Contact?
+}
+
+model AgentEvent {
+  id        String   @id @default(cuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id])
+  type      String
+  iteration Int?
+  data      String
+  createdAt DateTime @default(now())
+}
+
+model Contact {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  name            String
+  email           String?
+  linkedinUrl     String
+  company         String?
+  title           String?
+  homeAddress     String?
+  officeAddress   String?
+  recommendation  String?
+  confidence      Int?
+  lastScannedAt   DateTime?
+  notes           String?
+  jobId           String?        @unique
+  job             Job?           @relation(fields: [jobId], references: [id])
+  chatMessages    ChatMessage[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime @default(now())
+}
