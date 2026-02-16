@@ -130,9 +130,20 @@ function LeadStatus({ job, onRetry }: { job: Job; onRetry: (jobId: string) => vo
 
   if (job.status === "cancelled") {
     return (
-      <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
-        Cancelled
-      </span>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+          Cancelled
+        </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); onRetry(job.id); }}
+          className="text-xs font-medium text-primary hover:text-primary-hover transition flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          Retry
+        </button>
+      </div>
     );
   }
 
@@ -314,10 +325,11 @@ export default function BatchDetailPage() {
   const cancelled = batch.jobs.filter((j) => j.status === "cancelled").length;
   const running = batch.jobs.filter((j) => j.status === "running").length;
   const total = batch.jobs.length;
-  const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+  const done = completed + failed + cancelled;
+  const progress = total > 0 ? Math.round((done / total) * 100) : 0;
 
   const isStopped = batch.status === "cancelled" || batch.status === "failed" || batch.status === "complete";
-  const hasFailedJobs = failed > 0;
+  const hasRetryableJobs = failed > 0 || cancelled > 0;
 
   return (
     <div>
@@ -338,7 +350,7 @@ export default function BatchDetailPage() {
               {batch.status === "processing" ? "Processing" :
                batch.status === "complete" ? "Complete" :
                batch.status === "cancelled" ? "Cancelled" :
-               batch.status === "failed" ? "Completed" :
+               batch.status === "failed" ? "Failed" :
                "Pending"}
             </span>
           </div>
@@ -381,8 +393,8 @@ export default function BatchDetailPage() {
             </button>
           )}
 
-          {/* Retry All Failed — only when there are failed jobs and batch is not processing */}
-          {isStopped && hasFailedJobs && (
+          {/* Retry Failed/Cancelled — only when there are retryable jobs and batch is not processing */}
+          {isStopped && hasRetryableJobs && (
             <button
               onClick={handleRetryAllFailed}
               className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
@@ -390,7 +402,7 @@ export default function BatchDetailPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              Retry Failed
+              {failed > 0 && cancelled > 0 ? "Retry All" : failed > 0 ? "Retry Failed" : "Retry Cancelled"}
             </button>
           )}
 
@@ -438,7 +450,7 @@ export default function BatchDetailPage() {
               Scanning {running > 1 ? `${running} leads in parallel` : running === 1 ? "1 lead" : "leads"}
             </span>
             <span className="text-sm text-muted-foreground">
-              {completed}/{total} ({progress}%)
+              {done}/{total} ({progress}%)
             </span>
           </div>
           <div className="w-full bg-muted rounded-full h-2">

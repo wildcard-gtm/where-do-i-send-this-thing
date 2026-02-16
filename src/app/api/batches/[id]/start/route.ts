@@ -85,7 +85,14 @@ async function processOneJob(
       where: { id: batchId },
       select: { status: true },
     });
-    if (batch?.status === "cancelled") return;
+    if (batch?.status === "cancelled") {
+      // Mark this job as cancelled so it doesn't stay orphaned as "pending"
+      await prisma.job.update({
+        where: { id: job.id },
+        data: { status: "cancelled" },
+      });
+      return;
+    }
 
     // Mark job as running
     await prisma.job.update({
