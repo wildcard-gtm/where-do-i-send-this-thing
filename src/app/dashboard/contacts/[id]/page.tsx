@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ContactChat from "@/components/contacts/contact-chat";
+import FeedbackButtons from "@/components/contacts/feedback-buttons";
 
 const MapView = dynamic(() => import("@/components/results/map-view"), {
   ssr: false,
@@ -250,6 +251,12 @@ export default function ContactDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Feedback */}
+            <div className="glass-card rounded-2xl p-6">
+              <h3 className="text-sm font-medium text-muted-foreground mb-3">Was this report helpful?</h3>
+              <FeedbackButtons contactId={contactId} />
+            </div>
           </div>
 
           {/* Right column - Details */}

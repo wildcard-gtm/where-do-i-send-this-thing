@@ -9,14 +9,16 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(cuid())
-  email       String    @unique
+  id          String     @id @default(cuid())
+  email       String     @unique
   password    String
   name        String
-  autoProcess Boolean   @default(false)
-  createdAt   DateTime  @default(now())
+  role        String     @default("user")
+  autoProcess Boolean    @default(false)
+  createdAt   DateTime   @default(now())
   batches     Batch[]
   contacts    Contact[]
+  feedbacks   Feedback[]
 }
 
 model Batch {
@@ -76,6 +78,7 @@ model Contact {
   jobId           String?        @unique
   job             Job?           @relation(fields: [jobId], references: [id])
   chatMessages    ChatMessage[]
+  feedbacks       Feedback[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -86,5 +89,34 @@ model ChatMessage {
   contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
   role      String
   content   String
+  createdAt DateTime @default(now())
+}
+
+model SystemPrompt {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  content   String
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
+}
+
+model Feedback {
+  id        String   @id @default(cuid())
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  rating    String
+  comment   String?
+  createdAt DateTime @default(now())
+}
+
+model ContactMessage {
+  id        String   @id @default(cuid())
+  name      String
+  email     String
+  subject   String
+  message   String
   createdAt DateTime @default(now())
 }

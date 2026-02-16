@@ -11,6 +11,7 @@ export interface SessionUser {
   id: string;
   email: string;
   name: string;
+  role: string;
 }
 
 export async function signToken(user: SessionUser): Promise<string> {

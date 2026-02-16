@@ -43,11 +43,7 @@ export default function SignInPage() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-              </svg>
-            </div>
+            <img src="/logo.png" alt="WDISTT" className="w-10 h-auto" />
           </Link>
           <h1 className="text-2xl font-bold text-foreground mb-1">Welcome back</h1>
           <p className="text-muted-foreground text-sm">Sign in to your WDISTT account</p>
@@ -77,7 +73,7 @@ export default function SignInPage() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-4 py-2.5 bg-white border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
-              placeholder="you@mems.studio"
+              placeholder="you@company.com"
             />
           </div>
 

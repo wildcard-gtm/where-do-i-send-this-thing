@@ -2,6 +2,7 @@ import Link from "next/link";
 import EnvelopeHero from "@/components/landing/envelope-hero";
 import HomepageContent from "@/components/landing/homepage-content";
 import MobileNav from "@/components/landing/mobile-nav";
+import SmoothScroll from "@/components/landing/smooth-scroll";
 
 const navLinks = [
   { href: "#features", label: "Features" },
@@ -13,6 +14,7 @@ const navLinks = [
 export default function Home() {
   return (
     <div className="min-h-screen bg-white text-foreground">
+      <SmoothScroll />
       {/* Navbar */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-xl border-b border-border/50">
         <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
@@ -109,6 +111,14 @@ export default function Home() {
                     Careers
                   </span>
                 </li>
+                <li>
+                  <Link
+                    href="/contact"
+                    className="text-sm text-muted-foreground hover:text-foreground transition"
+                  >
+                    Contact
+                  </Link>
+                </li>
               </ul>
             </div>
             <div>
@@ -137,14 +147,20 @@ export default function Home() {
               </h4>
               <ul className="space-y-2">
                 <li>
-                  <span className="text-sm text-muted-foreground">
+                  <Link
+                    href="/privacy"
+                    className="text-sm text-muted-foreground hover:text-foreground transition"
+                  >
                     Privacy Policy
-                  </span>
+                  </Link>
                 </li>
                 <li>
-                  <span className="text-sm text-muted-foreground">
+                  <Link
+                    href="/terms"
+                    className="text-sm text-muted-foreground hover:text-foreground transition"
+                  >
                     Terms of Service
-                  </span>
+                  </Link>
                 </li>
                 <li>
                   <span className="text-sm text-muted-foreground">

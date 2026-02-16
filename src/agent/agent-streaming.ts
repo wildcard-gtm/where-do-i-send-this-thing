@@ -15,6 +15,9 @@ import type {
   AgentResult,
 } from './types';
 import { TOOL_DEFINITIONS, executeTool } from './tools';
+import { PrismaClient } from '@prisma/client';
+
+// Prompt is loaded from DB on each agent run
 
 // ─── Streaming Event Types ─────────────────────────────
 
@@ -81,10 +84,7 @@ async function callClaude(client: BedrockRuntimeClient, messages: Message[]): Pr
 
 // ─── Initial Prompt ─────────────────────────────────────
 
-function buildInitialMessage(input: string): Message {
-  return {
-    role: 'user',
-    content: `You are a delivery address intelligence specialist. Your mission: determine the best verified physical mailing address for sending a package to a specific person, and produce a professional report for the client.
+const FALLBACK_AGENT_PROMPT = `You are a delivery address intelligence specialist. Your mission: determine the best verified physical mailing address for sending a package to a specific person, and produce a professional report for the client.
 
 You have access to 6 tools. You MUST use multiple tools — not just web search. Each tool can be called up to 15 times. Be thorough.
 
@@ -182,7 +182,23 @@ Structure your report like this:
 
 **Confidence Notes:**
 - [What strengthens this recommendation]
-- [Any caveats or flags]
+- [Any caveats or flags]`;
+
+async function getAgentPrompt(): Promise<string> {
+  try {
+    const prisma = new PrismaClient();
+    const row = await prisma.systemPrompt.findUnique({ where: { key: 'agent_main' } });
+    await prisma.$disconnect();
+    return row?.content ?? FALLBACK_AGENT_PROMPT;
+  } catch {
+    return FALLBACK_AGENT_PROMPT;
+  }
+}
+
+function buildInitialMessage(promptContent: string, input: string): Message {
+  return {
+    role: 'user',
+    content: `${promptContent}
 
 ═══════════════════════════════════════════
 
@@ -208,7 +224,8 @@ export async function runAgentStreaming(
   };
 
   const client = createBedrockClient();
-  const messages: Message[] = [buildInitialMessage(input)];
+  const agentPrompt = await getAgentPrompt();
+  const messages: Message[] = [buildInitialMessage(agentPrompt, input)];
 
   let iteration = 0;
   let decision: AgentDecision | null = null;

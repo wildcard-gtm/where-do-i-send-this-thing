@@ -5,8 +5,23 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Where Do I Send This Thing? | Bulk Address Verification",
-  description: "LinkedIn to verified delivery address. Bulk address verification for outbound campaigns.",
+  title: "WDISTT | Where Do I Send This Thing?",
+  description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address. Built for outbound sales and gifting teams.",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
+  openGraph: {
+    title: "WDISTT | Where Do I Send This Thing?",
+    description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address.",
+    type: "website",
+    images: ["/logo.png"],
+  },
+  twitter: {
+    card: "summary",
+    title: "WDISTT | Where Do I Send This Thing?",
+    description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address.",
+  },
 };
 
 export default function RootLayout({
