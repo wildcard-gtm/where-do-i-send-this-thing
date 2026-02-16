@@ -286,12 +286,7 @@ export default function BatchDetailPage() {
 
   async function handleRetryAllFailed() {
     if (!batch) return;
-    const failedJobs = batch.jobs.filter((j) => j.status === "failed");
-    await Promise.all(
-      failedJobs.map((j) =>
-        fetch(`/api/batches/${batchId}/jobs/${j.id}/retry`, { method: "POST" })
-      )
-    );
+    await fetch(`/api/batches/${batchId}/retry-failed`, { method: "POST" });
     fetchBatch();
   }
 
