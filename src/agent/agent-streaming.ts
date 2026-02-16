@@ -68,7 +68,7 @@ async function callClaude(client: BedrockRuntimeClient, messages: Message[]): Pr
     accept: 'application/json',
     body: JSON.stringify({
       anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 16384,
+      max_tokens: 65536,
       temperature: 0.3,
       messages,
       tools: TOOL_DEFINITIONS,
