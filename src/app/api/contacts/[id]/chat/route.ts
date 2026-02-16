@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { chatWithClaude } from "@/lib/bedrock";
+import { getAIClientForRole } from "@/lib/ai/config";
 import type { ChatMessage } from "@/lib/bedrock";
 
 export async function GET(
@@ -152,7 +152,8 @@ ${researchLog ? `\n## FULL RESEARCH LOG (for reference — this is the raw data 
   }
 
   try {
-    const assistantResponse = await chatWithClaude(
+    const chatClient = await getAIClientForRole('chat');
+    const assistantResponse = await chatClient.chat(
       systemPrompt,
       conversationMessages
     );

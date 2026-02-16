@@ -166,6 +166,16 @@ Begin now. Start with enrich_linkedin_profile, then use search_person_address AN
     label: "Tool: Submit Decision",
     content: `Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.`,
   },
+  {
+    key: "config_agent_model",
+    label: "Agent Model Config",
+    content: "bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  },
+  {
+    key: "config_chat_model",
+    label: "Chat Model Config",
+    content: "bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  },
 ];
 
 async function main() {

@@ -37,7 +37,18 @@ interface UserItem {
   _count: { contacts: number; batches: number };
 }
 
-type Tab = "prompts" | "feedback" | "messages" | "users";
+interface ModelOption {
+  provider: string;
+  modelId: string;
+  label: string;
+}
+
+interface ModelConfig {
+  agent: { provider: string; modelId: string } | null;
+  chat: { provider: string; modelId: string } | null;
+}
+
+type Tab = "prompts" | "models" | "feedback" | "messages" | "users";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("prompts");
@@ -45,6 +56,9 @@ export default function AdminPage() {
   const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+  const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null });
+  const [savingModel, setSavingModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -73,6 +87,12 @@ export default function AdminPage() {
         if (res.status === 403) { setError("You don't have admin access."); return; }
         const data = await res.json();
         setPrompts(data.prompts || []);
+      } else if (tab === "models") {
+        const res = await fetch("/api/admin/models");
+        if (res.status === 403) { setError("You don't have admin access."); return; }
+        const data = await res.json();
+        setAvailableModels(data.models || []);
+        setModelConfig(data.current || { agent: null, chat: null });
       } else if (tab === "feedback") {
         const res = await fetch("/api/admin/feedback");
         if (res.status === 403) { setError("You don't have admin access."); return; }
@@ -167,8 +187,38 @@ export default function AdminPage() {
     }
   }
 
+  async function saveModelConfig(role: "agent" | "chat", provider: string, modelId: string) {
+    setSavingModel(role);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/models", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, provider, modelId }),
+      });
+      if (res.ok) {
+        setModelConfig((prev) => ({ ...prev, [role]: { provider, modelId } }));
+        setSaveSuccess(`${role === "agent" ? "Agent" : "Chat"} model updated`);
+        setTimeout(() => setSaveSuccess(""), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to save model");
+      }
+    } catch {
+      setError("Failed to save model");
+    } finally {
+      setSavingModel(null);
+    }
+  }
+
+  function getModelValue(config: { provider: string; modelId: string } | null): string {
+    if (!config) return "";
+    return `${config.provider}::${config.modelId}`;
+  }
+
   const tabs: { key: Tab; label: string }[] = [
     { key: "prompts", label: "Prompts" },
+    { key: "models", label: "Models" },
     { key: "feedback", label: "Feedback" },
     { key: "messages", label: "Messages" },
     { key: "users", label: "Users" },
@@ -221,9 +271,9 @@ export default function AdminPage() {
             <div className="space-y-8">
               {/* Group prompts by category */}
               {[
-                { title: "Agent Prompts", filter: (p: SystemPrompt) => p.key.startsWith("agent_") },
+                { title: "Agent Prompts", filter: (p: SystemPrompt) => p.key.startsWith("agent_") && !p.key.startsWith("config_") },
                 { title: "Tool Descriptions", filter: (p: SystemPrompt) => p.key.startsWith("tool_"), description: "These descriptions tell the AI when and how to use each tool." },
-                { title: "Chat Prompts", filter: (p: SystemPrompt) => p.key.startsWith("chat_") },
+                { title: "Chat Prompts", filter: (p: SystemPrompt) => p.key.startsWith("chat_") && !p.key.startsWith("config_") },
               ].map((group) => {
                 const groupPrompts = prompts.filter(group.filter);
                 if (groupPrompts.length === 0) return null;
@@ -309,6 +359,72 @@ export default function AdminPage() {
                         );
                       })}
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Models Tab */}
+          {tab === "models" && (
+            <div className="space-y-6">
+              <p className="text-sm text-muted-foreground">
+                Choose which AI model powers the agent (address research) and chat (contact conversations).
+              </p>
+
+              {[
+                { role: "agent" as const, title: "Agent Model", description: "Used for address research and investigation. This model runs the multi-step agent loop with tool calls." },
+                { role: "chat" as const, title: "Chat Model", description: "Used for contact chat conversations. Responds to user questions about lookup results." },
+              ].map(({ role, title, description }) => {
+                const current = modelConfig[role];
+                const currentValue = getModelValue(current);
+                const bedrockModels = availableModels.filter((m) => m.provider === "bedrock");
+                const openaiModels = availableModels.filter((m) => m.provider === "openai");
+
+                return (
+                  <div key={role} className="glass-card rounded-2xl p-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div>
+                        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                      </div>
+                      {savingModel === role && (
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+                    <select
+                      value={currentValue}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        const [provider, ...rest] = val.split("::");
+                        const modelId = rest.join("::");
+                        saveModelConfig(role, provider, modelId);
+                      }}
+                      disabled={savingModel === role}
+                      className="w-full px-4 py-3 bg-background border border-border rounded-lg text-sm text-foreground focus-glow disabled:opacity-50"
+                    >
+                      <option value="">Select a model...</option>
+                      <optgroup label="AWS Bedrock (Claude)">
+                        {bedrockModels.map((m) => (
+                          <option key={m.modelId} value={`bedrock::${m.modelId}`}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="OpenAI">
+                        {openaiModels.map((m) => (
+                          <option key={m.modelId} value={`openai::${m.modelId}`}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                    {current && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        Current: <span className="font-mono text-foreground/70">{current.provider}::{current.modelId}</span>
+                      </p>
+                    )}
                   </div>
                 );
               })}

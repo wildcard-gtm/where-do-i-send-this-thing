@@ -4,19 +4,17 @@
  * instead of console.log.
  */
 
-import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import type {
   Message,
-  ClaudeResponse,
   ToolUseBlock,
   ToolResultBlock,
   TextBlock,
   AgentDecision,
   AgentResult,
 } from './types';
-import { TOOL_DEFINITIONS, getToolDefinitions, executeTool } from './tools';
-import type { ToolDefinition } from './types';
+import { getToolDefinitions, executeTool } from './tools';
 import { PrismaClient } from '@prisma/client';
+import { getAIClientForRole, getModelConfigForRole } from '@/lib/ai/config';
 
 // Prompt is loaded from DB on each agent run
 
@@ -42,46 +40,8 @@ export interface AgentStreamEvent {
 
 // ─── Configuration ──────────────────────────────────────
 
-const MODEL_ID = process.env.BEDROCK_MODEL_ID ?? 'global.anthropic.claude-sonnet-4-5-20250929-v1:0';
 const MAX_ITERATIONS = 30;
 const MIN_CONFIDENCE = 75;
-
-// ─── Bedrock Client ─────────────────────────────────────
-
-function createBedrockClient(): BedrockRuntimeClient {
-  const region = process.env.AWS_REGION;
-  const accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-
-  if (!region || !accessKeyId || !secretAccessKey) {
-    throw new Error(
-      'Missing AWS credentials. Set AWS_REGION, AWS_ACCESS_KEY_ID, and AWS_SECRET_ACCESS_KEY in .env',
-    );
-  }
-
-  return new BedrockRuntimeClient({
-    region,
-    credentials: { accessKeyId, secretAccessKey },
-  });
-}
-
-async function callClaude(client: BedrockRuntimeClient, messages: Message[], tools: ToolDefinition[]): Promise<ClaudeResponse> {
-  const command = new InvokeModelCommand({
-    modelId: MODEL_ID,
-    contentType: 'application/json',
-    accept: 'application/json',
-    body: JSON.stringify({
-      anthropic_version: 'bedrock-2023-05-31',
-      max_tokens: 65536,
-      temperature: 0.3,
-      messages,
-      tools,
-    }),
-  });
-
-  const response = await client.send(command);
-  return JSON.parse(new TextDecoder().decode(response.body)) as ClaudeResponse;
-}
 
 // ─── Initial Prompt ─────────────────────────────────────
 
@@ -233,7 +193,8 @@ export async function runAgentStreaming(
     });
   };
 
-  const client = createBedrockClient();
+  const modelConfig = await getModelConfigForRole('agent');
+  const aiClient = await getAIClientForRole('agent');
   const [{ agentPrompt, initialMessageTemplate }, tools] = await Promise.all([
     getAgentPrompts(),
     getToolDefinitions(),
@@ -245,7 +206,8 @@ export async function runAgentStreaming(
 
   emit('agent_start', {
     input,
-    model: MODEL_ID,
+    provider: modelConfig.provider,
+    model: modelConfig.modelId,
     maxIterations: MAX_ITERATIONS,
     minConfidence: MIN_CONFIDENCE,
   });
@@ -255,7 +217,7 @@ export async function runAgentStreaming(
     emit('iteration_start', { maxIterations: MAX_ITERATIONS }, iteration);
 
     try {
-      const response = await callClaude(client, messages, tools);
+      const response = await aiClient.callModel(messages, tools);
 
       // Extract any text blocks as "thinking"
       const textBlocks = response.content.filter(
@@ -266,7 +228,7 @@ export async function runAgentStreaming(
         emit('thinking', { text: thinkingText }, iteration);
       }
 
-      // Claude finished without calling tools
+      // Model finished without calling tools
       if (response.stop_reason === 'end_turn') {
         messages.push({ role: 'assistant', content: response.content });
         messages.push({
@@ -276,7 +238,7 @@ export async function runAgentStreaming(
         continue;
       }
 
-      // Claude wants to call tools
+      // Model wants to call tools
       if (response.stop_reason === 'tool_use') {
         const toolUses = response.content.filter(
           (block): block is ToolUseBlock => block.type === 'tool_use',
