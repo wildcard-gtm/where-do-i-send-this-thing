@@ -45,6 +45,8 @@ export async function POST(
   return NextResponse.json({ status: "started" });
 }
 
+const CONCURRENCY_LIMIT = 5;
+
 export async function processJobsInParallel(
   batchId: string,
   userId: string,
@@ -52,10 +54,21 @@ export async function processJobsInParallel(
 ) {
   const pendingJobs = jobs.filter((j) => j.status === "pending");
 
-  // Run all jobs concurrently
-  await Promise.allSettled(
-    pendingJobs.map((job) => processOneJob(batchId, userId, job))
+  // Run jobs with concurrency pool of 5
+  let index = 0;
+  const runNext = async (): Promise<void> => {
+    while (index < pendingJobs.length) {
+      const job = pendingJobs[index++];
+      await processOneJob(batchId, userId, job);
+    }
+  };
+
+  // Start up to CONCURRENCY_LIMIT workers
+  const workers = Array.from(
+    { length: Math.min(CONCURRENCY_LIMIT, pendingJobs.length) },
+    () => runNext()
   );
+  await Promise.allSettled(workers);
 
   // Check final batch status
   await finalizeBatchStatus(batchId);
