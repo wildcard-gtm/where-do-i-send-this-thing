@@ -7,20 +7,24 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "WDISTT | Where Do I Send This Thing?",
   description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address. Built for outbound sales and gifting teams.",
-  icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
-  },
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://wdistt.com"),
   openGraph: {
     title: "WDISTT | Where Do I Send This Thing?",
     description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address.",
     type: "website",
+    siteName: "WDISTT",
     images: ["/logo.png"],
   },
   twitter: {
     card: "summary",
     title: "WDISTT | Where Do I Send This Thing?",
     description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address.",
+    images: ["/logo.png"],
+  },
+  keywords: ["address lookup", "LinkedIn address finder", "mailing address", "delivery address", "outbound sales", "gifting", "verified addresses"],
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 

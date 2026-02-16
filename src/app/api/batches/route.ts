@@ -53,7 +53,8 @@ export async function POST(request: Request) {
       batchId: batch.id,
       jobCount: batch.jobs.length,
     });
-  } catch {
+  } catch (err) {
+    console.error("Failed to create batch:", err);
     return NextResponse.json(
       { error: "Failed to create batch" },
       { status: 500 }
