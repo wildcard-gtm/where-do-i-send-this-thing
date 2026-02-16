@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "WDISTT | Where Do I Send This Thing?",
   description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address. Built for outbound sales and gifting teams.",
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://wdistt.com"),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://where-do-i-send-this-thing-git-main-wildcard-tech.vercel.app"),
   openGraph: {
     title: "WDISTT | Where Do I Send This Thing?",
     description: "Find verified mailing addresses for your contacts. Paste a LinkedIn URL, get a deliverable address.",
