@@ -99,8 +99,8 @@ export default function Home() {
             </svg>
             AI-Powered Address Intelligence
           </div>
-          <h1 className="text-4xl md:text-6xl font-bold text-foreground leading-tight mb-6">
-            Know Exactly <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent inline">Where to Send It</span>
+          <h1 className="text-4xl md:text-6xl font-bold text-foreground leading-tight mb-6 whitespace-nowrap">
+            Know Exactly <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Where to Send It</span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
             Turn LinkedIn profiles into verified delivery addresses. Our AI agent
