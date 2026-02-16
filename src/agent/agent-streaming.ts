@@ -14,7 +14,8 @@ import type {
   AgentDecision,
   AgentResult,
 } from './types';
-import { TOOL_DEFINITIONS, executeTool } from './tools';
+import { TOOL_DEFINITIONS, getToolDefinitions, executeTool } from './tools';
+import type { ToolDefinition } from './types';
 import { PrismaClient } from '@prisma/client';
 
 // Prompt is loaded from DB on each agent run
@@ -64,7 +65,7 @@ function createBedrockClient(): BedrockRuntimeClient {
   });
 }
 
-async function callClaude(client: BedrockRuntimeClient, messages: Message[]): Promise<ClaudeResponse> {
+async function callClaude(client: BedrockRuntimeClient, messages: Message[], tools: ToolDefinition[]): Promise<ClaudeResponse> {
   const command = new InvokeModelCommand({
     modelId: MODEL_ID,
     contentType: 'application/json',
@@ -74,7 +75,7 @@ async function callClaude(client: BedrockRuntimeClient, messages: Message[]): Pr
       max_tokens: 65536,
       temperature: 0.3,
       messages,
-      tools: TOOL_DEFINITIONS,
+      tools,
     }),
   });
 
@@ -184,28 +185,37 @@ Structure your report like this:
 - [What strengthens this recommendation]
 - [Any caveats or flags]`;
 
-async function getAgentPrompt(): Promise<string> {
-  try {
-    const prisma = new PrismaClient();
-    const row = await prisma.systemPrompt.findUnique({ where: { key: 'agent_main' } });
-    await prisma.$disconnect();
-    return row?.content ?? FALLBACK_AGENT_PROMPT;
-  } catch {
-    return FALLBACK_AGENT_PROMPT;
-  }
-}
-
-function buildInitialMessage(promptContent: string, input: string): Message {
-  return {
-    role: 'user',
-    content: `${promptContent}
+const FALLBACK_INITIAL_MESSAGE = `{{agent_prompt}}
 
 ═══════════════════════════════════════════
 
-Target: ${input}
+Target: {{input}}
 
-Begin now. Start with enrich_linkedin_profile, then use search_person_address AND search_web, then verify with verify_property and calculate_distance. Be thorough — use each tool as many times as needed.`,
-  };
+Begin now. Start with enrich_linkedin_profile, then use search_person_address AND search_web, then verify with verify_property and calculate_distance. Be thorough — use each tool as many times as needed.`;
+
+async function getAgentPrompts(): Promise<{ agentPrompt: string; initialMessageTemplate: string }> {
+  try {
+    const prisma = new PrismaClient();
+    const rows = await prisma.systemPrompt.findMany({
+      where: { key: { in: ['agent_main', 'agent_initial_message'] } },
+    });
+    await prisma.$disconnect();
+
+    const agentPrompt = rows.find(r => r.key === 'agent_main')?.content ?? FALLBACK_AGENT_PROMPT;
+    const initialMessageTemplate = rows.find(r => r.key === 'agent_initial_message')?.content ?? FALLBACK_INITIAL_MESSAGE;
+
+    return { agentPrompt, initialMessageTemplate };
+  } catch {
+    return { agentPrompt: FALLBACK_AGENT_PROMPT, initialMessageTemplate: FALLBACK_INITIAL_MESSAGE };
+  }
+}
+
+function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string, input: string): Message {
+  const content = initialMessageTemplate
+    .replace(/\{\{agent_prompt\}\}/g, agentPrompt)
+    .replace(/\{\{input\}\}/g, input);
+
+  return { role: 'user', content };
 }
 
 // ─── Streaming Agent Runner ─────────────────────────────
@@ -224,8 +234,11 @@ export async function runAgentStreaming(
   };
 
   const client = createBedrockClient();
-  const agentPrompt = await getAgentPrompt();
-  const messages: Message[] = [buildInitialMessage(agentPrompt, input)];
+  const [{ agentPrompt, initialMessageTemplate }, tools] = await Promise.all([
+    getAgentPrompts(),
+    getToolDefinitions(),
+  ]);
+  const messages: Message[] = [buildInitialMessage(agentPrompt, initialMessageTemplate, input)];
 
   let iteration = 0;
   let decision: AgentDecision | null = null;
@@ -242,7 +255,7 @@ export async function runAgentStreaming(
     emit('iteration_start', { maxIterations: MAX_ITERATIONS }, iteration);
 
     try {
-      const response = await callClaude(client, messages);
+      const response = await callClaude(client, messages, tools);
 
       // Extract any text blocks as "thinking"
       const textBlocks = response.content.filter(

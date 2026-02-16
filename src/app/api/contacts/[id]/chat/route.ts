@@ -47,7 +47,13 @@ export async function POST(
     where: { id, userId: user.id },
     include: {
       job: {
-        select: { result: true },
+        select: {
+          result: true,
+          events: {
+            orderBy: { createdAt: "asc" as const },
+            select: { type: true, data: true, iteration: true },
+          },
+        },
       },
     },
   });
@@ -66,6 +72,12 @@ export async function POST(
   // Build context for Claude
   const jobResult = contact.job?.result ? JSON.parse(contact.job.result) : null;
   const decision = jobResult?.decision;
+
+  // Build the full research log from agent events (or use stored notes)
+  let researchLog = contact.notes || "";
+  if (!researchLog && contact.job?.events?.length) {
+    researchLog = buildResearchLogFromEvents(contact.job.events);
+  }
 
   // Load chat system prompt from DB (fallback to hardcoded)
   let chatPromptTemplate = "";
@@ -100,7 +112,8 @@ ${contact.recommendation ? `Delivery Recommendation: ${contact.recommendation}` 
 ${contact.confidence ? `Confidence Score: ${contact.confidence}%` : ""}
 ${contact.careerSummary ? `\nCareer Summary:\n${contact.careerSummary}` : ""}
 ${decision?.reasoning ? `\nResearch Report:\n${decision.reasoning}` : ""}
-${decision?.flags?.length ? `\nFlags: ${decision.flags.join(", ")}` : ""}`;
+${decision?.flags?.length ? `\nFlags: ${decision.flags.join(", ")}` : ""}
+${researchLog ? `\n## FULL RESEARCH LOG (for reference — this is the raw data gathered during the investigation)\n${researchLog}` : ""}`;
 
   // Load recent chat history
   const history = await prisma.chatMessage.findMany({
@@ -173,4 +186,41 @@ ${decision?.flags?.length ? `\nFlags: ${decision.flags.join(", ")}` : ""}`;
       { status: 500 }
     );
   }
+}
+
+function buildResearchLogFromEvents(
+  events: Array<{ type: string; data: string; iteration: number | null }>
+): string {
+  const lines: string[] = [];
+
+  for (const event of events) {
+    try {
+      const data = JSON.parse(event.data);
+
+      switch (event.type) {
+        case "thinking":
+          lines.push(`[Agent Reasoning]\n${data.text}\n`);
+          break;
+        case "tool_call_start":
+          lines.push(`[Tool Call: ${data.toolName}]\nInput: ${JSON.stringify(data.toolInput, null, 2)}\n`);
+          break;
+        case "tool_call_result":
+          lines.push(`[Tool Result: ${data.toolName}] ${data.success ? "Success" : "Failed"}\nSummary: ${data.summary}\n${data.data ? `Data: ${JSON.stringify(data.data, null, 2)}\n` : ""}`);
+          break;
+        case "decision_accepted":
+          lines.push(`[Decision Accepted]\n${JSON.stringify(data.decision, null, 2)}\n`);
+          break;
+        case "decision_rejected":
+          lines.push(`[Decision Rejected] Confidence ${data.confidence}% below ${data.threshold}% threshold\n`);
+          break;
+        case "error":
+          lines.push(`[Error] ${data.message}\n`);
+          break;
+      }
+    } catch {
+      // Skip unparseable events
+    }
+  }
+
+  return lines.join("\n");
 }

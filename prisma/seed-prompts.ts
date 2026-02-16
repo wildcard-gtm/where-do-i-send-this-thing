@@ -125,13 +125,54 @@ Structure your report like this:
 6. Be concise and professional. Focus on helping the user with delivery strategy, address questions, and contact insights.
 7. If the user asks about something not in the contact data, say you don't have that information from the current lookup.`,
   },
+  {
+    key: "agent_initial_message",
+    label: "Agent Initial Message Template",
+    content: `{{agent_prompt}}
+
+═══════════════════════════════════════════
+
+Target: {{input}}
+
+Begin now. Start with enrich_linkedin_profile, then use search_person_address AND search_web, then verify with verify_property and calculate_distance. Be thorough — use each tool as many times as needed.`,
+  },
+  {
+    key: "tool_enrich_linkedin_profile",
+    label: "Tool: Enrich LinkedIn Profile",
+    content: `Enriches a LinkedIn profile URL via Bright Data. Returns name, company, title, location, experience. Use FIRST when a LinkedIn URL is provided.`,
+  },
+  {
+    key: "tool_search_person_address",
+    label: "Tool: Search Person Address",
+    content: `Search for residential address history by person name via Endato. Returns current and past addresses, phone numbers. Best for finding US home addresses.`,
+  },
+  {
+    key: "tool_search_web",
+    label: "Tool: Search Web",
+    content: `Neural web search via Exa AI. Use for researching company office addresses, remote work policies, person info, news articles.`,
+  },
+  {
+    key: "tool_verify_property",
+    label: "Tool: Verify Property",
+    content: `Verify property ownership via PropMix. Check if a US street address is owned by a specific person. Useful for confirming home address ownership.`,
+  },
+  {
+    key: "tool_calculate_distance",
+    label: "Tool: Calculate Distance",
+    content: `Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability. >50 miles typically indicates remote worker.`,
+  },
+  {
+    key: "tool_submit_decision",
+    label: "Tool: Submit Decision",
+    content: `Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.`,
+  },
 ];
 
 async function main() {
   for (const prompt of DEFAULT_PROMPTS) {
     await prisma.systemPrompt.upsert({
       where: { key: prompt.key },
-      update: { content: prompt.content, label: prompt.label },
+      update: {}, // Don't overwrite existing edits
       create: prompt,
     });
     console.log(`Seeded prompt: ${prompt.key}`);

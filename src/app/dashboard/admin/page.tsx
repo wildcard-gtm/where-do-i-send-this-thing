@@ -218,60 +218,100 @@ export default function AdminPage() {
         <>
           {/* Prompts Tab */}
           {tab === "prompts" && (
-            <div className="space-y-6">
-              {prompts.map((prompt) => (
-                <div key={prompt.id} className="glass-card rounded-2xl p-6">
-                  <div className="flex items-center justify-between mb-3">
-                    <div>
-                      <h3 className="text-base font-semibold text-foreground">{prompt.label}</h3>
-                      <p className="text-xs text-muted-foreground">
-                        Key: {prompt.key} &middot; Updated:{" "}
-                        {new Date(prompt.updatedAt).toLocaleDateString("en-US", {
-                          month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
-                        })}
-                      </p>
+            <div className="space-y-8">
+              {/* Group prompts by category */}
+              {[
+                { title: "Agent Prompts", filter: (p: SystemPrompt) => p.key.startsWith("agent_") },
+                { title: "Tool Descriptions", filter: (p: SystemPrompt) => p.key.startsWith("tool_"), description: "These descriptions tell the AI when and how to use each tool." },
+                { title: "Chat Prompts", filter: (p: SystemPrompt) => p.key.startsWith("chat_") },
+              ].map((group) => {
+                const groupPrompts = prompts.filter(group.filter);
+                if (groupPrompts.length === 0) return null;
+                return (
+                  <div key={group.title}>
+                    <div className="mb-3">
+                      <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider">{group.title}</h3>
+                      {group.description && <p className="text-xs text-muted-foreground mt-0.5">{group.description}</p>}
                     </div>
-                    {editingId !== prompt.id && (
-                      <button
-                        onClick={() => startEditing(prompt)}
-                        className="text-sm font-medium text-primary hover:text-primary-hover transition flex items-center gap-1.5"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Edit
-                      </button>
-                    )}
-                  </div>
+                    <div className="space-y-4">
+                      {groupPrompts.map((prompt) => {
+                        // Extract {{variables}} from content
+                        const variables = Array.from(new Set(prompt.content.match(/\{\{(\w+)\}\}/g) || []));
+                        return (
+                          <div key={prompt.id} className="glass-card rounded-2xl p-6">
+                            <div className="flex items-center justify-between mb-3">
+                              <div>
+                                <h3 className="text-base font-semibold text-foreground">{prompt.label}</h3>
+                                <p className="text-xs text-muted-foreground">
+                                  Key: {prompt.key} &middot; Updated:{" "}
+                                  {new Date(prompt.updatedAt).toLocaleDateString("en-US", {
+                                    month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit",
+                                  })}
+                                </p>
+                              </div>
+                              {editingId !== prompt.id && (
+                                <button
+                                  onClick={() => startEditing(prompt)}
+                                  className="text-sm font-medium text-primary hover:text-primary-hover transition flex items-center gap-1.5"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  Edit
+                                </button>
+                              )}
+                            </div>
 
-                  {editingId === prompt.id ? (
-                    <div>
-                      <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        rows={20}
-                        className="w-full bg-background border border-border rounded-lg px-4 py-3 text-sm text-foreground font-mono focus-glow resize-y"
-                      />
-                      <div className="flex items-center justify-end gap-3 mt-3">
-                        <button onClick={cancelEditing} className="text-sm text-muted-foreground hover:text-foreground transition px-4 py-2">
-                          Cancel
-                        </button>
-                        <button
-                          onClick={() => savePrompt(prompt.id)}
-                          disabled={saving}
-                          className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition text-sm"
-                        >
-                          {saving ? "Saving..." : "Save Changes"}
-                        </button>
-                      </div>
+                            {/* Variable hint */}
+                            {variables.length > 0 && (
+                              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                                <span className="text-xs text-muted-foreground">Variables:</span>
+                                {variables.map((v) => (
+                                  <span key={v} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-mono">
+                                    {v}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+
+                            {editingId === prompt.id ? (
+                              <div>
+                                {variables.length > 0 && (
+                                  <p className="text-xs text-amber-600 dark:text-amber-400 mb-2">
+                                    Keep the {`{{variable}}`} placeholders — they get replaced with real values at runtime.
+                                  </p>
+                                )}
+                                <textarea
+                                  value={editContent}
+                                  onChange={(e) => setEditContent(e.target.value)}
+                                  rows={20}
+                                  className="w-full bg-background border border-border rounded-lg px-4 py-3 text-sm text-foreground font-mono focus-glow resize-y"
+                                />
+                                <div className="flex items-center justify-end gap-3 mt-3">
+                                  <button onClick={cancelEditing} className="text-sm text-muted-foreground hover:text-foreground transition px-4 py-2">
+                                    Cancel
+                                  </button>
+                                  <button
+                                    onClick={() => savePrompt(prompt.id)}
+                                    disabled={saving}
+                                    className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition text-sm"
+                                  >
+                                    {saving ? "Saving..." : "Save Changes"}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <pre className="bg-background/50 rounded-lg p-4 text-xs text-foreground/80 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
+                                {prompt.content}
+                              </pre>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  ) : (
-                    <pre className="bg-background/50 rounded-lg p-4 text-xs text-foreground/80 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">
-                      {prompt.content}
-                    </pre>
-                  )}
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
 

@@ -38,11 +38,11 @@ export async function POST(request: Request) {
         data: { status: "processing" },
       });
 
-      const { processJobsSequentially } = await import(
+      const { processJobsInParallel } = await import(
         "@/app/api/batches/[id]/start/route"
       );
 
-      processJobsSequentially(
+      processJobsInParallel(
         batch.id,
         user.id,
         batch.jobs.map((j) => ({ id: j.id, linkedinUrl: j.linkedinUrl, status: j.status }))

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { runAgentStreaming } from "@/agent/agent-streaming";
 import type { AgentStreamEvent } from "@/agent/agent-streaming";
 
+export const maxDuration = 600; // 10 minutes for thorough investigation
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -37,120 +39,170 @@ export async function POST(
     data: { status: "processing" },
   });
 
-  // Fire and forget: process jobs sequentially in the background
-  processJobsSequentially(batch.id, batch.userId, batch.jobs).catch(console.error);
+  // Fire and forget: process ALL jobs in parallel
+  processJobsInParallel(batch.id, batch.userId, batch.jobs).catch(console.error);
 
   return NextResponse.json({ status: "started" });
 }
 
-export async function processJobsSequentially(
+export async function processJobsInParallel(
   batchId: string,
   userId: string,
   jobs: Array<{ id: string; linkedinUrl: string; status: string }>
 ) {
   const pendingJobs = jobs.filter((j) => j.status === "pending");
 
-  for (const job of pendingJobs) {
-    try {
-      // Mark job as running
-      await prisma.job.update({
-        where: { id: job.id },
-        data: { status: "running" },
-      });
+  // Run all jobs concurrently
+  await Promise.allSettled(
+    pendingJobs.map((job) => processOneJob(batchId, userId, job))
+  );
 
-      // Run agent with streaming events persisted to DB
-      const result = await runAgentStreaming(
-        job.linkedinUrl,
-        async (event: AgentStreamEvent) => {
-          await prisma.agentEvent.create({
+  // Check final batch status
+  await finalizeBatchStatus(batchId);
+}
+
+async function processOneJob(
+  batchId: string,
+  userId: string,
+  job: { id: string; linkedinUrl: string }
+) {
+  try {
+    // Check if batch was cancelled before starting
+    const batch = await prisma.batch.findUnique({
+      where: { id: batchId },
+      select: { status: true },
+    });
+    if (batch?.status === "cancelled") return;
+
+    // Mark job as running
+    await prisma.job.update({
+      where: { id: job.id },
+      data: { status: "running" },
+    });
+
+    // Run agent with streaming events persisted to DB
+    const result = await runAgentStreaming(
+      job.linkedinUrl,
+      async (event: AgentStreamEvent) => {
+        // Check if batch was cancelled mid-run
+        if (event.type === "iteration_start") {
+          const b = await prisma.batch.findUnique({
+            where: { id: batchId },
+            select: { status: true },
+          });
+          if (b?.status === "cancelled") {
+            throw new Error("Batch cancelled by user");
+          }
+        }
+
+        await prisma.agentEvent.create({
+          data: {
+            jobId: job.id,
+            type: event.type,
+            iteration: event.iteration,
+            data: JSON.stringify(event.data),
+          },
+        });
+      }
+    );
+
+    // Update job with result
+    const personName = extractPersonName(result);
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        status: "complete",
+        personName,
+        recommendation: result.decision?.recommendation ?? null,
+        confidence: result.decision?.confidence ?? null,
+        result: JSON.stringify(result),
+      },
+    });
+
+    // Auto-create or update contact
+    try {
+      const decision = result.decision;
+      if (decision) {
+        // Also build the full research log from events
+        const events = await prisma.agentEvent.findMany({
+          where: { jobId: job.id },
+          orderBy: { createdAt: "asc" },
+        });
+        const researchLog = buildResearchLog(events);
+
+        const existingContact = await prisma.contact.findFirst({
+          where: { userId, linkedinUrl: job.linkedinUrl },
+        });
+
+        const contactData = {
+          name: personName || "Unknown",
+          recommendation: decision.recommendation,
+          confidence: decision.confidence,
+          homeAddress: decision.home_address?.address || null,
+          officeAddress: decision.office_address?.address || null,
+          profileImageUrl: decision.profile_image_url || null,
+          careerSummary: decision.career_summary || null,
+          lastScannedAt: new Date(),
+          jobId: job.id,
+          notes: researchLog,
+        };
+
+        if (existingContact) {
+          await prisma.contact.update({
+            where: { id: existingContact.id },
             data: {
-              jobId: job.id,
-              type: event.type,
-              iteration: event.iteration,
-              data: JSON.stringify(event.data),
+              ...contactData,
+              name: personName || existingContact.name,
+              homeAddress: contactData.homeAddress || existingContact.homeAddress,
+              officeAddress: contactData.officeAddress || existingContact.officeAddress,
+              profileImageUrl: contactData.profileImageUrl || existingContact.profileImageUrl,
+              careerSummary: contactData.careerSummary || existingContact.careerSummary,
+            },
+          });
+        } else {
+          await prisma.contact.create({
+            data: {
+              userId,
+              linkedinUrl: job.linkedinUrl,
+              ...contactData,
             },
           });
         }
-      );
-
-      // Update job with result
-      const personName = extractPersonName(result);
-      await prisma.job.update({
-        where: { id: job.id },
-        data: {
-          status: "complete",
-          personName,
-          recommendation: result.decision?.recommendation ?? null,
-          confidence: result.decision?.confidence ?? null,
-          result: JSON.stringify(result),
-        },
-      });
-
-      // Auto-create or update contact
-      try {
-        const decision = result.decision;
-        if (decision) {
-          const existingContact = await prisma.contact.findFirst({
-            where: { userId, linkedinUrl: job.linkedinUrl },
-          });
-
-          if (existingContact) {
-            await prisma.contact.update({
-              where: { id: existingContact.id },
-              data: {
-                name: personName || existingContact.name,
-                recommendation: decision.recommendation,
-                confidence: decision.confidence,
-                homeAddress: decision.home_address?.address || existingContact.homeAddress,
-                officeAddress: decision.office_address?.address || existingContact.officeAddress,
-                profileImageUrl: decision.profile_image_url || existingContact.profileImageUrl,
-                careerSummary: decision.career_summary || existingContact.careerSummary,
-                lastScannedAt: new Date(),
-                jobId: job.id,
-              },
-            });
-          } else {
-            await prisma.contact.create({
-              data: {
-                userId,
-                name: personName || "Unknown",
-                linkedinUrl: job.linkedinUrl,
-                homeAddress: decision.home_address?.address || null,
-                officeAddress: decision.office_address?.address || null,
-                profileImageUrl: decision.profile_image_url || null,
-                careerSummary: decision.career_summary || null,
-                recommendation: decision.recommendation,
-                confidence: decision.confidence,
-                lastScannedAt: new Date(),
-                jobId: job.id,
-              },
-            });
-          }
-        }
-      } catch (contactErr) {
-        console.error(`Failed to create contact for job ${job.id}:`, contactErr);
       }
-    } catch (err) {
-      console.error(`Job ${job.id} failed:`, err);
-
-      await prisma.job.update({
-        where: { id: job.id },
-        data: {
-          status: "failed",
-          result: JSON.stringify({ error: (err as Error).message }),
-        },
-      });
+    } catch (contactErr) {
+      console.error(`Failed to create contact for job ${job.id}:`, contactErr);
     }
-  }
+  } catch (err) {
+    const message = (err as Error).message;
+    console.error(`Job ${job.id} failed:`, message);
 
-  // Check final batch status
+    // If cancelled, mark job as cancelled not failed
+    const isCancelled = message === "Batch cancelled by user";
+    await prisma.job.update({
+      where: { id: job.id },
+      data: {
+        status: isCancelled ? "cancelled" : "failed",
+        result: JSON.stringify({ error: message }),
+      },
+    });
+  }
+}
+
+async function finalizeBatchStatus(batchId: string) {
+  const batch = await prisma.batch.findUnique({
+    where: { id: batchId },
+    select: { status: true },
+  });
+  // Don't override if already cancelled
+  if (batch?.status === "cancelled") return;
+
   const allJobs = await prisma.job.findMany({
     where: { batchId },
     select: { status: true },
   });
 
   const allDone = allJobs.every(
-    (j) => j.status === "complete" || j.status === "failed"
+    (j) => j.status === "complete" || j.status === "failed" || j.status === "cancelled"
   );
   const anyFailed = allJobs.some((j) => j.status === "failed");
 
@@ -162,12 +214,51 @@ export async function processJobsSequentially(
   }
 }
 
+/**
+ * Build a human-readable research log from agent events.
+ * This gets stored in contact.notes so the chat has full context.
+ */
+function buildResearchLog(events: Array<{ type: string; data: string; iteration: number | null }>): string {
+  const lines: string[] = ["=== FULL RESEARCH LOG ===\n"];
+
+  for (const event of events) {
+    try {
+      const data = JSON.parse(event.data);
+
+      switch (event.type) {
+        case "thinking":
+          lines.push(`[Agent Reasoning]\n${data.text}\n`);
+          break;
+        case "tool_call_start":
+          lines.push(`[Tool Call: ${data.toolName}]\nInput: ${JSON.stringify(data.toolInput, null, 2)}\n`);
+          break;
+        case "tool_call_result":
+          lines.push(`[Tool Result: ${data.toolName}] ${data.success ? "Success" : "Failed"}\nSummary: ${data.summary}\n${data.data ? `Data: ${JSON.stringify(data.data, null, 2)}\n` : ""}`);
+          break;
+        case "decision_accepted":
+          lines.push(`[Decision Accepted]\n${JSON.stringify(data.decision, null, 2)}\n`);
+          break;
+        case "decision_rejected":
+          lines.push(`[Decision Rejected] Confidence ${data.confidence}% below ${data.threshold}% threshold\n`);
+          break;
+        case "error":
+          lines.push(`[Error] ${data.message}\n`);
+          break;
+      }
+    } catch {
+      // Skip unparseable events
+    }
+  }
+
+  return lines.join("\n");
+}
+
 function extractPersonName(result: { decision?: { reasoning?: string } | null; input: string }): string | null {
-  // Try to extract from the input URL
   const urlMatch = result.input.match(/linkedin\.com\/in\/([\w-]+)/);
   if (urlMatch) {
     return urlMatch[1]
       .split("-")
+      .filter((w) => !/^\d+$/.test(w))
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ");
   }

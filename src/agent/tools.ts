@@ -1,5 +1,7 @@
 /**
  * Tool definitions (Anthropic tool_use schema) and dispatch.
+ * Tool descriptions are loaded from the database (SystemPrompt table)
+ * so admins can edit them from the admin panel.
  */
 
 import type { ToolDefinition, ToolResult, ToolUseBlock, AgentDecision } from './types';
@@ -10,140 +12,185 @@ import {
   getPropertyDetails,
   calculateDistance,
 } from './services';
+import { PrismaClient } from '@prisma/client';
 
-// ─── Tool Schemas ────────────────────────────────────────
+// ─── Fallback Tool Descriptions ─────────────────────────
+// Used when DB is unavailable or prompts haven't been seeded
 
-export const TOOL_DEFINITIONS: ToolDefinition[] = [
-  {
-    name: 'enrich_linkedin_profile',
-    description:
-      'Enriches a LinkedIn profile URL via Bright Data. Returns name, company, title, location, experience. Use FIRST when a LinkedIn URL is provided.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        url: { type: 'string', description: 'LinkedIn profile URL (https://www.linkedin.com/in/...)' },
-      },
-      required: ['url'],
-    },
-  },
-  {
-    name: 'search_person_address',
-    description:
-      'Search for residential address history by person name via Endato. Returns current and past addresses, phone numbers. Best for finding US home addresses.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        first_name: { type: 'string', description: 'First name' },
-        middle_name: { type: 'string', description: 'Middle name (optional)' },
-        last_name: { type: 'string', description: 'Last name' },
-        city: { type: 'string', description: 'City (optional, helps narrow results)' },
-        state: { type: 'string', description: 'Two-letter US state code (optional)' },
-      },
-      required: ['first_name', 'last_name'],
-    },
-  },
-  {
-    name: 'search_web',
-    description:
-      'Neural web search via Exa AI. Use for researching company office addresses, remote work policies, person info, news articles.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query (be specific)' },
-        category: {
-          type: 'string',
-          enum: ['company', 'people', 'news', 'auto'],
-          description: 'Search category (default: auto)',
+const FALLBACK_DESCRIPTIONS: Record<string, string> = {
+  enrich_linkedin_profile:
+    'Enriches a LinkedIn profile URL via Bright Data. Returns name, company, title, location, experience. Use FIRST when a LinkedIn URL is provided.',
+  search_person_address:
+    'Search for residential address history by person name via Endato. Returns current and past addresses, phone numbers. Best for finding US home addresses.',
+  search_web:
+    'Neural web search via Exa AI. Use for researching company office addresses, remote work policies, person info, news articles.',
+  verify_property:
+    'Verify property ownership via PropMix. Check if a US street address is owned by a specific person. Useful for confirming home address ownership.',
+  calculate_distance:
+    'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability. >50 miles typically indicates remote worker.',
+  submit_decision:
+    'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
+};
+
+// ─── Tool Schema Builder ────────────────────────────────
+
+function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinition[] {
+  return [
+    {
+      name: 'enrich_linkedin_profile',
+      description: descriptions.enrich_linkedin_profile,
+      input_schema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'LinkedIn profile URL (https://www.linkedin.com/in/...)' },
         },
-        num_results: { type: 'number', description: 'Number of results, 1-10 (default: 5)' },
+        required: ['url'],
       },
-      required: ['query'],
     },
-  },
-  {
-    name: 'verify_property',
-    description:
-      'Verify property ownership via PropMix. Check if a US street address is owned by a specific person. Useful for confirming home address ownership.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        street_address: { type: 'string', description: 'Full street address (e.g., "123 Main St")' },
-        city: { type: 'string', description: 'City name' },
-        state: { type: 'string', description: 'Two-letter state code' },
-        order_id: { type: 'string', description: 'Unique identifier (use firstname-lastname-timestamp)' },
+    {
+      name: 'search_person_address',
+      description: descriptions.search_person_address,
+      input_schema: {
+        type: 'object',
+        properties: {
+          first_name: { type: 'string', description: 'First name' },
+          middle_name: { type: 'string', description: 'Middle name (optional)' },
+          last_name: { type: 'string', description: 'Last name' },
+          city: { type: 'string', description: 'City (optional, helps narrow results)' },
+          state: { type: 'string', description: 'Two-letter US state code (optional)' },
+        },
+        required: ['first_name', 'last_name'],
       },
-      required: ['street_address', 'city', 'state', 'order_id'],
     },
-  },
-  {
-    name: 'calculate_distance',
-    description:
-      'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability. >50 miles typically indicates remote worker.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        origin: { type: 'string', description: 'Starting address or location' },
-        destination: { type: 'string', description: 'Destination address or location' },
-      },
-      required: ['origin', 'destination'],
-    },
-  },
-  {
-    name: 'submit_decision',
-    description:
-      'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        recommendation: {
-          type: 'string',
-          enum: ['HOME', 'OFFICE', 'BOTH'],
-          description: 'Where to deliver the package',
-        },
-        confidence: {
-          type: 'number',
-          description: 'Confidence percentage (0-100). Must be >75 to be accepted.',
-        },
-        reasoning: {
-          type: 'string',
-          description: 'Detailed explanation of why this recommendation was chosen',
-        },
-        home_address: {
-          type: 'object',
-          properties: {
-            address: { type: 'string' },
-            confidence: { type: 'number' },
-            reasoning: { type: 'string' },
+    {
+      name: 'search_web',
+      description: descriptions.search_web,
+      input_schema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query (be specific)' },
+          category: {
+            type: 'string',
+            enum: ['company', 'people', 'news', 'auto'],
+            description: 'Search category (default: auto)',
           },
-          description: 'Home address details (if found)',
+          num_results: { type: 'number', description: 'Number of results, 1-10 (default: 5)' },
         },
-        office_address: {
-          type: 'object',
-          properties: {
-            address: { type: 'string' },
-            confidence: { type: 'number' },
-            reasoning: { type: 'string' },
-          },
-          description: 'Office address details (if found)',
-        },
-        flags: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Notable flags or caveats (e.g., "common name", "international address")',
-        },
-        career_summary: {
-          type: 'string',
-          description: 'Brief 2-3 sentence summary of the person\'s career trajectory and current role',
-        },
-        profile_image_url: {
-          type: 'string',
-          description: 'URL of the person\'s profile picture from LinkedIn enrichment (the avatar field)',
-        },
+        required: ['query'],
       },
-      required: ['recommendation', 'confidence', 'reasoning'],
     },
-  },
-];
+    {
+      name: 'verify_property',
+      description: descriptions.verify_property,
+      input_schema: {
+        type: 'object',
+        properties: {
+          street_address: { type: 'string', description: 'Full street address (e.g., "123 Main St")' },
+          city: { type: 'string', description: 'City name' },
+          state: { type: 'string', description: 'Two-letter state code' },
+          order_id: { type: 'string', description: 'Unique identifier (use firstname-lastname-timestamp)' },
+        },
+        required: ['street_address', 'city', 'state', 'order_id'],
+      },
+    },
+    {
+      name: 'calculate_distance',
+      description: descriptions.calculate_distance,
+      input_schema: {
+        type: 'object',
+        properties: {
+          origin: { type: 'string', description: 'Starting address or location' },
+          destination: { type: 'string', description: 'Destination address or location' },
+        },
+        required: ['origin', 'destination'],
+      },
+    },
+    {
+      name: 'submit_decision',
+      description: descriptions.submit_decision,
+      input_schema: {
+        type: 'object',
+        properties: {
+          recommendation: {
+            type: 'string',
+            enum: ['HOME', 'OFFICE', 'BOTH'],
+            description: 'Where to deliver the package',
+          },
+          confidence: {
+            type: 'number',
+            description: 'Confidence percentage (0-100). Must be >75 to be accepted.',
+          },
+          reasoning: {
+            type: 'string',
+            description: 'Detailed explanation of why this recommendation was chosen',
+          },
+          home_address: {
+            type: 'object',
+            properties: {
+              address: { type: 'string' },
+              confidence: { type: 'number' },
+              reasoning: { type: 'string' },
+            },
+            description: 'Home address details (if found)',
+          },
+          office_address: {
+            type: 'object',
+            properties: {
+              address: { type: 'string' },
+              confidence: { type: 'number' },
+              reasoning: { type: 'string' },
+            },
+            description: 'Office address details (if found)',
+          },
+          flags: {
+            type: 'array',
+            items: { type: 'string' },
+            description: 'Notable flags or caveats (e.g., "common name", "international address")',
+          },
+          career_summary: {
+            type: 'string',
+            description: 'Brief 2-3 sentence summary of the person\'s career trajectory and current role',
+          },
+          profile_image_url: {
+            type: 'string',
+            description: 'URL of the person\'s profile picture from LinkedIn enrichment (the avatar field)',
+          },
+        },
+        required: ['recommendation', 'confidence', 'reasoning'],
+      },
+    },
+  ];
+}
+
+// ─── Static Export (fallback) ───────────────────────────
+
+export const TOOL_DEFINITIONS: ToolDefinition[] = buildToolDefinitions(FALLBACK_DESCRIPTIONS);
+
+// ─── Dynamic Loader ─────────────────────────────────────
+
+export async function getToolDefinitions(): Promise<ToolDefinition[]> {
+  try {
+    const prisma = new PrismaClient();
+    const rows = await prisma.systemPrompt.findMany({
+      where: { key: { startsWith: 'tool_' } },
+    });
+    await prisma.$disconnect();
+
+    if (rows.length === 0) return TOOL_DEFINITIONS;
+
+    // Build descriptions from DB, falling back to defaults
+    const descriptions = { ...FALLBACK_DESCRIPTIONS };
+    for (const row of rows) {
+      // key format: "tool_enrich_linkedin_profile" -> "enrich_linkedin_profile"
+      const toolName = row.key.replace(/^tool_/, '');
+      descriptions[toolName] = row.content;
+    }
+
+    return buildToolDefinitions(descriptions);
+  } catch {
+    return TOOL_DEFINITIONS;
+  }
+}
 
 // ─── Tool Dispatch ───────────────────────────────────────
 

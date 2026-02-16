@@ -49,6 +49,7 @@ function getJobProgress(stages: StageEvent[] | undefined, status: string) {
     return { completed, currentKey: null, currentLabel: "Complete", pct: 100 };
   }
   if (status === "failed") return { completed, currentKey: null, currentLabel: "Failed", pct: 0 };
+  if (status === "cancelled") return { completed, currentKey: null, currentLabel: "Cancelled", pct: 0 };
   if (status === "pending") return { completed, currentKey: null, currentLabel: "Queued", pct: 0 };
 
   if (!stages || stages.length === 0) {
@@ -116,13 +117,21 @@ function StageIcon({ stageKey }: { stageKey: string }) {
 
 // ─── Per-lead inline status ─────────────────────────────
 
-function LeadStatus({ job, batchId, onRetry }: { job: Job; batchId: string; onRetry: (jobId: string) => void }) {
+function LeadStatus({ job, onRetry }: { job: Job; onRetry: (jobId: string) => void }) {
   const { currentKey, currentLabel, pct } = getJobProgress(job.stages, job.status);
 
   if (job.status === "pending") {
     return (
       <span className="text-xs text-muted-foreground px-2.5 py-1 rounded-full bg-muted">
         Queued
+      </span>
+    );
+  }
+
+  if (job.status === "cancelled") {
+    return (
+      <span className="text-xs font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-full">
+        Cancelled
       </span>
     );
   }
@@ -231,6 +240,8 @@ export default function BatchDetailPage() {
   const [batch, setBatch] = useState<Batch | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  const [restarting, setRestarting] = useState(false);
 
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/batches/${batchId}`);
@@ -254,8 +265,33 @@ export default function BatchDetailPage() {
     setStarting(false);
   }
 
+  async function handleStop() {
+    setStopping(true);
+    const res = await fetch(`/api/batches/${batchId}/stop`, { method: "POST" });
+    if (res.ok) fetchBatch();
+    setStopping(false);
+  }
+
+  async function handleRestart() {
+    setRestarting(true);
+    const res = await fetch(`/api/batches/${batchId}/restart`, { method: "POST" });
+    if (res.ok) fetchBatch();
+    setRestarting(false);
+  }
+
   async function handleRetry(jobId: string) {
     await fetch(`/api/batches/${batchId}/jobs/${jobId}/retry`, { method: "POST" });
+    fetchBatch();
+  }
+
+  async function handleRetryAllFailed() {
+    if (!batch) return;
+    const failedJobs = batch.jobs.filter((j) => j.status === "failed");
+    await Promise.all(
+      failedJobs.map((j) =>
+        fetch(`/api/batches/${batchId}/jobs/${j.id}/retry`, { method: "POST" })
+      )
+    );
     fetchBatch();
   }
 
@@ -280,8 +316,13 @@ export default function BatchDetailPage() {
 
   const completed = batch.jobs.filter((j) => j.status === "complete").length;
   const failed = batch.jobs.filter((j) => j.status === "failed").length;
+  const cancelled = batch.jobs.filter((j) => j.status === "cancelled").length;
+  const running = batch.jobs.filter((j) => j.status === "running").length;
   const total = batch.jobs.length;
   const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+  const isStopped = batch.status === "cancelled" || batch.status === "failed" || batch.status === "complete";
+  const hasFailedJobs = failed > 0;
 
   return (
     <div>
@@ -295,10 +336,15 @@ export default function BatchDetailPage() {
             <span className={`text-xs font-medium px-3 py-1 rounded-full ${
               batch.status === "processing" ? "bg-primary/15 text-primary" :
               batch.status === "complete" ? "bg-success/15 text-success" :
+              batch.status === "cancelled" ? "bg-muted text-muted-foreground" :
               batch.status === "failed" ? "bg-danger/15 text-danger" :
               "bg-muted text-muted-foreground"
             }`}>
-              {batch.status === "processing" ? "Processing" : batch.status === "complete" ? "Complete" : batch.status === "failed" ? "Completed" : "Pending"}
+              {batch.status === "processing" ? "Processing" :
+               batch.status === "complete" ? "Complete" :
+               batch.status === "cancelled" ? "Cancelled" :
+               batch.status === "failed" ? "Completed" :
+               "Pending"}
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
@@ -307,24 +353,71 @@ export default function BatchDetailPage() {
             })}
             {" \u00b7 "}{total} lead{total !== 1 ? "s" : ""}
             {completed > 0 && ` \u00b7 ${completed} found`}
+            {running > 0 && ` \u00b7 ${running} running`}
             {failed > 0 && ` \u00b7 ${failed} failed`}
+            {cancelled > 0 && ` \u00b7 ${cancelled} cancelled`}
           </p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-2 flex-wrap">
+          {/* Start Scan — only when pending */}
           {batch.status === "pending" && (
             <button
               onClick={handleStart}
               disabled={starting}
-              className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-medium transition text-sm"
+              className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm"
             >
               {starting ? "Starting..." : "Start Scan"}
             </button>
           )}
-          {(batch.status === "complete" || batch.status === "failed") && (
+
+          {/* Stop — only when processing */}
+          {batch.status === "processing" && (
+            <button
+              onClick={handleStop}
+              disabled={stopping}
+              className="bg-danger hover:opacity-90 disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+              </svg>
+              {stopping ? "Stopping..." : "Stop"}
+            </button>
+          )}
+
+          {/* Retry All Failed — only when there are failed jobs and batch is not processing */}
+          {isStopped && hasFailedJobs && (
+            <button
+              onClick={handleRetryAllFailed}
+              className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Retry Failed
+            </button>
+          )}
+
+          {/* Start Over — only when batch is done/failed/cancelled */}
+          {isStopped && (
+            <button
+              onClick={handleRestart}
+              disabled={restarting}
+              className="border border-border hover:border-primary text-foreground hover:text-primary px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              {restarting ? "Resetting..." : "Start Over"}
+            </button>
+          )}
+
+          {/* Export CSV — when there are completed jobs */}
+          {completed > 0 && isStopped && (
             <a
               href={`/api/batches/${batchId}/export`}
-              className="bg-success hover:opacity-90 text-white px-6 py-2.5 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+              className="bg-success hover:opacity-90 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -332,9 +425,10 @@ export default function BatchDetailPage() {
               Export CSV
             </a>
           )}
+
           <Link
             href="/dashboard"
-            className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-6 py-2.5 rounded-lg font-medium transition text-sm"
+            className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm"
           >
             Back
           </Link>
@@ -345,7 +439,9 @@ export default function BatchDetailPage() {
       {batch.status === "processing" && (
         <div className="glass-card rounded-2xl p-5 mb-6">
           <div className="flex items-center justify-between mb-2.5">
-            <span className="text-sm text-foreground font-medium">Scanning leads</span>
+            <span className="text-sm text-foreground font-medium">
+              Scanning {running > 0 ? `${running} lead${running !== 1 ? "s" : ""} in parallel` : "leads"}
+            </span>
             <span className="text-sm text-muted-foreground">
               {completed}/{total} ({progress}%)
             </span>
@@ -379,7 +475,7 @@ export default function BatchDetailPage() {
               </div>
 
               <div className="shrink-0 sm:ml-4">
-                <LeadStatus job={job} batchId={batchId} onRetry={handleRetry} />
+                <LeadStatus job={job} onRetry={handleRetry} />
               </div>
             </div>
           </div>
