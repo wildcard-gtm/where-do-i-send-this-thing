@@ -440,7 +440,7 @@ export default function BatchDetailPage() {
         <div className="glass-card rounded-2xl p-5 mb-6">
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-sm text-foreground font-medium">
-              Scanning {running > 0 ? `${running} lead${running !== 1 ? "s" : ""} in parallel` : "leads"}
+              Scanning {running > 1 ? `${running} leads in parallel` : running === 1 ? "1 lead" : "leads"}
             </span>
             <span className="text-sm text-muted-foreground">
               {completed}/{total} ({progress}%)
