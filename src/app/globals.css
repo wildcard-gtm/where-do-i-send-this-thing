@@ -140,3 +140,195 @@ body {
     transform: scale(1);
   }
 }
+
+/* ─── Homepage: smooth scroll ─── */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ─── Homepage: hero gradient ─── */
+.hero-gradient {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 30%, #1e3a5f 60%, #0f172a 100%);
+}
+
+/* ─── Homepage: floating orbs ─── */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: orbFloat 20s ease-in-out infinite;
+}
+
+.orb-1 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, #3b82f6, transparent 70%);
+  top: -10%;
+  right: -10%;
+  animation-delay: 0s;
+}
+
+.orb-2 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, #8b5cf6, transparent 70%);
+  bottom: -5%;
+  left: -5%;
+  animation-delay: -7s;
+}
+
+.orb-3 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, #06b6d4, transparent 70%);
+  top: 40%;
+  left: 30%;
+  animation-delay: -14s;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -40px) scale(1.05); }
+  50% { transform: translate(-20px, 20px) scale(0.95); }
+  75% { transform: translate(15px, 30px) scale(1.02); }
+}
+
+/* ─── Homepage: 3D envelope ─── */
+.envelope-scene {
+  perspective: 800px;
+  width: 280px;
+  height: 220px;
+}
+
+@media (min-width: 768px) {
+  .envelope-scene {
+    width: 340px;
+    height: 260px;
+  }
+}
+
+.envelope-3d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform: rotateY(-8deg) rotateX(5deg);
+  transition: transform 0.8s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.envelope-3d:hover {
+  transform: rotateY(-3deg) rotateX(2deg) scale(1.03);
+}
+
+.env-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(145deg, #e2e8f0 0%, #cbd5e1 100%);
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.env-front {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 55%;
+  background: linear-gradient(180deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-radius: 0 0 12px 12px;
+  clip-path: polygon(0 35%, 50% 0, 100% 35%, 100% 100%, 0 100%);
+  z-index: 3;
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.env-flap {
+  position: absolute;
+  top: 0;
+  width: 100%;
+  height: 55%;
+  background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
+  clip-path: polygon(0 0, 50% 100%, 100% 0);
+  transform-origin: top center;
+  transition: transform 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 4;
+  backface-visibility: hidden;
+}
+
+.envelope-3d.open .env-flap {
+  transform: rotateX(-180deg);
+  z-index: 1;
+}
+
+.env-letter {
+  position: absolute;
+  width: 85%;
+  height: 75%;
+  left: 7.5%;
+  top: 12%;
+  background: white;
+  border-radius: 8px;
+  z-index: 2;
+  transition: transform 0.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.3s;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.envelope-3d.open .env-letter {
+  transform: translateY(-55%);
+}
+
+.env-letter-inner {
+  padding: 16px;
+}
+
+/* ─── Homepage: glass feature cards ─── */
+.glass-feature {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+  transition: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.glass-feature:hover {
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.1);
+  transform: translateY(-4px);
+}
+
+/* ─── Homepage: step connector line ─── */
+.step-line {
+  position: absolute;
+  left: 19px;
+  top: 48px;
+  bottom: -32px;
+  width: 2px;
+  background: linear-gradient(180deg, var(--primary) 0%, transparent 100%);
+}
+
+/* ─── Homepage: pricing cards ─── */
+.pricing-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 20px;
+  transition: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
+}
+
+.pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
+}
+
+.pricing-card-featured {
+  background: rgba(255, 255, 255, 0.8);
+  border: 2px solid var(--primary);
+  box-shadow: 0 8px 40px rgba(37, 99, 235, 0.12);
+}
+
+.pricing-card-featured:hover {
+  box-shadow: 0 16px 50px rgba(37, 99, 235, 0.18);
+}
