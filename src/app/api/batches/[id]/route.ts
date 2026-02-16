@@ -18,14 +18,15 @@ export async function GET(
     include: {
       jobs: {
         orderBy: { createdAt: "asc" },
-        select: {
-          id: true,
-          linkedinUrl: true,
-          personName: true,
-          status: true,
-          recommendation: true,
-          confidence: true,
-          createdAt: true,
+        include: {
+          events: {
+            where: { type: { in: ["tool_call_start", "tool_call_result", "decision_accepted", "complete", "error"] } },
+            orderBy: { createdAt: "asc" },
+            select: { type: true, data: true },
+          },
+          contact: {
+            select: { id: true },
+          },
         },
       },
     },
@@ -35,7 +36,33 @@ export async function GET(
     return NextResponse.json({ error: "Batch not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ batch });
+  // Transform: include parsed event data for progress tracking
+  const batchResponse = {
+    ...batch,
+    jobs: batch.jobs.map((job) => ({
+      id: job.id,
+      linkedinUrl: job.linkedinUrl,
+      personName: job.personName,
+      status: job.status,
+      recommendation: job.recommendation,
+      confidence: job.confidence,
+      createdAt: job.createdAt,
+      contactId: job.contact?.id || null,
+      stages: job.events.map((e) => ({
+        type: e.type,
+        toolName: (() => {
+          try {
+            const d = JSON.parse(e.data);
+            return d.toolName || null;
+          } catch {
+            return null;
+          }
+        })(),
+      })),
+    })),
+  };
+
+  return NextResponse.json({ batch: batchResponse });
 }
 
 export async function PATCH(

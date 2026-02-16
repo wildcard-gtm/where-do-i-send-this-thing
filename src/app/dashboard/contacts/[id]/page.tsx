@@ -46,6 +46,27 @@ const recommendationColors: Record<string, string> = {
   BOTH: "text-accent bg-accent-light",
 };
 
+function simpleMarkdown(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/^### (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, (match) => {
+      return `<ul>${match}</ul>`;
+    })
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/\n/g, "<br>")
+    .replace(/^/, "<p>")
+    .replace(/$/, "</p>");
+}
+
 export default function ContactDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -197,13 +218,14 @@ export default function ContactDetailPage() {
               </div>
             )}
 
-            {/* Reasoning */}
+            {/* Report */}
             {decision?.reasoning && (
               <div className="glass-card rounded-2xl p-6">
-                <h3 className="text-sm font-medium text-foreground mb-3">Agent Reasoning</h3>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
-                  {decision.reasoning}
-                </p>
+                <h3 className="text-sm font-medium text-foreground mb-3">Report</h3>
+                <div
+                  className="text-sm text-muted-foreground leading-relaxed space-y-2 [&_strong]:text-foreground [&_strong]:font-semibold [&_h1]:text-foreground [&_h1]:font-bold [&_h1]:text-base [&_h1]:mt-3 [&_h2]:text-foreground [&_h2]:font-semibold [&_h2]:text-sm [&_h2]:mt-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:py-0.5"
+                  dangerouslySetInnerHTML={{ __html: simpleMarkdown(decision.reasoning) }}
+                />
               </div>
             )}
           </div>
@@ -262,17 +284,26 @@ export default function ContactDetailPage() {
 
             {contact.job && (
               <div className="glass-card rounded-2xl p-5">
-                <h3 className="text-sm font-medium text-foreground mb-3">Scan History</h3>
-                <button
-                  onClick={() =>
-                    router.push(
-                      `/dashboard/batches/${contact.job!.batchId}/jobs/${contact.job!.id}`
-                    )
-                  }
-                  className="w-full text-left text-sm text-primary hover:text-primary-hover transition"
-                >
-                  View full agent activity &rarr;
-                </button>
+                <h3 className="text-sm font-medium text-foreground mb-3">Scan Info</h3>
+                <dl className="space-y-2 text-sm">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Status</dt>
+                    <dd className={`font-medium ${contact.job.status === "complete" ? "text-success" : contact.job.status === "failed" ? "text-danger" : "text-primary"}`}>
+                      {contact.job.status === "complete" ? "Completed" : contact.job.status === "failed" ? "Failed" : "Processing"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Scan</dt>
+                    <dd>
+                      <button
+                        onClick={() => router.push(`/dashboard/batches/${contact.job!.batchId}`)}
+                        className="text-primary hover:text-primary-hover text-sm transition"
+                      >
+                        View batch &rarr;
+                      </button>
+                    </dd>
+                  </div>
+                </dl>
               </div>
             )}
 

@@ -16,6 +16,12 @@ interface Contact {
   createdAt: string;
 }
 
+interface BatchOption {
+  id: string;
+  name: string | null;
+  createdAt: string;
+}
+
 const recommendationColors: Record<string, string> = {
   HOME: "text-success",
   OFFICE: "text-primary",
@@ -27,24 +33,28 @@ const filterTabs = ["all", "HOME", "OFFICE", "BOTH"];
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
+  const [batches, setBatches] = useState<BatchOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
+  const [batchFilter, setBatchFilter] = useState("all");
 
   useEffect(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (filter !== "all") params.set("recommendation", filter);
+    if (batchFilter !== "all") params.set("batchId", batchFilter);
     params.set("limit", "50");
 
     fetch(`/api/contacts?${params}`)
-      .then((res) => (res.ok ? res.json() : { contacts: [], total: 0 }))
+      .then((res) => (res.ok ? res.json() : { contacts: [], total: 0, batches: [] }))
       .then((data) => {
         setContacts(data.contacts || []);
         setTotal(data.total || 0);
+        if (data.batches) setBatches(data.batches);
         setLoading(false);
       });
-  }, [search, filter]);
+  }, [search, filter, batchFilter]);
 
   if (loading) {
     return (
@@ -65,8 +75,8 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
+      {/* Search + Scan Filter */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -79,6 +89,20 @@ export default function ContactsPage() {
             className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus-glow text-sm"
           />
         </div>
+        {batches.length > 0 && (
+          <select
+            value={batchFilter}
+            onChange={(e) => setBatchFilter(e.target.value)}
+            className="bg-card border border-border rounded-lg text-foreground text-sm px-3 py-2.5 focus-glow min-w-[160px]"
+          >
+            <option value="all">All scans</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name || new Date(b.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       {/* Filter tabs */}

@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { runAgentStreaming } from "@/agent/agent-streaming";
 import type { AgentStreamEvent } from "@/agent/agent-streaming";
 
-export const maxDuration = 300; // 5 minutes for long-running agent
+export const maxDuration = 600; // 10 minutes for thorough investigation
 
 export async function GET(
   _request: Request,
