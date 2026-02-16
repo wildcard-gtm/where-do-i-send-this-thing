@@ -65,11 +65,7 @@ export default function Sidebar({ isOpen, onClose, user }: SidebarProps) {
       {/* Logo */}
       <div className="flex items-center justify-between px-4 py-5 border-b border-sidebar-border">
         <Link href="/" className="flex items-center gap-2 overflow-hidden">
-          <div className="w-9 h-9 bg-primary rounded-xl flex items-center justify-center shrink-0">
-            <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
-            </svg>
-          </div>
+          <img src="/logo.png" alt="WDISTT" className="w-9 h-auto shrink-0" />
           <div className="lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap overflow-hidden">
             <span className="text-base font-bold text-foreground">WDISTT</span>
             <p className="text-[10px] text-muted-foreground leading-tight">Where Do I Send This Thing?</p>

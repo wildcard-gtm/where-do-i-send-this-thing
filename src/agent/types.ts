@@ -19,6 +19,8 @@ export interface AgentDecision {
   home_address?: AddressInfo;
   office_address?: AddressInfo;
   flags?: string[];
+  career_summary?: string;
+  profile_image_url?: string;
 }
 
 export interface AgentResult {

@@ -54,23 +54,23 @@ export default function EnvelopeHero() {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M13 10V3L4 14h7v7l9-11h-7z"
+                d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
               />
             </svg>
-            AI-Powered Address Intelligence
+            Verified Address Intelligence
           </motion.div>
 
           <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white leading-tight mb-6">
-            Know Exactly{" "}
+            The Right Address.{" "}
             <span className="bg-gradient-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent">
-              Where to Send It
+              Every Time.
             </span>
           </h1>
 
           <p className="text-base md:text-lg text-white/70 max-w-lg mb-8 leading-relaxed mx-auto lg:mx-0">
-            Turn LinkedIn profiles into verified delivery addresses. Our AI
-            researches multiple sources and recommends HOME vs OFFICE for your
-            campaigns, gifts, and outreach.
+            Turn any LinkedIn profile into a verified mailing address.
+            We cross-reference multiple data sources to tell you exactly where
+            to send — home or office — with confidence scores you can trust.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">

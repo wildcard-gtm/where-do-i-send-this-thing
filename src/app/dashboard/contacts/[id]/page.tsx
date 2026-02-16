@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import ContactChat from "@/components/contacts/contact-chat";
 
 const MapView = dynamic(() => import("@/components/results/map-view"), {
@@ -24,6 +26,8 @@ interface Contact {
   linkedinUrl: string;
   company: string | null;
   title: string | null;
+  profileImageUrl: string | null;
+  careerSummary: string | null;
   homeAddress: string | null;
   officeAddress: string | null;
   recommendation: string | null;
@@ -46,26 +50,7 @@ const recommendationColors: Record<string, string> = {
   BOTH: "text-accent bg-accent-light",
 };
 
-function simpleMarkdown(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/^### (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/^- (.+)$/gm, "<li>$1</li>")
-    .replace(/^(\d+)\. (.+)$/gm, "<li>$2</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, (match) => {
-      return `<ul>${match}</ul>`;
-    })
-    .replace(/\n\n/g, "</p><p>")
-    .replace(/\n/g, "<br>")
-    .replace(/^/, "<p>")
-    .replace(/$/, "</p>");
-}
+const markdownProseClasses = "prose prose-sm max-w-none text-muted-foreground prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-p:leading-relaxed prose-ul:my-1.5 prose-ul:pl-4 prose-ol:my-1.5 prose-ol:pl-4 prose-li:my-0.5 prose-li:leading-relaxed prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground prose-code:bg-muted/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none prose-pre:bg-muted/50 prose-pre:rounded-lg prose-pre:my-2 prose-a:text-primary prose-a:no-underline hover:prose-a:underline";
 
 export default function ContactDetailPage() {
   const params = useParams();
@@ -114,9 +99,26 @@ export default function ContactDetailPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold text-primary">
-            {contact.name.charAt(0).toUpperCase()}
-          </div>
+          <button
+            onClick={() => router.push("/dashboard/contacts")}
+            className="text-muted-foreground hover:text-foreground transition shrink-0"
+            title="Back to contacts"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+          {contact.profileImageUrl ? (
+            <img
+              src={contact.profileImageUrl}
+              alt={contact.name}
+              className="w-14 h-14 rounded-full object-cover border-2 border-border"
+            />
+          ) : (
+            <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-xl font-bold text-primary">
+              {contact.name.charAt(0).toUpperCase()}
+            </div>
+          )}
           <div>
             <h1 className="text-2xl font-bold text-foreground">{contact.name}</h1>
             <p className="text-sm text-muted-foreground">
@@ -124,29 +126,36 @@ export default function ContactDetailPage() {
             </p>
           </div>
         </div>
-        <button
-          onClick={() => router.push("/dashboard/contacts")}
-          className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2.5 rounded-lg font-medium transition text-sm"
-        >
-          Back
-        </button>
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 mb-6 border-b border-border/50">
-        {(["overview", "chat"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-5 py-2.5 text-sm font-medium transition capitalize border-b-2 -mb-px ${
-              tab === t
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {t === "chat" ? "AI Chat" : t}
-          </button>
-        ))}
+        <button
+          onClick={() => setTab("overview")}
+          className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
+            tab === "overview"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          Overview
+        </button>
+        <button
+          onClick={() => setTab("chat")}
+          className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
+            tab === "chat"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+          </svg>
+          Chat
+        </button>
       </div>
 
       {tab === "overview" ? (
@@ -218,14 +227,27 @@ export default function ContactDetailPage() {
               </div>
             )}
 
+            {/* Career Summary */}
+            {contact.careerSummary && (
+              <div className="glass-card rounded-2xl p-6">
+                <h3 className="text-sm font-medium text-foreground mb-3">Background</h3>
+                <div className={markdownProseClasses}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {contact.careerSummary}
+                  </ReactMarkdown>
+                </div>
+              </div>
+            )}
+
             {/* Report */}
             {decision?.reasoning && (
               <div className="glass-card rounded-2xl p-6">
                 <h3 className="text-sm font-medium text-foreground mb-3">Report</h3>
-                <div
-                  className="text-sm text-muted-foreground leading-relaxed space-y-2 [&_strong]:text-foreground [&_strong]:font-semibold [&_h1]:text-foreground [&_h1]:font-bold [&_h1]:text-base [&_h1]:mt-3 [&_h2]:text-foreground [&_h2]:font-semibold [&_h2]:text-sm [&_h2]:mt-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:py-0.5"
-                  dangerouslySetInnerHTML={{ __html: simpleMarkdown(decision.reasoning) }}
-                />
+                <div className={markdownProseClasses}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {decision.reasoning}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
           </div>

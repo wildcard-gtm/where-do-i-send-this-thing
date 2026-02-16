@@ -26,8 +26,8 @@ const features = [
         />
       </svg>
     ),
-    title: "LinkedIn Intake",
-    desc: "Paste LinkedIn URLs or upload a CSV. We extract profile data and start the research process automatically.",
+    title: "LinkedIn-to-Address",
+    desc: "Paste LinkedIn profile URLs or upload a CSV. We validate, deduplicate, and begin the verification process instantly.",
     color: "from-blue-500 to-blue-600",
     bg: "bg-blue-50",
     text: "text-blue-600",
@@ -44,12 +44,12 @@ const features = [
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeWidth={1.5}
-          d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
         />
       </svg>
     ),
-    title: "AI Discovery",
-    desc: "Our AI agent queries 5+ data sources including people search, property records, and web intelligence.",
+    title: "Multi-Source Verification",
+    desc: "We cross-reference 5+ data sources including people search databases, property records, and public records to verify every address.",
     color: "from-violet-500 to-violet-600",
     bg: "bg-violet-50",
     text: "text-violet-600",
@@ -70,8 +70,8 @@ const features = [
         />
       </svg>
     ),
-    title: "HOME vs OFFICE",
-    desc: "Smart recommendation on whether to send to home or office, based on work patterns and location data.",
+    title: "Home vs Office",
+    desc: "Get a clear recommendation on where to send — home or office — based on verified work patterns and location intelligence.",
     color: "from-emerald-500 to-emerald-600",
     bg: "bg-emerald-50",
     text: "text-emerald-600",
@@ -92,8 +92,8 @@ const features = [
         />
       </svg>
     ),
-    title: "Batch Export",
-    desc: "Process hundreds of contacts at once and export verified addresses as CSV, ready for your campaigns.",
+    title: "Batch Processing",
+    desc: "Process hundreds of contacts at once with real-time progress tracking. Export verified addresses as CSV, ready for your campaigns.",
     color: "from-amber-500 to-amber-600",
     bg: "bg-amber-50",
     text: "text-amber-600",
@@ -102,27 +102,27 @@ const features = [
 
 const steps = [
   {
-    title: "Upload LinkedIn URLs",
-    desc: "Paste a list of LinkedIn profile URLs or drag-and-drop a CSV file. Our system validates and deduplicates URLs automatically.",
+    title: "Upload Your Contacts",
+    desc: "Paste LinkedIn profile URLs or drag-and-drop a CSV file. Our system validates and deduplicates your list automatically.",
   },
   {
-    title: "AI Agent Investigates",
-    desc: "Our AI agent researches each person across multiple databases, property records, and web sources to build a complete address profile.",
+    title: "We Research & Verify",
+    desc: "Each contact is cross-referenced across multiple databases, property records, and public sources to build a complete, verified address profile.",
   },
   {
-    title: "Review Results",
-    desc: "See confidence-scored addresses with HOME vs OFFICE recommendations, interactive maps, and full agent reasoning for each contact.",
+    title: "Review Your Results",
+    desc: "See confidence-scored addresses with home vs office recommendations, interactive maps, and a detailed research report for each contact.",
   },
   {
-    title: "Export & Ship",
-    desc: "Download your verified addresses as CSV. Addresses are ready for mail campaigns, gift sending, or meeting scheduling.",
+    title: "Export & Send",
+    desc: "Download verified addresses as CSV, ready for direct mail campaigns, corporate gifting, event invitations, or meeting scheduling.",
   },
 ];
 
 const pricingPlans = [
   {
     name: "Starter",
-    desc: "For trying it out",
+    desc: "For individuals getting started",
     price: "Free",
     period: "",
     features: ["25 lookups/month", "CSV export", "Email support"],
@@ -138,7 +138,7 @@ const pricingPlans = [
     features: [
       "500 lookups/month",
       "Contact database",
-      "AI chat per contact",
+      "Chat per contact",
       "Priority support",
     ],
     cta: "Start Free Trial",
@@ -166,7 +166,7 @@ const faqItems = [
   {
     question: "How accurate are the addresses?",
     answer:
-      "Our system cross-references multiple sources for each lookup and assigns a confidence score. Most results come back with 85%+ confidence. You can see the confidence score for every address before using it.",
+      "We cross-reference multiple data sources for every lookup and assign a confidence score. Most results come back with 85%+ confidence. You can review the confidence score and detailed report for each address before using it.",
   },
   {
     question: "Is my data private and secure?",
@@ -176,22 +176,22 @@ const faqItems = [
   {
     question: "What are the main use cases?",
     answer:
-      "Teams use WDISTT for direct mail campaigns, sending corporate gifts, holiday cards, event invitations, and booking in-person meetings. Anywhere you need a verified mailing address for a professional contact.",
+      "Teams use WDISTT for direct mail campaigns, corporate gifting, holiday cards, event invitations, legal service of process, and booking in-person meetings. Anywhere you need a verified mailing address for a professional contact.",
   },
   {
-    question: "Why HOME vs OFFICE — what's the difference?",
+    question: "Why Home vs Office?",
     answer:
-      "Depending on the situation, mail or gifts land better at one address over the other. A holiday gift is more personal at home, while a business proposal fits an office. Our AI recommends the best option so your delivery actually gets noticed.",
+      "The right address depends on the situation. A holiday gift lands better at a home address, while a business proposal fits an office. We analyze each contact's profile and recommend the best option so your delivery actually gets noticed.",
   },
   {
     question: "How many contacts can I process at once?",
     answer:
-      "You can upload batches of any size — just paste LinkedIn URLs or upload a CSV. Results are delivered in real-time as each contact is processed.",
+      "You can upload batches of any size — just paste LinkedIn URLs or upload a CSV. Results are delivered in real-time with progress tracking as each contact is processed.",
   },
   {
     question: "Can I export the results?",
     answer:
-      "Yes. Every batch can be exported as a CSV with all addresses, recommendations, and confidence scores included. Easy to import into your CRM or mailing tool.",
+      "Yes. Every batch can be exported as a CSV with all addresses, recommendations, and confidence scores included. Easy to import into your CRM, direct mail platform, or gifting tool.",
   },
 ];
 
@@ -215,11 +215,11 @@ export default function HomepageContent() {
           <ScrollReveal>
             <div className="text-center mb-16">
               <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-                Everything You Need to Reach the Right Person
+                Verified Addresses, Delivered with Confidence
               </h2>
               <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-                From LinkedIn URL to verified delivery address in minutes, not
-                hours.
+                From LinkedIn profile to verified mailing address in minutes —
+                not hours of manual research.
               </p>
             </div>
           </ScrollReveal>
@@ -258,7 +258,7 @@ export default function HomepageContent() {
                 How It Works
               </h2>
               <p className="text-muted-foreground text-lg">
-                Four simple steps from LinkedIn URL to verified delivery
+                Four steps from LinkedIn profile to verified delivery
                 address.
               </p>
             </div>
@@ -414,11 +414,11 @@ export default function HomepageContent() {
 
               <div className="relative z-10">
                 <h2 className="text-2xl md:text-3xl font-bold text-white mb-4">
-                  Ready to improve your delivery rate?
+                  Stop guessing. Start delivering.
                 </h2>
                 <p className="text-white/80 text-lg mb-8 max-w-xl mx-auto">
-                  Stop guessing where to send mail. Start reaching the right
-                  people at the right address.
+                  Join teams that trust WDISTT to find verified mailing
+                  addresses and reach the right people at the right place.
                 </p>
                 <Link
                   href="/dashboard"

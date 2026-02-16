@@ -15,6 +15,7 @@
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.987.0",
     "@prisma/client": "^5.22.0",
+    "@tailwindcss/typography": "^0.5.19",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.2.4",
@@ -25,7 +26,9 @@
     "prisma": "^5.22.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

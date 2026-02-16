@@ -62,6 +62,7 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
               state: profile.state,
               country: profile.country,
               about: profile.about?.slice(0, 500),
+              avatar: (profile as Record<string, unknown>).avatar as string | undefined,
               experience: (profile.experience ?? []).slice(0, 5).map(e => ({
                 company: e.company,
                 title: e.title,

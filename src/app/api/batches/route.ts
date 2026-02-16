@@ -9,7 +9,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { urls, name } = await request.json();
+    const { urls, name, autoProcess } = await request.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
@@ -30,6 +30,24 @@ export async function POST(request: Request) {
       },
       include: { jobs: true },
     });
+
+    // Auto-start processing if toggle is on
+    if (autoProcess) {
+      await prisma.batch.update({
+        where: { id: batch.id },
+        data: { status: "processing" },
+      });
+
+      const { processJobsSequentially } = await import(
+        "@/app/api/batches/[id]/start/route"
+      );
+
+      processJobsSequentially(
+        batch.id,
+        user.id,
+        batch.jobs.map((j) => ({ id: j.id, linkedinUrl: j.linkedinUrl, status: j.status }))
+      ).catch(console.error);
+    }
 
     return NextResponse.json({
       batchId: batch.id,

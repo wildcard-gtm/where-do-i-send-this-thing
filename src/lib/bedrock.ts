@@ -21,15 +21,26 @@ export function createBedrockClient(): BedrockRuntimeClient {
   });
 }
 
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+export interface ChatMessage {
+  role: string;
+  content: string | ContentBlock[];
+}
+
 export async function chatWithClaude(
   systemPrompt: string,
-  messages: Array<{ role: string; content: string }>
+  messages: ChatMessage[]
 ): Promise<string> {
   const client = createBedrockClient();
 
   const claudeMessages = messages.map((m) => ({
     role: m.role as "user" | "assistant",
-    content: [{ type: "text" as const, text: m.content }],
+    content: typeof m.content === "string"
+      ? [{ type: "text" as const, text: m.content }]
+      : m.content,
   }));
 
   const command = new InvokeModelCommand({
@@ -38,7 +49,7 @@ export async function chatWithClaude(
     accept: "application/json",
     body: JSON.stringify({
       anthropic_version: "bedrock-2023-05-31",
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: systemPrompt,
       messages: claudeMessages,
     }),

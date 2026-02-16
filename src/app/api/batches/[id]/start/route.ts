@@ -43,7 +43,7 @@ export async function POST(
   return NextResponse.json({ status: "started" });
 }
 
-async function processJobsSequentially(
+export async function processJobsSequentially(
   batchId: string,
   userId: string,
   jobs: Array<{ id: string; linkedinUrl: string; status: string }>
@@ -103,6 +103,8 @@ async function processJobsSequentially(
                 confidence: decision.confidence,
                 homeAddress: decision.home_address?.address || existingContact.homeAddress,
                 officeAddress: decision.office_address?.address || existingContact.officeAddress,
+                profileImageUrl: decision.profile_image_url || existingContact.profileImageUrl,
+                careerSummary: decision.career_summary || existingContact.careerSummary,
                 lastScannedAt: new Date(),
                 jobId: job.id,
               },
@@ -115,6 +117,8 @@ async function processJobsSequentially(
                 linkedinUrl: job.linkedinUrl,
                 homeAddress: decision.home_address?.address || null,
                 officeAddress: decision.office_address?.address || null,
+                profileImageUrl: decision.profile_image_url || null,
+                careerSummary: decision.career_summary || null,
                 recommendation: decision.recommendation,
                 confidence: decision.confidence,
                 lastScannedAt: new Date(),

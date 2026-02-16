@@ -127,6 +127,8 @@ STEP 4 — DECISION
   - Only submit when confidence ≥ 76%
   - You MUST include addresses with full street, city, state, ZIP
   - Reasoning must be written as a CLIENT-FACING REPORT (see below)
+  - Include career_summary: a 2-3 sentence summary of the person's career trajectory and current role (based on LinkedIn enrichment data)
+  - Include profile_image_url: the avatar URL returned from the LinkedIn enrichment step (if available)
 
 ═══════════════════════════════════════════
 DECISION LOGIC:

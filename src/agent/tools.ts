@@ -131,6 +131,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           items: { type: 'string' },
           description: 'Notable flags or caveats (e.g., "common name", "international address")',
         },
+        career_summary: {
+          type: 'string',
+          description: 'Brief 2-3 sentence summary of the person\'s career trajectory and current role',
+        },
+        profile_image_url: {
+          type: 'string',
+          description: 'URL of the person\'s profile picture from LinkedIn enrichment (the avatar field)',
+        },
       },
       required: ['recommendation', 'confidence', 'reasoning'],
     },
