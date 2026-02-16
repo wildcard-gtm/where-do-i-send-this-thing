@@ -11,34 +11,34 @@ const navLinks = [
 
 const faqItems = [
   {
-    question: "How does address verification work?",
+    question: "How accurate are the addresses?",
     answer:
-      "Our AI agent starts with a LinkedIn profile URL and cross-references multiple data sources including people search databases, property records, and web search to find and verify home and office addresses. Each address is scored for confidence based on the number of corroborating sources.",
+      "Our system cross-references multiple sources for each lookup and assigns a confidence score. Most results come back with 85%+ confidence. You can see the confidence score for every address before using it.",
   },
   {
-    question: "What data sources do you use?",
+    question: "Is my data private and secure?",
     answer:
-      "We use a combination of LinkedIn profile enrichment, people search databases (Endato), property verification (PropMix), web search (Exa AI), and Google Distance Matrix for commute analysis. All data is processed through AI to provide the most accurate recommendation.",
+      "Absolutely. All lookups are stored in your private workspace and are never shared with other users. We use encryption in transit and at rest. Your contact data belongs to you.",
   },
   {
-    question: "How do HOME vs OFFICE recommendations work?",
+    question: "What are the main use cases?",
     answer:
-      "Our AI evaluates multiple factors: whether the person works remotely, the distance between their home and office, property records, and role type. For remote workers, HOME is typically recommended. For in-office workers in corporate settings, OFFICE may be better. BOTH is suggested when either address has similar delivery likelihood.",
+      "Teams use WDISTT for direct mail campaigns, sending corporate gifts, holiday cards, event invitations, and booking in-person meetings. Anywhere you need a verified mailing address for a professional contact.",
   },
   {
-    question: "Is my data secure?",
+    question: "Why HOME vs OFFICE — what's the difference?",
     answer:
-      "Yes. All data is processed securely and stored in your private workspace. We never share your lookup data with other users. Contact information is only accessible to your team members.",
+      "Depending on the situation, mail or gifts land better at one address over the other. A holiday gift is more personal at home, while a business proposal fits an office. Our AI recommends the best option so your delivery actually gets noticed.",
   },
   {
-    question: "Can I export results?",
+    question: "How many contacts can I process at once?",
     answer:
-      "Absolutely. Every batch scan can be exported as a CSV file containing all discovered addresses, recommendations, confidence scores, and reasoning. The export includes both home and office addresses for each contact.",
+      "You can upload batches of any size — just paste LinkedIn URLs or upload a CSV. Results are delivered in real-time as each contact is processed.",
   },
   {
-    question: "How many lookups can I do at once?",
+    question: "Can I export the results?",
     answer:
-      "You can upload batches of any size. Each LinkedIn URL is processed sequentially by our AI agent. Processing time depends on batch size, but each lookup typically takes 30-60 seconds as the agent researches multiple sources.",
+      "Yes. Every batch can be exported as a CSV with all addresses, recommendations, and confidence scores included. Easy to import into your CRM or mailing tool.",
   },
 ];
 
@@ -100,10 +100,7 @@ export default function Home() {
             AI-Powered Address Intelligence
           </div>
           <h1 className="text-4xl md:text-6xl font-bold text-foreground leading-tight mb-6">
-            Know Exactly{" "}
-            <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Where to Send It
-            </span>
+            Know Exactly <span className="bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent inline">Where to Send It</span>
           </h1>
           <p className="text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
             Turn LinkedIn profiles into verified delivery addresses. Our AI agent
