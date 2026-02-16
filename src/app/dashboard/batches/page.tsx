@@ -86,7 +86,7 @@ export default function BatchesPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search scans..."
-            className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
+            className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus-glow text-sm"
           />
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function BatchesPage() {
 
       {/* Batch list */}
       {filtered.length === 0 ? (
-        <div className="bg-card rounded-xl border border-border p-12 text-center">
+        <div className="glass-card rounded-2xl p-12 text-center">
           <p className="text-muted-foreground">
             {search ? "No scans match your search." : "No scans found."}
           </p>
@@ -125,7 +125,7 @@ export default function BatchesPage() {
             return (
               <div
                 key={batch.id}
-                className="bg-card rounded-xl border border-border p-5 cursor-pointer hover:border-primary/30 transition"
+                className="glass-card glass-card-hover rounded-2xl p-5 cursor-pointer"
                 onClick={() => router.push(`/dashboard/batches/${batch.id}`)}
               >
                 <div className="flex items-center justify-between">
@@ -157,9 +157,9 @@ export default function BatchesPage() {
                   </div>
                 </div>
                 {total > 0 && (
-                  <div className="mt-3 w-full bg-border rounded-full h-1.5">
+                  <div className="mt-3 w-full bg-muted rounded-full h-1.5">
                     <div
-                      className="bg-primary h-1.5 rounded-full transition-all"
+                      className="bg-primary h-1.5 rounded-full transition-all duration-700 ease-out"
                       style={{ width: `${progress}%` }}
                     />
                   </div>

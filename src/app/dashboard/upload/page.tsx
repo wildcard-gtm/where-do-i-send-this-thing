@@ -75,7 +75,7 @@ export default function UploadPage() {
             type="text"
             value={batchName}
             onChange={(e) => setBatchName(e.target.value)}
-            className="w-full px-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
+            className="w-full px-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus-glow text-sm"
             placeholder="e.g., Q1 Marketing Prospects"
           />
         </div>

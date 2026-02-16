@@ -118,7 +118,7 @@ export default async function DashboardPage() {
         {stats.map((stat) => (
           <div
             key={stat.label}
-            className="bg-card border border-border rounded-xl p-5"
+            className="glass-card glass-card-hover rounded-2xl p-5"
           >
             <div className="flex items-center gap-3 mb-3">
               <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
@@ -146,7 +146,7 @@ export default async function DashboardPage() {
         </div>
 
         {batches.length === 0 ? (
-          <div className="bg-card rounded-xl border border-border p-12 text-center">
+          <div className="glass-card rounded-2xl p-12 text-center">
             <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
               <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -181,7 +181,7 @@ export default async function DashboardPage() {
                 <Link
                   key={batch.id}
                   href={`/dashboard/batches/${batch.id}`}
-                  className="block bg-card rounded-xl border border-border p-5 hover:border-primary/30 transition"
+                  className="block glass-card glass-card-hover rounded-2xl p-5"
                 >
                   <div className="flex items-center justify-between">
                     <div>
@@ -216,9 +216,9 @@ export default async function DashboardPage() {
                   </div>
 
                   {total > 0 && (
-                    <div className="mt-3 w-full bg-border rounded-full h-1.5">
+                    <div className="mt-3 w-full bg-muted rounded-full h-1.5">
                       <div
-                        className="bg-primary h-1.5 rounded-full transition-all"
+                        className="bg-primary h-1.5 rounded-full transition-all duration-700 ease-out"
                         style={{ width: `${progress}%` }}
                       />
                     </div>
@@ -242,7 +242,7 @@ export default async function DashboardPage() {
               View All
             </Link>
           </div>
-          <div className="bg-card rounded-xl border border-border divide-y divide-border">
+          <div className="glass-card rounded-2xl divide-y divide-border/50">
             {recentContacts.map((contact) => (
               <Link
                 key={contact.id}

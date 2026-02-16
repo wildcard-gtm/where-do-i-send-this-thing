@@ -6,7 +6,7 @@ interface HeaderProps {
 
 export default function Header({ onMenuClick }: HeaderProps) {
   return (
-    <header className="h-14 bg-header-bg border-b border-border px-4 md:px-6 flex items-center gap-4">
+    <header className="h-14 glass-header border-b border-border px-4 md:px-6 flex items-center gap-4">
       {/* Hamburger - mobile only */}
       <button
         onClick={onMenuClick}

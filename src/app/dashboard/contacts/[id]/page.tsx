@@ -112,7 +112,7 @@ export default function ContactDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-border">
+      <div className="flex gap-1 mb-6 border-b border-border/50">
         {(["overview", "chat"] as const).map((t) => (
           <button
             key={t}
@@ -134,7 +134,7 @@ export default function ContactDetailPage() {
           <div className="lg:col-span-2 space-y-6">
             {/* Recommendation */}
             {contact.recommendation && (
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div className="glass-card rounded-2xl p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-sm font-medium text-foreground">Recommendation</h3>
                   {contact.confidence !== null && (
@@ -164,7 +164,7 @@ export default function ContactDetailPage() {
             {/* Addresses */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {contact.homeAddress && (
-                <div className="bg-card rounded-xl border border-border p-5">
+                <div className="glass-card rounded-2xl p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <svg className="w-4 h-4 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -175,7 +175,7 @@ export default function ContactDetailPage() {
                 </div>
               )}
               {contact.officeAddress && (
-                <div className="bg-card rounded-xl border border-border p-5">
+                <div className="glass-card rounded-2xl p-5">
                   <div className="flex items-center gap-2 mb-3">
                     <svg className="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -189,7 +189,7 @@ export default function ContactDetailPage() {
 
             {/* Map */}
             {(contact.homeAddress || contact.officeAddress) && (
-              <div className="bg-card rounded-xl border border-border p-4">
+              <div className="glass-card rounded-2xl p-4">
                 <MapView
                   homeAddress={contact.homeAddress || undefined}
                   officeAddress={contact.officeAddress || undefined}
@@ -199,7 +199,7 @@ export default function ContactDetailPage() {
 
             {/* Reasoning */}
             {decision?.reasoning && (
-              <div className="bg-card rounded-xl border border-border p-6">
+              <div className="glass-card rounded-2xl p-6">
                 <h3 className="text-sm font-medium text-foreground mb-3">Agent Reasoning</h3>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap leading-relaxed">
                   {decision.reasoning}
@@ -210,7 +210,7 @@ export default function ContactDetailPage() {
 
           {/* Right column - Details */}
           <div className="space-y-6">
-            <div className="bg-card rounded-xl border border-border p-5">
+            <div className="glass-card rounded-2xl p-5">
               <h3 className="text-sm font-medium text-foreground mb-4">Details</h3>
               <dl className="space-y-3">
                 {contact.email && (
@@ -261,7 +261,7 @@ export default function ContactDetailPage() {
             </div>
 
             {contact.job && (
-              <div className="bg-card rounded-xl border border-border p-5">
+              <div className="glass-card rounded-2xl p-5">
                 <h3 className="text-sm font-medium text-foreground mb-3">Scan History</h3>
                 <button
                   onClick={() =>
@@ -277,7 +277,7 @@ export default function ContactDetailPage() {
             )}
 
             {contact.notes && (
-              <div className="bg-card rounded-xl border border-border p-5">
+              <div className="glass-card rounded-2xl p-5">
                 <h3 className="text-sm font-medium text-foreground mb-3">Notes</h3>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                   {contact.notes}

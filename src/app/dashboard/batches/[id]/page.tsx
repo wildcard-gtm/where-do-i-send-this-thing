@@ -153,14 +153,14 @@ export default function BatchDetailPage() {
       </div>
 
       {/* Progress */}
-      <div className="bg-card rounded-xl border border-border p-6 mb-6">
+      <div className="glass-card rounded-2xl p-6 mb-6">
         <div className="flex items-center justify-between mb-3">
           <span className="text-sm text-foreground font-medium">Progress</span>
           <span className="text-sm text-muted-foreground">
             {completed}/{total} complete ({progress}%)
           </span>
         </div>
-        <div className="w-full bg-border rounded-full h-2">
+        <div className="w-full bg-muted rounded-full h-2">
           <div
             className="bg-primary h-2 rounded-full transition-all duration-500"
             style={{ width: `${progress}%` }}
@@ -169,10 +169,10 @@ export default function BatchDetailPage() {
       </div>
 
       {/* Jobs Table - Desktop */}
-      <div className="hidden lg:block bg-card rounded-xl border border-border overflow-hidden">
+      <div className="hidden lg:block glass-card rounded-2xl overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-border">
+            <tr className="border-b border-border/50">
               <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-3">
                 LinkedIn URL
               </th>
@@ -268,7 +268,7 @@ export default function BatchDetailPage() {
         {batch.jobs.map((job) => (
           <div
             key={job.id}
-            className="bg-card rounded-xl border border-border p-4 cursor-pointer hover:border-primary/30 transition"
+            className="glass-card glass-card-hover rounded-2xl p-4 cursor-pointer"
             onClick={() =>
               router.push(`/dashboard/batches/${batchId}/jobs/${job.id}`)
             }

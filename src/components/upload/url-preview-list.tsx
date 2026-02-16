@@ -31,7 +31,7 @@ export default function UrlPreviewList({
         )}
       </div>
 
-      <div className="bg-card rounded-lg border border-border max-h-64 overflow-y-auto divide-y divide-border">
+      <div className="glass-card rounded-lg max-h-64 overflow-y-auto divide-y divide-border/50">
         {urls.map((url, i) => {
           const valid = isValidLinkedInUrl(url);
           return (

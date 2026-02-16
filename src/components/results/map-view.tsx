@@ -91,12 +91,12 @@ export default function MapView({ homeAddress, officeAddress }: MapViewProps) {
   }, [homeAddress, officeAddress]);
 
   if (loading) {
-    return <div className="h-64 bg-card rounded-lg animate-pulse" />;
+    return <div className="h-64 glass-card rounded-2xl animate-pulse" />;
   }
 
   if (!homeCoords && !officeCoords) {
     return (
-      <div className="h-64 bg-card rounded-lg flex items-center justify-center">
+      <div className="h-64 glass-card rounded-2xl flex items-center justify-center">
         <p className="text-sm text-muted-foreground">Could not geocode addresses</p>
       </div>
     );
@@ -108,7 +108,7 @@ export default function MapView({ homeAddress, officeAddress }: MapViewProps) {
   if (officeCoords) bounds.push(officeCoords);
 
   return (
-    <div className="h-64 rounded-lg overflow-hidden">
+    <div className="h-64 rounded-2xl overflow-hidden">
       <MapContainer
         center={center}
         zoom={bounds.length > 1 ? 5 : 12}
@@ -117,7 +117,7 @@ export default function MapView({ homeAddress, officeAddress }: MapViewProps) {
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
         {homeCoords && (
           <Marker position={homeCoords} icon={homeIcon}>

@@ -76,7 +76,7 @@ export default function ContactsPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, company, or email..."
-            className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-sm"
+            className="w-full pl-10 pr-4 py-2.5 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus-glow text-sm"
           />
         </div>
       </div>
@@ -100,7 +100,7 @@ export default function ContactsPage() {
 
       {/* Contact list */}
       {contacts.length === 0 ? (
-        <div className="bg-card rounded-xl border border-border p-12 text-center">
+        <div className="glass-card rounded-2xl p-12 text-center">
           <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
             <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -124,7 +124,7 @@ export default function ContactsPage() {
           )}
         </div>
       ) : (
-        <div className="bg-card rounded-xl border border-border divide-y divide-border overflow-hidden">
+        <div className="glass-card rounded-2xl divide-y divide-border/50 overflow-hidden">
           {contacts.map((contact) => (
             <Link
               key={contact.id}

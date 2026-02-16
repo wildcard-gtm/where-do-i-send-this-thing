@@ -17,7 +17,7 @@ export default function DashboardShell({ user, children }: DashboardShellProps) 
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -30,7 +30,7 @@ export default function DashboardShell({ user, children }: DashboardShellProps) 
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 p-4 md:p-6 overflow-auto">{children}</main>
+        <main className="flex-1 p-4 md:p-6 overflow-auto animate-fade-in-up">{children}</main>
       </div>
     </div>
   );

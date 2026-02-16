@@ -160,8 +160,8 @@ export default function JobDetailPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Activity Log */}
         <div className="lg:col-span-2">
-          <div className="bg-card rounded-xl border border-border overflow-hidden">
-            <div className="px-6 py-4 border-b border-border">
+          <div className="glass-card rounded-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-border/50">
               <h2 className="text-sm font-semibold text-foreground uppercase tracking-wider">
                 Agent Activity
               </h2>
@@ -194,7 +194,7 @@ export default function JobDetailPage() {
         <div className="space-y-6">
           {/* Decision Card */}
           {decision && (
-            <div className="bg-card rounded-xl border border-border p-6">
+            <div className="glass-card rounded-2xl p-6">
               <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">
                 Decision
               </h2>
@@ -251,7 +251,7 @@ export default function JobDetailPage() {
           {/* Map */}
           {decision &&
             (decision.home_address || decision.office_address) && (
-              <div className="bg-card rounded-xl border border-border p-4">
+              <div className="glass-card rounded-2xl p-4">
                 <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
                   Map
                 </h2>
@@ -264,7 +264,7 @@ export default function JobDetailPage() {
 
           {/* Full Reasoning */}
           {fullReasoning && (
-            <div className="bg-card rounded-xl border border-border p-6">
+            <div className="glass-card rounded-2xl p-6">
               <button
                 onClick={() => setShowReasoning(!showReasoning)}
                 className="flex items-center justify-between w-full text-sm font-semibold text-muted-foreground uppercase tracking-wider"
@@ -378,7 +378,7 @@ function AddressCard({
 
   return (
     <div
-      className={`bg-card rounded-xl border ${borderColor} p-6`}
+      className={`glass-card rounded-2xl border ${borderColor} p-6`}
     >
       <h3 className={`text-sm font-semibold ${labelColor} mb-3`}>
         {label}
@@ -463,7 +463,7 @@ function EventCard({ event }: { event: AgentEvent }) {
 
   return (
     <div
-      className={`bg-muted/50 rounded-lg p-3 border border-border ${
+      className={`glass-card rounded-xl p-3 ${
         hasExpandableContent ? "cursor-pointer" : ""
       }`}
       onClick={() => hasExpandableContent && setExpanded(!expanded)}

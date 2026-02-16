@@ -22,7 +22,7 @@ export default function UrlPasteInput({ onUrlsParsed }: UrlPasteInputProps) {
       <textarea
         onChange={handleChange}
         rows={8}
-        className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary font-mono text-sm resize-y"
+        className="w-full px-4 py-3 bg-card border border-border rounded-lg text-foreground placeholder-muted-foreground focus-glow font-mono text-sm resize-y"
         placeholder={`https://www.linkedin.com/in/john-doe\nhttps://www.linkedin.com/in/jane-smith\nhttps://www.linkedin.com/in/bob-johnson`}
       />
       <p className="text-xs text-muted-foreground mt-1">

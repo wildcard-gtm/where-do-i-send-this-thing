@@ -22,26 +22,26 @@
   --header-bg: #ffffff;
 }
 
-/* ─── Dashboard dark/purple theme ─── */
+/* ─── Dashboard glassmorphism theme ─── */
 .theme-dashboard {
-  --background: #0f0a1a;
-  --foreground: #f1f0f5;
-  --muted: #1a1230;
-  --muted-foreground: #a09bb5;
-  --border: #2d2545;
-  --primary: #8b5cf6;
-  --primary-hover: #7c3aed;
-  --primary-light: rgba(139, 92, 246, 0.15);
+  --background: #f0f2f8;
+  --foreground: #1a1a2e;
+  --muted: #e8ecf4;
+  --muted-foreground: #6b7280;
+  --border: rgba(255, 255, 255, 0.6);
+  --primary: #4f6ef7;
+  --primary-hover: #3d5ae0;
+  --primary-light: rgba(79, 110, 247, 0.1);
   --accent: #8b5cf6;
   --accent-light: rgba(139, 92, 246, 0.1);
-  --card: #16102a;
-  --card-hover: #1e1638;
+  --card: rgba(255, 255, 255, 0.7);
+  --card-hover: rgba(255, 255, 255, 0.85);
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
-  --sidebar-bg: #110d20;
-  --sidebar-border: #231d3a;
-  --header-bg: #130f24;
+  --sidebar-bg: rgba(255, 255, 255, 0.5);
+  --sidebar-border: rgba(255, 255, 255, 0.6);
+  --header-bg: rgba(255, 255, 255, 0.6);
 }
 
 @theme inline {
@@ -73,4 +73,70 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Glassmorphism utilities ─── */
+.glass-card {
+  background: var(--card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06);
+  border: 1px solid var(--border);
+  transition: all 0.3s ease;
+}
+
+.glass-card-hover:hover {
+  background: var(--card-hover);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.glass-sidebar {
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.03);
+}
+
+.glass-header {
+  background: var(--header-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.04);
+}
+
+.focus-glow:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.15);
+}
+
+/* ─── Animations ─── */
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
