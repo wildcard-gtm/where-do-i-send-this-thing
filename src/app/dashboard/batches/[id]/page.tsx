@@ -257,6 +257,11 @@ export default function BatchDetailPage() {
   const [restarting, setRestarting] = useState(false);
   const dispatchingRef = useRef(false);
 
+  // Reset dispatching ref when batchId changes (navigating between batches)
+  useEffect(() => {
+    dispatchingRef.current = false;
+  }, [batchId]);
+
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/batches/${batchId}`);
     if (res.ok) {
@@ -272,14 +277,17 @@ export default function BatchDetailPage() {
     return () => clearInterval(interval);
   }, [fetchBatch]);
 
-  // Auto-dispatch: if batch is "processing" but all jobs are still "pending",
-  // it means we need to kick off the jobs (e.g. autoProcess from upload page)
+  // Auto-dispatch: if batch is "processing" but all jobs are still "pending"
+  // (no running/complete/failed jobs), kick off dispatching
   useEffect(() => {
     if (!batch || dispatchingRef.current) return;
     if (batch.status !== "processing") return;
     const pendingJobs = batch.jobs.filter((j) => j.status === "pending");
-    const hasRunning = batch.jobs.some((j) => j.status === "running");
-    if (pendingJobs.length > 0 && !hasRunning) {
+    const hasActive = batch.jobs.some(
+      (j) => j.status === "running" || j.status === "complete" || j.status === "failed"
+    );
+    // Only auto-dispatch if ALL jobs are pending (fresh batch)
+    if (pendingJobs.length > 0 && pendingJobs.length === batch.jobs.length && !hasActive) {
       dispatchJobs(pendingJobs.map((j) => j.id));
     }
   }, [batch]); // eslint-disable-line react-hooks/exhaustive-deps
