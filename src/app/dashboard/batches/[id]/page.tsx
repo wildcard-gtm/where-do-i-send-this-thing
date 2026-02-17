@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -244,6 +244,8 @@ function LeadStatus({ job, onRetry }: { job: Job; onRetry: (jobId: string) => vo
 
 // ─── Main page ──────────────────────────────────────────
 
+const CONCURRENCY = 5;
+
 export default function BatchDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -253,6 +255,7 @@ export default function BatchDetailPage() {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const dispatchingRef = useRef(false);
 
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/batches/${batchId}`);
@@ -269,11 +272,78 @@ export default function BatchDetailPage() {
     return () => clearInterval(interval);
   }, [fetchBatch]);
 
+  // Auto-dispatch: if batch is "processing" but all jobs are still "pending",
+  // it means we need to kick off the jobs (e.g. autoProcess from upload page)
+  useEffect(() => {
+    if (!batch || dispatchingRef.current) return;
+    if (batch.status !== "processing") return;
+    const pendingJobs = batch.jobs.filter((j) => j.status === "pending");
+    const hasRunning = batch.jobs.some((j) => j.status === "running");
+    if (pendingJobs.length > 0 && !hasRunning) {
+      dispatchJobs(pendingJobs.map((j) => j.id));
+    }
+  }, [batch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Dispatch jobs via individual SSE streams with concurrency control
+  async function dispatchJobs(jobIds: string[]) {
+    if (dispatchingRef.current) return;
+    dispatchingRef.current = true;
+
+    let idx = 0;
+    const runNext = async (): Promise<void> => {
+      while (idx < jobIds.length) {
+        const jobId = jobIds[idx++];
+        try {
+          // Open SSE stream — this triggers the job to run server-side
+          // We just need to consume the stream to keep the connection alive
+          const res = await fetch(`/api/batches/${batchId}/jobs/${jobId}/stream`);
+          if (!res.ok || !res.body) continue;
+          const reader = res.body.getReader();
+          // Consume the stream until done
+          while (true) {
+            const { done } = await reader.read();
+            if (done) break;
+          }
+        } catch {
+          // Job stream failed, continue to next
+        }
+        // Refresh UI after each job completes
+        fetchBatch();
+      }
+    };
+
+    // Start concurrent workers
+    const workers = Array.from(
+      { length: Math.min(CONCURRENCY, jobIds.length) },
+      () => runNext()
+    );
+    await Promise.allSettled(workers);
+
+    // Finalize batch status
+    try {
+      await fetch(`/api/batches/${batchId}/finalize`, { method: "POST" });
+    } catch {
+      // Best effort
+    }
+
+    dispatchingRef.current = false;
+    fetchBatch();
+  }
+
   async function handleStart() {
     setStarting(true);
     const res = await fetch(`/api/batches/${batchId}/start`, { method: "POST" });
-    if (res.ok) fetchBatch();
-    setStarting(false);
+    if (res.ok) {
+      const data = await res.json();
+      fetchBatch();
+      setStarting(false);
+      // Dispatch jobs in background (don't await — let them run)
+      if (data.jobIds?.length > 0) {
+        dispatchJobs(data.jobIds);
+      }
+    } else {
+      setStarting(false);
+    }
   }
 
   async function handleStop() {
@@ -291,14 +361,23 @@ export default function BatchDetailPage() {
   }
 
   async function handleRetry(jobId: string) {
-    await fetch(`/api/batches/${batchId}/jobs/${jobId}/retry`, { method: "POST" });
-    fetchBatch();
+    const res = await fetch(`/api/batches/${batchId}/jobs/${jobId}/retry`, { method: "POST" });
+    if (res.ok) {
+      fetchBatch();
+      dispatchJobs([jobId]);
+    }
   }
 
   async function handleRetryAllFailed() {
     if (!batch) return;
-    await fetch(`/api/batches/${batchId}/retry-failed`, { method: "POST" });
-    fetchBatch();
+    const res = await fetch(`/api/batches/${batchId}/retry-failed`, { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      fetchBatch();
+      if (data.jobIds?.length > 0) {
+        dispatchJobs(data.jobIds);
+      }
+    }
   }
 
   if (loading) {

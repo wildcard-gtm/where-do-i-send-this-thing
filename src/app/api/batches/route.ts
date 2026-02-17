@@ -37,21 +37,13 @@ export async function POST(request: Request) {
         where: { id: batch.id },
         data: { status: "processing" },
       });
-
-      const { processJobsInParallel } = await import(
-        "@/app/api/batches/[id]/start/route"
-      );
-
-      processJobsInParallel(
-        batch.id,
-        user.id,
-        batch.jobs.map((j) => ({ id: j.id, linkedinUrl: j.linkedinUrl, status: j.status }))
-      ).catch(console.error);
     }
 
     return NextResponse.json({
       batchId: batch.id,
       jobCount: batch.jobs.length,
+      autoProcess: !!autoProcess,
+      jobIds: autoProcess ? batch.jobs.map((j) => j.id) : undefined,
     });
   } catch (err) {
     console.error("Failed to create batch:", err);

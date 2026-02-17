@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { processJobsInParallel } from "@/app/api/batches/[id]/start/route";
-
-export const maxDuration = 600;
 
 export async function POST(
   _request: Request,
@@ -18,7 +15,7 @@ export async function POST(
 
   const batch = await prisma.batch.findFirst({
     where: { id, userId: user.id },
-    include: { jobs: true },
+    include: { jobs: { orderBy: { createdAt: "asc" } } },
   });
 
   if (!batch) {
@@ -65,14 +62,8 @@ export async function POST(
     data: { status: "processing" },
   });
 
-  // Fire and forget with concurrency pool
-  const jobsToRetry = failedJobs.map((j) => ({
-    id: j.id,
-    linkedinUrl: j.linkedinUrl,
-    status: "pending",
-  }));
+  // Return job IDs for frontend to dispatch
+  const jobIds = failedJobs.map((j) => j.id);
 
-  processJobsInParallel(batch.id, user.id, jobsToRetry).catch(console.error);
-
-  return NextResponse.json({ status: "retrying", count: failedJobs.length });
+  return NextResponse.json({ status: "retrying", jobIds });
 }
