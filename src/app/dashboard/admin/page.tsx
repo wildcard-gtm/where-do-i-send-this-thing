@@ -584,7 +584,7 @@ export default function AdminPage() {
                       </div>
                       <div className="flex items-center gap-4">
                         <span className="text-xs text-muted-foreground">
-                          {u._count.contacts} contacts &middot; {u._count.batches} scans
+                          {u._count.contacts} {u._count.contacts === 1 ? "contact" : "contacts"} &middot; {u._count.batches} {u._count.batches === 1 ? "scan" : "scans"}
                         </span>
                         <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
                           u.role === "admin" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"

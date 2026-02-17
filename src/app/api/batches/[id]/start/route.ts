@@ -276,11 +276,16 @@ function buildResearchLog(events: Array<{ type: string; data: string; iteration:
 function extractPersonName(result: { decision?: { reasoning?: string } | null; input: string }): string | null {
   const urlMatch = result.input.match(/linkedin\.com\/in\/([\w-]+)/);
   if (urlMatch) {
-    return urlMatch[1]
-      .split("-")
-      .filter((w) => !/^\d+$/.test(w))
-      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-      .join(" ");
+    const parts = urlMatch[1].split("-").filter((w) => !/^\d+$/.test(w));
+    // Strip trailing numeric-looking segments (e.g. "59176641" in "alp-u-levent-59176641")
+    while (parts.length > 1 && /^\d/.test(parts[parts.length - 1])) {
+      parts.pop();
+    }
+    if (parts.length > 0) {
+      return parts
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ");
+    }
   }
   return null;
 }
