@@ -5,8 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "postinstall": "prisma generate",
-    "build": "next build",
-    "db:push": "prisma db push",
+    "build": "prisma db push --skip-generate && next build",
     "start": "next start",
     "lint": "eslint",
     "agent": "tsx src/agent/index.ts",
