@@ -581,9 +581,13 @@ export default function BatchDetailPage() {
 
 function formatLinkedinSlug(url: string): string {
   const slug = url.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "").replace(/\/$/, "");
-  return slug
-    .split("-")
-    .filter((w) => !/^\d+$/.test(w))
+  const parts = slug.split("-");
+  // Remove trailing parts that look like LinkedIn ID suffixes (hex/numeric strings like "bb53241", "96a603242")
+  while (parts.length > 1 && /^[0-9a-f]+$/i.test(parts[parts.length - 1])) {
+    parts.pop();
+  }
+  return parts
+    .filter((w) => w.length > 0)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 }

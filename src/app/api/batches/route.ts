@@ -47,7 +47,7 @@ export async function POST(request: Request) {
           })),
         },
       },
-      include: { jobs: true },
+      include: { jobs: { orderBy: { createdAt: "asc" } } },
     });
 
     // Auto-start processing if toggle is on

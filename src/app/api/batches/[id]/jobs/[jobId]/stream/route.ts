@@ -88,6 +88,8 @@ export async function GET(
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      let enrichedName: string | null = null;
+
       const sendEvent = async (event: AgentStreamEvent) => {
         try {
           // Check if batch was cancelled mid-run
@@ -114,6 +116,25 @@ export async function GET(
               data: JSON.stringify(event.data),
             },
           });
+
+          // Extract real name from LinkedIn enrichment as soon as it returns
+          if (
+            event.type === "tool_call_result" &&
+            event.data &&
+            typeof event.data === "object" &&
+            "toolName" in event.data &&
+            (event.data as Record<string, unknown>).toolName === "enrich_linkedin_profile" &&
+            (event.data as Record<string, unknown>).success
+          ) {
+            const enrichData = (event.data as Record<string, unknown>).data as Record<string, unknown> | undefined;
+            if (enrichData?.name && typeof enrichData.name === "string") {
+              enrichedName = enrichData.name;
+              await prisma.job.update({
+                where: { id: jobId },
+                data: { personName: enrichedName },
+              });
+            }
+          }
         } catch (err) {
           // Re-throw cancellation so the agent loop stops
           if ((err as Error).message === "Batch cancelled by user") throw err;
@@ -124,8 +145,8 @@ export async function GET(
       try {
         const result = await runAgentStreaming(job.linkedinUrl, sendEvent);
 
-        // Extract person name from LinkedIn URL
-        const personName = extractPersonName(result);
+        // Use enriched name if available, otherwise fall back to URL-based extraction
+        const personName = enrichedName || extractPersonName(result);
 
         // Update job with result
         await prisma.job.update({
@@ -234,12 +255,14 @@ export async function GET(
 function extractPersonName(result: { decision?: { reasoning?: string } | null; input: string }): string | null {
   const urlMatch = result.input.match(/linkedin\.com\/in\/([\w-]+)/);
   if (urlMatch) {
-    const parts = urlMatch[1].split("-").filter((w) => !/^\d+$/.test(w));
-    while (parts.length > 1 && /^\d/.test(parts[parts.length - 1])) {
+    const parts = urlMatch[1].split("-");
+    // Remove trailing parts that look like LinkedIn ID suffixes (hex/numeric strings)
+    while (parts.length > 1 && /^[0-9a-f]+$/i.test(parts[parts.length - 1])) {
       parts.pop();
     }
     if (parts.length > 0) {
       return parts
+        .filter((w) => w.length > 0)
         .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
         .join(" ");
     }
