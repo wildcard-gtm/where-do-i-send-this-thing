@@ -71,9 +71,15 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await requireAdmin();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  // Bootstrap mode: allow a one-time secret to bypass session auth
+  const bootstrapSecret = request.headers.get("x-bootstrap-secret");
+  const isBootstrap = bootstrapSecret && bootstrapSecret === process.env.BOOTSTRAP_SECRET;
+
+  if (!isBootstrap) {
+    const user = await requireAdmin();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+    }
   }
 
   const { email, role } = await request.json();
