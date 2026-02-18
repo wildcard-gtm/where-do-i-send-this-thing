@@ -69,3 +69,28 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ user: newUser });
 }
+
+export async function PATCH(request: Request) {
+  const user = await requireAdmin();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
+  }
+
+  const { email, role } = await request.json();
+
+  if (!email || !role) {
+    return NextResponse.json({ error: "Email and role are required" }, { status: 400 });
+  }
+
+  if (!["user", "admin"].includes(role)) {
+    return NextResponse.json({ error: "Role must be 'user' or 'admin'" }, { status: 400 });
+  }
+
+  const updated = await prisma.user.update({
+    where: { email: email.toLowerCase() },
+    data: { role },
+    select: { id: true, name: true, email: true, role: true },
+  });
+
+  return NextResponse.json({ user: updated });
+}
