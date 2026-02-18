@@ -106,20 +106,29 @@ interface WhitepagesPerson {
 }
 
 async function searchWhitePages(
-  name: string,
+  name?: string,
   city?: string,
   stateCode?: string,
+  phone?: string,
+  street?: string,
+  zipCode?: string,
 ): Promise<ToolResult> {
   const apiKey = process.env.WHITEPAGES_API_KEY;
   if (!apiKey) {
     return { success: false, summary: 'WHITEPAGES_API_KEY not configured' };
   }
+  if (!name && !phone) {
+    return { success: false, summary: 'WhitePages requires name or phone' };
+  }
 
   try {
     const url = new URL('https://api.whitepages.com/v1/person');
-    url.searchParams.set('name', name);
+    if (name) url.searchParams.set('name', name);
+    if (phone) url.searchParams.set('phone', phone.replace(/[^0-9+]/g, ''));
+    if (street) url.searchParams.set('street', street);
     if (city) url.searchParams.set('city', city);
     if (stateCode) url.searchParams.set('state_code', stateCode);
+    if (zipCode) url.searchParams.set('zip_code', zipCode);
     url.searchParams.set('limit', '10');
 
     const res = await axios.get<WhitepagesPerson[]>(url.toString(), {
@@ -128,8 +137,9 @@ async function searchWhitePages(
     });
 
     const people = res.data ?? [];
+    const label = name || phone || 'query';
     if (people.length === 0) {
-      return { success: true, data: null, summary: `No WhitePages records found for "${name}"` };
+      return { success: true, data: null, summary: `No WhitePages records found for "${label}"` };
     }
 
     return {
@@ -143,7 +153,7 @@ async function searchWhitePages(
         phones: p.phones.slice(0, 3),
         emails: p.emails.slice(0, 3),
       })),
-      summary: `WhitePages: ${people.length} result(s) for "${name}"`,
+      summary: `WhitePages: ${people.length} result(s) for "${label}"`,
     };
   } catch (err) {
     const axiosErr = err as AxiosError;
@@ -248,11 +258,14 @@ export async function searchPersonAddress(
   middleName?: string,
   city?: string,
   state?: string,
+  phone?: string,
+  street?: string,
+  zipCode?: string,
 ): Promise<ToolResult> {
   const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
 
-  // Try WhitePages first
-  const wpResult = await searchWhitePages(fullName, city, state);
+  // Try WhitePages first (with all available filters)
+  const wpResult = await searchWhitePages(fullName, city, state, phone, street, zipCode);
   if (wpResult.success && wpResult.data !== null) {
     return { ...wpResult, summary: `[WhitePages] ${wpResult.summary}` };
   }

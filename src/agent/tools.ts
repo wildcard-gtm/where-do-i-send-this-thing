@@ -61,6 +61,9 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
           last_name: { type: 'string', description: 'Last name' },
           city: { type: 'string', description: 'City (optional, helps narrow results)' },
           state: { type: 'string', description: 'Two-letter US state code (optional)' },
+          phone: { type: 'string', description: 'Phone number to reverse-lookup or confirm identity (optional). Use when you have a phone from LinkedIn or other source.' },
+          street: { type: 'string', description: 'Partial street address filter, e.g. "123 Main" (optional)' },
+          zip_code: { type: 'string', description: '5-digit ZIP code filter (optional)' },
         },
         required: ['first_name', 'last_name'],
       },
@@ -231,6 +234,9 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
           args.middle_name as string | undefined,
           args.city as string | undefined,
           args.state as string | undefined,
+          args.phone as string | undefined,
+          args.street as string | undefined,
+          args.zip_code as string | undefined,
         ),
       };
 
