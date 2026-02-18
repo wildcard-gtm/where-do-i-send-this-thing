@@ -37,6 +37,8 @@ export interface AnalyticsData {
   confidenceBuckets: ConfidenceBucket[];
   scanTrends: ScanTrend[];
   successRate: number;
+  noResultRate: number;
+  noResultCount: number;
   failureRate: number;
   totalJobs: number;
 }
@@ -221,10 +223,14 @@ function ScanTrendChart({ data }: { data: ScanTrend[] }) {
 // ─── Success Rate Ring ───
 function SuccessRateRing({
   successRate,
+  noResultRate,
+  noResultCount,
   failureRate,
   totalJobs,
 }: {
   successRate: number;
+  noResultRate: number;
+  noResultCount: number;
   failureRate: number;
   totalJobs: number;
 }) {
@@ -243,18 +249,9 @@ function SuccessRateRing({
     <div className="flex items-center gap-6">
       <div className="relative w-[130px] h-[130px]">
         <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+          <circle cx="60" cy="60" r="52" stroke="#e8ecf4" strokeWidth="10" fill="none" />
           <circle
-            cx="60"
-            cy="60"
-            r="52"
-            stroke="#e8ecf4"
-            strokeWidth="10"
-            fill="none"
-          />
-          <circle
-            cx="60"
-            cy="60"
-            r="52"
+            cx="60" cy="60" r="52"
             stroke="#22c55e"
             strokeWidth="10"
             fill="none"
@@ -272,19 +269,24 @@ function SuccessRateRing({
       </div>
       <div className="flex flex-col gap-2.5">
         <div>
-          <p className="text-xs text-muted-foreground">Success Rate</p>
-          <p className="text-sm font-semibold text-success">
-            {Math.round(successRate)}%
+          <p className="text-xs text-muted-foreground">Resolved</p>
+          <p className="text-sm font-semibold text-success">{Math.round(successRate)}%</p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">No Result</p>
+          <p className="text-sm font-semibold text-warning">
+            {Math.round(noResultRate)}%
+            {noResultCount > 0 && (
+              <span className="text-xs font-normal text-muted-foreground ml-1">({noResultCount})</span>
+            )}
           </p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Failure Rate</p>
-          <p className="text-sm font-semibold text-danger">
-            {Math.round(failureRate)}%
-          </p>
+          <p className="text-xs text-muted-foreground">Failed</p>
+          <p className="text-sm font-semibold text-danger">{Math.round(failureRate)}%</p>
         </div>
         <div>
-          <p className="text-xs text-muted-foreground">Total Processed</p>
+          <p className="text-xs text-muted-foreground">Total</p>
           <p className="text-sm font-semibold text-foreground">{totalJobs}</p>
         </div>
       </div>
@@ -311,6 +313,8 @@ export default function AnalyticsCharts({ data }: { data: AnalyticsData }) {
         </h3>
         <SuccessRateRing
           successRate={data.successRate}
+          noResultRate={data.noResultRate}
+          noResultCount={data.noResultCount}
           failureRate={data.failureRate}
           totalJobs={data.totalJobs}
         />

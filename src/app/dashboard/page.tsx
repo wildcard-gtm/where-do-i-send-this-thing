@@ -45,12 +45,14 @@ export default async function DashboardPage() {
         confidenceBuckets: [],
         scanTrends: [],
         successRate: 0,
+        noResultRate: 0,
+        noResultCount: 0,
         failureRate: 0,
         totalJobs: 0,
       };
     }
 
-    const [recCounts, allConfidences, jobStatusCounts, batchesForTrend, contactsForTrend] =
+    const [recCounts, allConfidences, [resolvedCount, noResultCount, failedCount], batchesForTrend, contactsForTrend] =
       await Promise.all([
         // Recommendation breakdown
         prisma.contact.groupBy({
@@ -63,12 +65,18 @@ export default async function DashboardPage() {
           where: { userId: user.id, confidence: { not: null } },
           select: { confidence: true },
         }),
-        // Job status counts for success/failure rate
-        prisma.job.groupBy({
-          by: ["status"],
-          where: { batch: { userId: user.id }, status: { in: ["complete", "failed"] } },
-          _count: true,
-        }),
+        // Job outcome counts: complete+resolved, complete+no-result, failed
+        Promise.all([
+          prisma.job.count({
+            where: { batch: { userId: user.id }, status: "complete", recommendation: { not: null } },
+          }),
+          prisma.job.count({
+            where: { batch: { userId: user.id }, status: "complete", recommendation: null },
+          }),
+          prisma.job.count({
+            where: { batch: { userId: user.id }, status: "failed" },
+          }),
+        ]),
         // Batches created per week (last 8 weeks)
         prisma.batch.findMany({
           where: {
@@ -114,11 +122,10 @@ export default async function DashboardPage() {
     }
     const confidenceBuckets = buckets.map((b) => ({ range: b.range, count: b.count }));
 
-    // Success / failure rate
-    const completedCount = jobStatusCounts.find((s) => s.status === "complete")?._count || 0;
-    const failedCount = jobStatusCounts.find((s) => s.status === "failed")?._count || 0;
-    const totalProcessed = completedCount + failedCount;
-    const successRate = totalProcessed > 0 ? (completedCount / totalProcessed) * 100 : 0;
+    // Success / failure rate — three outcomes: resolved, no-result, failed
+    const totalProcessed = resolvedCount + noResultCount + failedCount;
+    const successRate = totalProcessed > 0 ? (resolvedCount / totalProcessed) * 100 : 0;
+    const noResultRate = totalProcessed > 0 ? (noResultCount / totalProcessed) * 100 : 0;
     const failureRate = totalProcessed > 0 ? (failedCount / totalProcessed) * 100 : 0;
 
     // Weekly trend (last 8 weeks)
@@ -144,6 +151,8 @@ export default async function DashboardPage() {
       confidenceBuckets,
       scanTrends,
       successRate,
+      noResultRate,
+      noResultCount,
       failureRate,
       totalJobs: totalProcessed,
     };
