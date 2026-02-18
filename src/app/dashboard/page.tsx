@@ -99,7 +99,7 @@ export default async function DashboardPage() {
     const recColorMap: Record<string, string> = {
       HOME: "#22c55e",
       OFFICE: "#4f6ef7",
-      BOTH: "#f59e0b",
+      COURIER: "#8b5cf6",
     };
     const recommendations = recCounts.map((r) => ({
       name: r.recommendation || "Unknown",
@@ -209,7 +209,7 @@ export default async function DashboardPage() {
   const recommendationColors: Record<string, string> = {
     HOME: "text-success",
     OFFICE: "text-primary",
-    BOTH: "text-accent",
+    COURIER: "text-accent",
   };
 
   return (

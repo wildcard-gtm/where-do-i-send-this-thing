@@ -4,7 +4,7 @@
 
 // ─── Agent Core ──────────────────────────────────────────
 
-export type Recommendation = 'HOME' | 'OFFICE' | 'BOTH';
+export type Recommendation = 'HOME' | 'OFFICE' | 'COURIER';
 
 export interface AddressInfo {
   address: string;

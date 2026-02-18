@@ -27,7 +27,7 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
   verify_property:
     'Verify property ownership via PropMix. Check if a US street address is owned by a specific person. Useful for confirming home address ownership.',
   calculate_distance:
-    'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability. >50 miles typically indicates remote worker.',
+    'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability and office suitability. >60 min commute = person may not regularly attend that office.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
 };
@@ -113,8 +113,8 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
         properties: {
           recommendation: {
             type: 'string',
-            enum: ['HOME', 'OFFICE', 'BOTH'],
-            description: 'Where to deliver the package',
+            enum: ['HOME', 'OFFICE', 'COURIER'],
+            description: 'Where to deliver the package. HOME = verified home address. OFFICE = direct-to-desk office delivery confirmed. COURIER = no direct delivery option available, needs a courier/concierge service.',
           },
           confidence: {
             type: 'number',

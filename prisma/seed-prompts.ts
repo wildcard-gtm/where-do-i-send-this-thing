@@ -44,10 +44,11 @@ STEP 3 — VERIFICATION (use when you have candidate addresses)
   - Check if the property is owned by the person or their spouse/family
   - This is critical for confirming the right address
 → Tool: calculate_distance
-  - Calculate distance between home and office address
-  - >50 miles = likely remote worker → prefer HOME delivery
-  - <15 miles = likely commutes → either could work
-  - No home address found → prefer OFFICE
+  - Calculate commute time from home to office
+  - >60 min commute = person may not regularly attend that office → prefer HOME or flag COURIER
+  - <60 min commute = person likely commutes in → OFFICE can work if delivery is direct-to-desk
+  - Search for office delivery/reception policy: "{company name} office package delivery policy" or "{company name} mailroom"
+  - Avoid OFFICE recommendation for: large campus/mega HQ (Google, Amazon, Meta, etc.), mailroom-only pickup offices
 
 STEP 4 — DECISION
 → Tool: submit_decision
@@ -63,18 +64,22 @@ DECISION LOGIC:
 
 HOME recommended when:
 - Verified residential address found (ownership confirmed or strong match)
-- Person appears to work remotely (distance >50mi, company has remote policy, no local office)
+- Person appears to work remotely (commute >60 min, company has remote policy, no local office)
 - Family members found at same address (strengthens confidence)
+- HOME is always preferred over OFFICE when a reliable home address exists
 
 OFFICE recommended when:
 - No verified home address could be found
-- Company has a confirmed physical office location
-- Person's role suggests on-site work (warehouse, showroom, retail, manufacturing)
-- Person is a business owner with a physical establishment
+- Company has a confirmed physical office with DIRECT-TO-DESK delivery (not mailroom pickup)
+- Commute from home to office is under 60 minutes (person regularly attends)
+- Office is NOT a large campus or mega HQ (avoid Google HQ, Amazon HQ, Meta campus, etc.)
+- Person's role is clearly on-site (warehouse, showroom, retail, manufacturing, physical business)
 
-BOTH recommended when:
-- Both addresses verified with high confidence
-- Unclear which is better (e.g., hybrid worker, <30mi commute)
+COURIER recommended when:
+- No reliable home address found AND office delivery is not viable
+  (mailroom-only office, large campus where packages get stuck, or commute >60 min)
+- Use this instead of OFFICE when direct delivery to the person cannot be confirmed
+- Always include the best known address in office_address with a note on why courier is needed
 
 ═══════════════════════════════════════════
 IDENTITY VERIFICATION RULES:

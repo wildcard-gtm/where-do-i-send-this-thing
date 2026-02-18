@@ -48,7 +48,7 @@ interface Contact {
 const recommendationColors: Record<string, string> = {
   HOME: "text-success bg-success/15",
   OFFICE: "text-primary bg-primary/15",
-  BOTH: "text-accent bg-accent-light",
+  COURIER: "text-accent bg-accent-light",
 };
 
 const markdownProseClasses = "prose prose-sm max-w-none text-muted-foreground prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-p:leading-relaxed prose-ul:my-1.5 prose-ul:pl-4 prose-ol:my-1.5 prose-ol:pl-4 prose-li:my-0.5 prose-li:leading-relaxed prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground prose-code:bg-muted/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none prose-pre:bg-muted/50 prose-pre:rounded-lg prose-pre:my-2 prose-a:text-primary prose-a:no-underline hover:prose-a:underline";
@@ -60,12 +60,14 @@ export default function ContactDetailPage() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"overview" | "chat">("overview");
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     fetch(`/api/contacts/${contactId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.contact) setContact(data.contact);
+        if (data?.userRole === "admin") setIsAdmin(true);
         setLoading(false);
       });
   }, [contactId]);
@@ -336,10 +338,14 @@ export default function ContactDetailPage() {
               </div>
             )}
 
-            {contact.notes && (
+            {/* Logs — admin only */}
+            {isAdmin && contact.notes && (
               <div className="glass-card rounded-2xl p-5">
-                <h3 className="text-sm font-medium text-foreground mb-3">Notes</h3>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                <div className="flex items-center gap-2 mb-3">
+                  <h3 className="text-sm font-medium text-foreground">Logs</h3>
+                  <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">admin only</span>
+                </div>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed">
                   {contact.notes}
                 </p>
               </div>

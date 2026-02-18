@@ -37,7 +37,13 @@ export async function GET(
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ contact });
+  // Fetch role from DB (JWT may be stale)
+  const dbUser = await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { role: true },
+  });
+
+  return NextResponse.json({ contact, userRole: dbUser?.role ?? "user" });
 }
 
 export async function PATCH(
