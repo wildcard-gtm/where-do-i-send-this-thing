@@ -89,9 +89,73 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
   }
 }
 
-// ─── Endato (Enformion) People Search ────────────────────
+// ─── WhitePages People Search (primary) ──────────────────
 
-export async function searchPersonAddress(
+interface WhitepagesCurrentAddress { id: string | null; address: string; }
+interface WhitepagesOwnedProperty { id: string; address: string; }
+interface WhitepagesPhoneNumber { number: string; type: string; }
+interface WhitepagesPerson {
+  id?: string | null;
+  name: string;
+  is_dead: boolean;
+  current_addresses: WhitepagesCurrentAddress[];
+  owned_properties: WhitepagesOwnedProperty[];
+  phones: WhitepagesPhoneNumber[];
+  emails: string[];
+  date_of_birth?: string | null;
+}
+
+async function searchWhitePages(
+  name: string,
+  city?: string,
+  stateCode?: string,
+): Promise<ToolResult> {
+  const apiKey = process.env.WHITEPAGES_API_KEY;
+  if (!apiKey) {
+    return { success: false, summary: 'WHITEPAGES_API_KEY not configured' };
+  }
+
+  try {
+    const url = new URL('https://api.whitepages.com/v1/person');
+    url.searchParams.set('name', name);
+    if (city) url.searchParams.set('city', city);
+    if (stateCode) url.searchParams.set('state_code', stateCode);
+    url.searchParams.set('limit', '10');
+
+    const res = await axios.get<WhitepagesPerson[]>(url.toString(), {
+      headers: { Accept: 'application/json', 'X-Api-Key': apiKey },
+      timeout: TIMEOUT,
+    });
+
+    const people = res.data ?? [];
+    if (people.length === 0) {
+      return { success: true, data: null, summary: `No WhitePages records found for "${name}"` };
+    }
+
+    return {
+      success: true,
+      data: people.slice(0, 5).map(p => ({
+        name: p.name,
+        is_dead: p.is_dead,
+        date_of_birth: p.date_of_birth,
+        current_addresses: p.current_addresses,
+        owned_properties: p.owned_properties,
+        phones: p.phones.slice(0, 3),
+        emails: p.emails.slice(0, 3),
+      })),
+      summary: `WhitePages: ${people.length} result(s) for "${name}"`,
+    };
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    const status = axiosErr.response?.status;
+    const detail = status ? ` (HTTP ${status})` : '';
+    return { success: false, summary: `WhitePages search failed${detail}: ${(err as Error).message}` };
+  }
+}
+
+// ─── Endato (Enformion) People Search (fallback) ─────────
+
+async function searchEndato(
   firstName: string,
   lastName: string,
   middleName?: string,
@@ -101,85 +165,114 @@ export async function searchPersonAddress(
   const apiName = process.env.ENDATO_API_NAME;
   const apiPassword = process.env.ENDATO_API_PASSWORD;
   if (!apiName || !apiPassword) {
-    return { success: false, summary: 'Endato credentials not configured (ENDATO_API_NAME, ENDATO_API_PASSWORD)' };
+    return { success: false, summary: 'Endato credentials not configured' };
   }
 
+  const body: Record<string, unknown> = {
+    FirstName: firstName,
+    LastName: lastName,
+    Page: 1,
+    ResultsPerPage: 10,
+  };
+
+  if (middleName) body.MiddleName = middleName;
+  if (city || state) {
+    const addr: Record<string, string> = {};
+    if (city) addr.City = city;
+    if (state) addr.StateCode = state;
+    body.Addresses = [addr];
+  }
+
+  const res = await axios.post(
+    'https://devapi.enformion.com/PersonSearch',
+    body,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'galaxy-ap-name': apiName,
+        'galaxy-ap-password': apiPassword,
+        'galaxy-search-type': 'Person',
+      },
+      timeout: TIMEOUT,
+    },
+  );
+
+  const persons: EndatoPerson[] = res.data?.persons ?? [];
+  if (persons.length === 0) {
+    return { success: true, data: null, summary: `No Endato records found for ${firstName} ${lastName}` };
+  }
+
+  const person = persons[0];
+  const addresses = person.addresses ?? [];
+  const phones = person.phoneNumbers ?? [];
+  const fullName = person.fullName
+    ?? [person.name?.firstName, person.name?.middleName, person.name?.lastName].filter(Boolean).join(' ');
+
+  return {
+    success: true,
+    data: {
+      source: 'endato',
+      name: fullName,
+      age: person.age,
+      isCurrentPropertyOwner: person.isCurrentPropertyOwner,
+      currentAddress: addresses[0]?.fullAddress ?? 'Not available',
+      addressHistory: addresses.slice(0, 5).map(a => ({
+        address: a.fullAddress,
+        city: a.city,
+        state: a.state,
+        zip: a.zip,
+        lat: a.latitude,
+        lng: a.longitude,
+        firstReported: a.firstReportedDate,
+        lastReported: a.lastReportedDate,
+        deliverable: a.isDeliverable,
+      })),
+      phones: phones.slice(0, 3).map(p => ({
+        number: p.phoneNumber,
+        type: p.phoneType,
+        carrier: p.company,
+        connected: p.isConnected,
+      })),
+      emails: (person.emailAddresses ?? []).slice(0, 3).map((e: EndatoEmail) => e.emailAddress),
+      totalResults: res.data?.counts?.searchResults ?? persons.length,
+    },
+    summary: `Endato: ${fullName}, age ${person.age ?? '?'}, ${addresses.length} address(es)`,
+  };
+}
+
+// ─── Public: Search Person Address (WhitePages → Endato) ─
+
+export async function searchPersonAddress(
+  firstName: string,
+  lastName: string,
+  middleName?: string,
+  city?: string,
+  state?: string,
+): Promise<ToolResult> {
+  const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
+
+  // Try WhitePages first
+  const wpResult = await searchWhitePages(fullName, city, state);
+  if (wpResult.success && wpResult.data !== null) {
+    return { ...wpResult, summary: `[WhitePages] ${wpResult.summary}` };
+  }
+
+  // If WhitePages failed or returned nothing, try Endato
   try {
-    const body: Record<string, unknown> = {
-      FirstName: firstName,
-      LastName: lastName,
-      Page: 1,
-      ResultsPerPage: 10,
-    };
-
-    if (middleName) body.MiddleName = middleName;
-
-    if (city || state) {
-      const addr: Record<string, string> = {};
-      if (city) addr.City = city;
-      if (state) addr.StateCode = state;
-      body.Addresses = [addr];
+    const endatoResult = await searchEndato(firstName, lastName, middleName, city, state);
+    if (endatoResult.success) {
+      const prefix = wpResult.success
+        ? '[WhitePages: no results, Endato fallback] '
+        : '[WhitePages error, Endato fallback] ';
+      return { ...endatoResult, summary: `${prefix}${endatoResult.summary}` };
     }
-
-    const res = await axios.post(
-      'https://devapi.enformion.com/PersonSearch',
-      body,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'galaxy-ap-name': apiName,
-          'galaxy-ap-password': apiPassword,
-          'galaxy-search-type': 'Person',
-        },
-        timeout: TIMEOUT,
-      },
-    );
-
-    const persons: EndatoPerson[] = res.data?.persons ?? [];
-    if (persons.length === 0) {
-      return { success: true, data: null, summary: `No address records found for ${firstName} ${lastName}` };
-    }
-
-    const person = persons[0];
-    const addresses = person.addresses ?? [];
-    const phones = person.phoneNumbers ?? [];
-    const fullName = person.fullName
-      ?? [person.name?.firstName, person.name?.middleName, person.name?.lastName].filter(Boolean).join(' ');
-
-    return {
-      success: true,
-      data: {
-        name: fullName,
-        age: person.age,
-        isCurrentPropertyOwner: person.isCurrentPropertyOwner,
-        currentAddress: addresses[0]?.fullAddress ?? 'Not available',
-        addressHistory: addresses.slice(0, 5).map(a => ({
-          address: a.fullAddress,
-          city: a.city,
-          state: a.state,
-          zip: a.zip,
-          lat: a.latitude,
-          lng: a.longitude,
-          firstReported: a.firstReportedDate,
-          lastReported: a.lastReportedDate,
-          deliverable: a.isDeliverable,
-        })),
-        phones: phones.slice(0, 3).map(p => ({
-          number: p.phoneNumber,
-          type: p.phoneType,
-          carrier: p.company,
-          connected: p.isConnected,
-        })),
-        emails: (person.emailAddresses ?? []).slice(0, 3).map((e: EndatoEmail) => e.emailAddress),
-        totalResults: res.data?.counts?.searchResults ?? persons.length,
-      },
-      summary: `${fullName}, age ${person.age ?? '?'}, ${addresses.length} address(es), ${phones.length} phone(s), property owner: ${person.isCurrentPropertyOwner ?? 'unknown'}`,
-    };
+    return endatoResult;
   } catch (err) {
     const axiosErr = err as AxiosError;
     const status = axiosErr.response?.status;
     const detail = status ? ` (HTTP ${status})` : '';
-    return { success: false, summary: `Endato search failed${detail}: ${(err as Error).message}` };
+    const wpNote = wpResult.success ? 'WhitePages: no results. ' : `WhitePages failed. `;
+    return { success: false, summary: `${wpNote}Endato fallback failed${detail}: ${(err as Error).message}` };
   }
 }
 

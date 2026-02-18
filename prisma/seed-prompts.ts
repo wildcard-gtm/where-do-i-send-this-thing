@@ -149,7 +149,7 @@ Begin now. Start with enrich_linkedin_profile, then use search_person_address AN
   {
     key: "tool_search_person_address",
     label: "Tool: Search Person Address",
-    content: `Search for residential address history by person name via Endato. Returns current and past addresses, phone numbers. Best for finding US home addresses.`,
+    content: `Search for residential address history by person name. Uses WhitePages as primary source, with Endato as fallback. Returns current addresses, owned properties, phone numbers. Best for finding US home addresses.`,
   },
   {
     key: "tool_search_web",

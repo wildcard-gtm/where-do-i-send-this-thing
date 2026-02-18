@@ -21,7 +21,7 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
   enrich_linkedin_profile:
     'Enriches a LinkedIn profile URL via Bright Data. Returns name, company, title, location, experience. Use FIRST when a LinkedIn URL is provided.',
   search_person_address:
-    'Search for residential address history by person name via Endato. Returns current and past addresses, phone numbers. Best for finding US home addresses.',
+    'Search for residential address history by person name. Uses WhitePages as primary source, with Endato as fallback. Returns current addresses, owned properties, phone numbers. Best for finding US home addresses.',
   search_web:
     'Neural web search via Exa AI. Use for researching company office addresses, remote work policies, person info, news articles.',
   verify_property:
