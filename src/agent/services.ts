@@ -276,6 +276,82 @@ export async function searchPersonAddress(
   }
 }
 
+// ─── Office Delivery Research (OpenAI sub-call) ──────────
+
+export async function researchOfficeDelivery(
+  fullName: string,
+  title: string,
+  companyName: string,
+  linkedinLocation: string,
+): Promise<ToolResult> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return { success: false, summary: 'OPENAI_API_KEY not configured' };
+
+  const prompt = `You are an expert at finding corporate office addresses and understanding package delivery logistics.
+
+I need to find office delivery information for: ${fullName}${title ? `, ${title}` : ''}${companyName ? ` at ${companyName}` : ''} based in ${linkedinLocation || 'location unknown'}.
+
+Please research and answer these questions:
+
+1. What is ${companyName || 'the company'}'s remote/hybrid work policy? (check their about page, recent job postings, news)
+2. Does someone in a "${title || 'similar'}" role typically work in-office or remotely?
+3. What is the closest office address for ${companyName || 'the company'} near ${linkedinLocation || 'their location'}? (only current company, not past employers)
+4. Is that office in a large corporate building with a mailroom? Or a smaller office with direct-to-desk delivery?
+5. What is the package reception policy for that building? Can FedEx deliver directly to the person, or does it go to a mailroom/security desk?
+6. Estimate: if we send a FedEx package to that office address, what is the likelihood ${fullName} actually receives it?
+
+Output format:
+Remote/hybrid policy: [answer]
+Role work location: [in-office / remote / hybrid]
+Office address: [full address with street, city, state, ZIP — or "none found"]
+Building type: [small office / large corporate campus / co-working / other]
+Delivery policy: [direct-to-desk / mailroom pickup / security desk / unknown]
+Delivery success estimate: [high/medium/low] — [brief reason]
+Recommendation: [OFFICE if direct delivery likely / COURIER if mailroom-only / HOME if fully remote]`;
+
+  try {
+    const res = await axios.post(
+      'https://api.openai.com/v1/responses',
+      {
+        model: 'gpt-4o',
+        input: prompt,
+        tools: [{ type: 'web_search_preview' }],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 60_000,
+      },
+    );
+
+    // Extract text from the response
+    const output = res.data?.output ?? [];
+    const text = output
+      .filter((o: Record<string, unknown>) => o.type === 'message')
+      .flatMap((o: Record<string, unknown>) => (o.content as Array<Record<string, unknown>>) ?? [])
+      .filter((c: Record<string, unknown>) => c.type === 'output_text')
+      .map((c: Record<string, unknown>) => c.text as string)
+      .join('\n');
+
+    if (!text) {
+      return { success: false, summary: 'No response from office research sub-call' };
+    }
+
+    return {
+      success: true,
+      data: { analysis: text },
+      summary: `Office research complete for ${companyName || fullName}`,
+    };
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    const status = axiosErr.response?.status;
+    const detail = status ? ` (HTTP ${status})` : '';
+    return { success: false, summary: `Office research failed${detail}: ${(err as Error).message}` };
+  }
+}
+
 // ─── Exa AI Web Search ───────────────────────────────────
 
 export async function searchExaAI(

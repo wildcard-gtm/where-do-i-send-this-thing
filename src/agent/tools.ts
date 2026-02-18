@@ -11,6 +11,7 @@ import {
   searchExaAI,
   getPropertyDetails,
   calculateDistance,
+  researchOfficeDelivery,
 } from './services';
 import { PrismaClient } from '@prisma/client';
 
@@ -28,6 +29,8 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
     'Verify property ownership via PropMix. Check if a US street address is owned by a specific person. Useful for confirming home address ownership.',
   calculate_distance:
     'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability and office suitability. >60 min commute = person may not regularly attend that office.',
+  research_office_delivery:
+    'Dedicated office research sub-call using GPT-4o with web search. Researches company remote/hybrid policy, finds the closest verified office address, checks building package delivery policy (mailroom vs direct-to-desk), and estimates delivery success rate. Use this ONCE after you have the person\'s name, title, company, and location. Do not use search_web to research office policies — use this instead.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
 };
@@ -103,6 +106,20 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
           destination: { type: 'string', description: 'Destination address or location' },
         },
         required: ['origin', 'destination'],
+      },
+    },
+    {
+      name: 'research_office_delivery',
+      description: descriptions.research_office_delivery,
+      input_schema: {
+        type: 'object',
+        properties: {
+          full_name: { type: 'string', description: 'Full name of the person' },
+          title: { type: 'string', description: 'Current job title (optional)' },
+          company_name: { type: 'string', description: 'Current company name' },
+          linkedin_location: { type: 'string', description: 'Location from LinkedIn profile (e.g. "San Francisco, CA")' },
+        },
+        required: ['full_name', 'company_name'],
       },
     },
     {
@@ -239,6 +256,16 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
     case 'calculate_distance':
       return {
         toolResult: await calculateDistance(args.origin as string, args.destination as string),
+      };
+
+    case 'research_office_delivery':
+      return {
+        toolResult: await researchOfficeDelivery(
+          args.full_name as string,
+          (args.title as string | undefined) ?? '',
+          (args.company_name as string | undefined) ?? '',
+          (args.linkedin_location as string | undefined) ?? '',
+        ),
       };
 
     case 'submit_decision':
