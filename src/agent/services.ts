@@ -313,7 +313,7 @@ Recommendation: [OFFICE if direct delivery likely / COURIER if mailroom-only / H
     const res = await axios.post(
       'https://api.openai.com/v1/responses',
       {
-        model: 'gpt-4o',
+        model: 'gpt-5.2',
         input: prompt,
         tools: [{ type: 'web_search_preview' }],
       },
