@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import AnalyticsCharts, { type AnalyticsData } from "@/components/dashboard/analytics-charts";
 
 export default async function DashboardPage() {
   const user = await getSession();
@@ -35,6 +36,118 @@ export default async function DashboardPage() {
         take: 5,
       })
     : [];
+
+  // ─── Analytics data ───
+  const analyticsData: AnalyticsData = await (async () => {
+    if (!user) {
+      return {
+        recommendations: [],
+        confidenceBuckets: [],
+        scanTrends: [],
+        successRate: 0,
+        failureRate: 0,
+        totalJobs: 0,
+      };
+    }
+
+    const [recCounts, allConfidences, jobStatusCounts, batchesForTrend, contactsForTrend] =
+      await Promise.all([
+        // Recommendation breakdown
+        prisma.contact.groupBy({
+          by: ["recommendation"],
+          where: { userId: user.id, recommendation: { not: null } },
+          _count: true,
+        }),
+        // Confidence values for histogram
+        prisma.contact.findMany({
+          where: { userId: user.id, confidence: { not: null } },
+          select: { confidence: true },
+        }),
+        // Job status counts for success/failure rate
+        prisma.job.groupBy({
+          by: ["status"],
+          where: { batch: { userId: user.id }, status: { in: ["complete", "failed"] } },
+          _count: true,
+        }),
+        // Batches created per week (last 8 weeks)
+        prisma.batch.findMany({
+          where: {
+            userId: user.id,
+            createdAt: { gte: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000) },
+          },
+          select: { createdAt: true },
+        }),
+        // Contacts created per week (last 8 weeks)
+        prisma.contact.findMany({
+          where: {
+            userId: user.id,
+            createdAt: { gte: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000) },
+          },
+          select: { createdAt: true },
+        }),
+      ]);
+
+    // Recommendation breakdown
+    const recColorMap: Record<string, string> = {
+      HOME: "#22c55e",
+      OFFICE: "#4f6ef7",
+      BOTH: "#f59e0b",
+    };
+    const recommendations = recCounts.map((r) => ({
+      name: r.recommendation || "Unknown",
+      value: r._count,
+      color: recColorMap[r.recommendation || ""] || "#6b7280",
+    }));
+
+    // Confidence histogram (buckets: 50-59, 60-69, 70-79, 80-89, 90-100)
+    const buckets = [
+      { range: "50-59", min: 50, max: 59, count: 0 },
+      { range: "60-69", min: 60, max: 69, count: 0 },
+      { range: "70-79", min: 70, max: 79, count: 0 },
+      { range: "80-89", min: 80, max: 89, count: 0 },
+      { range: "90-100", min: 90, max: 100, count: 0 },
+    ];
+    for (const c of allConfidences) {
+      if (c.confidence === null) continue;
+      const bucket = buckets.find((b) => c.confidence! >= b.min && c.confidence! <= b.max);
+      if (bucket) bucket.count++;
+    }
+    const confidenceBuckets = buckets.map((b) => ({ range: b.range, count: b.count }));
+
+    // Success / failure rate
+    const completedCount = jobStatusCounts.find((s) => s.status === "complete")?._count || 0;
+    const failedCount = jobStatusCounts.find((s) => s.status === "failed")?._count || 0;
+    const totalProcessed = completedCount + failedCount;
+    const successRate = totalProcessed > 0 ? (completedCount / totalProcessed) * 100 : 0;
+    const failureRate = totalProcessed > 0 ? (failedCount / totalProcessed) * 100 : 0;
+
+    // Weekly trend (last 8 weeks)
+    const now = new Date();
+    const scanTrends = Array.from({ length: 8 }, (_, i) => {
+      const weekStart = new Date(now.getTime() - (7 - i) * 7 * 24 * 60 * 60 * 1000);
+      const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+      const scans = batchesForTrend.filter(
+        (b) => b.createdAt >= weekStart && b.createdAt < weekEnd
+      ).length;
+      const contacts = contactsForTrend.filter(
+        (c) => c.createdAt >= weekStart && c.createdAt < weekEnd
+      ).length;
+      return {
+        label: weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        scans,
+        contacts,
+      };
+    });
+
+    return {
+      recommendations,
+      confidenceBuckets,
+      scanTrends,
+      successRate,
+      failureRate,
+      totalJobs: totalProcessed,
+    };
+  })();
 
   const stats = [
     {
@@ -130,6 +243,9 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Analytics Charts */}
+      <AnalyticsCharts data={analyticsData} />
 
       {/* Recent Scans */}
       <div className="mb-8">
