@@ -16,6 +16,102 @@ import type {
 const TIMEOUT = 30_000;
 const MAX_TEXT_PER_RESULT = 1500; // Truncate Exa text to avoid burning context
 
+// ─── People Data Labs (PDL) Enrichment ───────────────────
+
+export async function enrichWithPDL(linkedinUrl: string): Promise<ToolResult> {
+  const apiKey = process.env.PDL_API_KEY;
+  if (!apiKey) return { success: false, summary: 'PDL_API_KEY not configured' };
+
+  try {
+    const url = new URL('https://api.peopledatalabs.com/v5/person/enrich');
+    url.searchParams.set('profile', linkedinUrl);
+    url.searchParams.set('min_likelihood', '2');
+    url.searchParams.set('titlecase', 'true');
+
+    const res = await axios.get(url.toString(), {
+      headers: { 'X-API-Key': apiKey },
+      timeout: TIMEOUT,
+    });
+
+    const d = res.data;
+    if (!d || d.status !== 200) {
+      return { success: false, summary: `PDL: no record found (status ${d?.status ?? 'unknown'})` };
+    }
+
+    const person = d.data;
+    const phones: string[] = (person.phone_numbers ?? []).slice(0, 3);
+    const emails: string[] = (person.emails ?? []).map((e: { address: string }) => e.address).slice(0, 3);
+    const locations: string[] = (person.location_names ?? []).slice(0, 3);
+    const jobTitle: string = person.job_title ?? '';
+    const company: string = person.job_company_name ?? '';
+    const name: string = person.full_name ?? '';
+
+    return {
+      success: true,
+      data: {
+        name,
+        jobTitle,
+        company,
+        phones,
+        emails,
+        locations,
+        linkedinUrl: person.linkedin_url ?? linkedinUrl,
+        industry: person.industry ?? '',
+        summary: person.summary ?? '',
+      },
+      summary: `PDL: ${name}${company ? ` at ${company}` : ''}${phones.length ? `, phones: ${phones.join(', ')}` : ''}${emails.length ? `, emails: ${emails.join(', ')}` : ''}`,
+    };
+  } catch (err) {
+    const status = (err as AxiosError).response?.status;
+    if (status === 404) return { success: false, summary: 'PDL: person not found' };
+    return { success: false, summary: `PDL error: ${(err as Error).message}` };
+  }
+}
+
+// ─── Exa Person Search (LinkedIn-specific) ───────────────
+
+export async function searchExaPerson(
+  personName: string,
+  companyName: string,
+  numResults = 5,
+): Promise<ToolResult> {
+  const apiKey = process.env.EXA_AI_KEY;
+  if (!apiKey) return { success: false, summary: 'EXA_AI_KEY not configured' };
+
+  const query = `${personName} ${companyName}`;
+
+  try {
+    const res = await axios.post(
+      'https://api.exa.ai/search',
+      {
+        query,
+        category: 'people',
+        includeDomains: ['linkedin.com'],
+        numResults,
+      },
+      {
+        headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+        timeout: TIMEOUT,
+      },
+    );
+
+    const results = (res.data?.results ?? []) as Array<{ title?: string; url?: string; score?: number }>;
+    const profiles = results.filter(r => r.url?.includes('linkedin.com/in/'));
+
+    if (profiles.length === 0) {
+      return { success: false, summary: `No LinkedIn profiles found for "${query}"` };
+    }
+
+    return {
+      success: true,
+      data: profiles.map(r => ({ name: r.title ?? '', url: r.url ?? '', score: r.score })),
+      summary: `Found ${profiles.length} LinkedIn profile(s) for "${query}": ${profiles.map(r => r.url).join(', ')}`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Exa person search error: ${(err as Error).message}` };
+  }
+}
+
 // ─── Bright Data LinkedIn Enrichment ─────────────────────
 
 const LINKEDIN_DATASET_ID = 'gd_l1viktl72bvl7bjuj0';

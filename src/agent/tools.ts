@@ -12,6 +12,8 @@ import {
   getPropertyDetails,
   calculateDistance,
   researchOfficeDelivery,
+  enrichWithPDL,
+  searchExaPerson,
 } from './services';
 import { PrismaClient } from '@prisma/client';
 
@@ -31,6 +33,10 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
     'Calculate driving distance and travel time between two addresses via Google Maps. Use to assess commute viability and office suitability. >60 min commute = person may not regularly attend that office.',
   research_office_delivery:
     'Dedicated office research sub-call using GPT-4o with web search. Researches company remote/hybrid policy, finds the closest verified office address, checks building package delivery policy (mailroom vs direct-to-desk), and estimates delivery success rate. Use this ONCE after you have the person\'s name, title, company, and location. Do not use search_web to research office policies — use this instead.',
+  enrich_with_pdl:
+    'Enriches a LinkedIn profile URL via People Data Labs (PDL). Returns verified phone numbers, emails, location history, job title, and company. Use IMMEDIATELY after enrich_linkedin_profile to get contact points that can be used with search_person_address.',
+  search_person_linkedin:
+    'Searches for a person\'s LinkedIn profile by name and company using Exa AI people search. Returns matching LinkedIn URLs. Use when you need to find or confirm a LinkedIn profile URL.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
 };
@@ -123,6 +129,30 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
           linkedin_location: { type: 'string', description: 'Location from LinkedIn profile (e.g. "San Francisco, CA")' },
         },
         required: ['full_name', 'company_name'],
+      },
+    },
+    {
+      name: 'enrich_with_pdl',
+      description: descriptions.enrich_with_pdl,
+      input_schema: {
+        type: 'object',
+        properties: {
+          linkedin_url: { type: 'string', description: 'LinkedIn profile URL (https://www.linkedin.com/in/...)' },
+        },
+        required: ['linkedin_url'],
+      },
+    },
+    {
+      name: 'search_person_linkedin',
+      description: descriptions.search_person_linkedin,
+      input_schema: {
+        type: 'object',
+        properties: {
+          person_name: { type: 'string', description: 'Full name of the person to search for' },
+          company_name: { type: 'string', description: 'Company name to narrow the search (optional)' },
+          num_results: { type: 'number', description: 'Number of results to return, 1-10 (default: 5)' },
+        },
+        required: ['person_name'],
       },
     },
     {
@@ -271,6 +301,18 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
           (args.title as string | undefined) ?? '',
           (args.company_name as string | undefined) ?? '',
           (args.linkedin_location as string | undefined) ?? '',
+        ),
+      };
+
+    case 'enrich_with_pdl':
+      return { toolResult: await enrichWithPDL(args.linkedin_url as string) };
+
+    case 'search_person_linkedin':
+      return {
+        toolResult: await searchExaPerson(
+          args.person_name as string,
+          (args.company_name as string | undefined) ?? '',
+          (args.num_results as number | undefined) ?? 5,
         ),
       };
 

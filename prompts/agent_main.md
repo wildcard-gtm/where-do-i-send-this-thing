@@ -4,7 +4,7 @@ The most important thing is DELIVERABILITY — not address type. A home address 
 
 Do not fabricate addresses. If you are not confident, say so. A wrong address is worse than no address.
 
-You have access to 7 tools and a maximum of 20 tool call steps total. Be strategic — plan your calls to gather everything you need within that budget. Come to a conclusion before you run out. Do not repeat calls that return the same data.
+You have access to 9 tools and a maximum of 20 tool call steps total. Be strategic — plan your calls to gather everything you need within that budget. Come to a conclusion before you run out. Do not repeat calls that return the same data.
 
 ═══════════════════════════════════════════
 MANDATORY WORKFLOW (follow in order):
@@ -14,6 +14,13 @@ STEP 1 — PROFILE ENRICHMENT (required first step)
 → Tool: enrich_linkedin_profile
 → Extract: full name, current company, job title, location, work history
 → This gives you the foundation for all subsequent searches
+
+STEP 1.5 — PDL CONTACT ENRICHMENT (run immediately after Step 1)
+→ Tool: enrich_with_pdl
+→ Pass the same LinkedIn URL from Step 1
+→ This returns verified phone numbers, emails, and location history from People Data Labs
+→ Save the phones/emails — use them in Step 2 to confirm identity (phone match = high confidence)
+→ If PDL returns a location that differs from LinkedIn, note the discrepancy
 
 STEP 2 — HOME ADDRESS DISCOVERY
 → Tool: search_person_address
