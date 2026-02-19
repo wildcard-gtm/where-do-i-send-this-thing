@@ -48,7 +48,18 @@ interface ModelConfig {
   chat: { provider: string; modelId: string } | null;
 }
 
-type Tab = "prompts" | "models" | "feedback" | "messages" | "users";
+interface BatchItem {
+  id: string;
+  name: string | null;
+  status: string;
+  createdAt: string;
+  user: { name: string; email: string };
+  totalJobs: number;
+  completed: number;
+  failed: number;
+}
+
+type Tab = "prompts" | "models" | "feedback" | "messages" | "users" | "batches";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("prompts");
@@ -56,6 +67,8 @@ export default function AdminPage() {
   const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [batches, setBatches] = useState<BatchItem[]>([]);
+  const [downloadingBatch, setDownloadingBatch] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null });
   const [savingModel, setSavingModel] = useState<string | null>(null);
@@ -108,6 +121,11 @@ export default function AdminPage() {
         if (res.status === 403) { setError("You don't have admin access."); return; }
         const data = await res.json();
         setUsers(data.users || []);
+      } else if (tab === "batches") {
+        const res = await fetch("/api/admin/batches");
+        if (res.status === 403) { setError("You don't have admin access."); return; }
+        const data = await res.json();
+        setBatches(data.batches || []);
       }
     } catch {
       setError("Failed to load data");
@@ -211,6 +229,24 @@ export default function AdminPage() {
     }
   }
 
+  async function downloadDebugCsv(batchId: string) {
+    setDownloadingBatch(batchId);
+    try {
+      const res = await fetch(`/api/admin/batches/${batchId}/export-debug`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `batch-${batchId}-debug.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("Failed to download debug CSV");
+    } finally {
+      setDownloadingBatch(null);
+    }
+  }
+
   function getModelValue(config: { provider: string; modelId: string } | null): string {
     if (!config) return "";
     return `${config.provider}::${config.modelId}`;
@@ -222,6 +258,7 @@ export default function AdminPage() {
     { key: "feedback", label: "Feedback" },
     { key: "messages", label: "Messages" },
     { key: "users", label: "Users" },
+    { key: "batches", label: "Batches" },
   ];
 
   return (
@@ -489,6 +526,80 @@ export default function AdminPage() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Batches Tab */}
+          {tab === "batches" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">{batches.length} batches across all users.</p>
+              <div className="glass-card rounded-2xl overflow-hidden">
+                {batches.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">No batches yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider">
+                          <th className="text-left px-5 py-3 font-medium">Batch</th>
+                          <th className="text-left px-5 py-3 font-medium">User</th>
+                          <th className="text-left px-5 py-3 font-medium">Status</th>
+                          <th className="text-left px-5 py-3 font-medium">Jobs</th>
+                          <th className="text-left px-5 py-3 font-medium">Created</th>
+                          <th className="text-right px-5 py-3 font-medium">Export</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/30">
+                        {batches.map((b) => (
+                          <tr key={b.id} className="hover:bg-muted/20 transition">
+                            <td className="px-5 py-3">
+                              <p className="font-medium text-foreground">{b.name || "Unnamed batch"}</p>
+                              <p className="text-xs text-muted-foreground font-mono">{b.id}</p>
+                            </td>
+                            <td className="px-5 py-3">
+                              <p className="text-foreground">{b.user.name}</p>
+                              <p className="text-xs text-muted-foreground">{b.user.email}</p>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                                b.status === "complete" ? "bg-success/10 text-success" :
+                                b.status === "processing" ? "bg-primary/10 text-primary" :
+                                b.status === "failed" ? "bg-danger/10 text-danger" :
+                                "bg-muted text-muted-foreground"
+                              }`}>
+                                {b.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-muted-foreground">
+                              {b.completed}/{b.totalJobs}
+                              {b.failed > 0 && <span className="text-danger ml-1">({b.failed} failed)</span>}
+                            </td>
+                            <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">
+                              {new Date(b.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button
+                                onClick={() => downloadDebugCsv(b.id)}
+                                disabled={downloadingBatch === b.id}
+                                className="text-xs font-medium text-primary hover:text-primary-hover transition disabled:opacity-50 flex items-center gap-1 ml-auto"
+                              >
+                                {downloadingBatch === b.id ? (
+                                  <div className="w-3 h-3 border border-primary border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                )}
+                                Debug CSV
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
