@@ -28,12 +28,6 @@ const officeIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-interface GeoResult {
-  lat: number;
-  lon: number;
-  display_name: string;
-}
-
 interface MapViewProps {
   homeAddress?: string;
   officeAddress?: string;
@@ -50,18 +44,11 @@ export default function MapView({ homeAddress, officeAddress }: MapViewProps) {
     async function geocode(address: string): Promise<[number, number] | null> {
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            address
-          )}&limit=1`,
-          {
-            headers: {
-              "User-Agent": "WDISTT/1.0",
-            },
-          }
+          `/api/geocode?address=${encodeURIComponent(address)}`
         );
-        const data: GeoResult[] = await res.json();
-        if (data.length > 0) {
-          return [parseFloat(String(data[0].lat)), parseFloat(String(data[0].lon))];
+        const data = await res.json();
+        if (data.lat !== null && data.lng !== null) {
+          return [data.lat, data.lng];
         }
       } catch {
         // Geocoding failed
