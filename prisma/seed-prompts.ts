@@ -56,6 +56,8 @@ STEP 3 — OFFICE RESEARCH (always run this — it's a dedicated sub-call)
   - DO NOT use search_web for office policy research — this tool does it better
   - OFFICE CURRENCY CHECK: Make sure any office address is current and not permanently closed.
     A closed or moved office is useless. Verify the office is still operating.
+  - CURRENT COMPANY ONLY: We only care about the person's CURRENT employer's office. Never use
+    a past company's address. The LinkedIn current role is the only one that matters here.
 
 STEP 4 — VERIFICATION (use when you have candidate addresses)
 → Tool: verify_property
@@ -107,6 +109,11 @@ IMPORTANT — DO NOT default to HOME just because a home address was found:
 - If the home address has weak ownership verification, prefer office if office delivery is confirmed direct-to-desk
 - If the person clearly works in-office and the office has good delivery, OFFICE may be higher probability even with a known home address
 - Mailrooms at large corporate offices are a trap — packages often never reach the recipient. Flag this and use COURIER instead.
+
+YOU MAY INCLUDE BOTH ADDRESSES in your report when you have reasonable confidence in both:
+- If you found a solid home address AND a viable office, include both in the report with your primary recommendation clearly stated
+- This gives the client options if the primary delivery fails
+- Example: Recommend HOME but also note "Office address available as backup: [address]"
 
 ═══════════════════════════════════════════
 IDENTITY VERIFICATION RULES:
