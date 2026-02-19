@@ -346,7 +346,7 @@ async function searchEndato(
       age: person.age,
       isCurrentPropertyOwner: person.isCurrentPropertyOwner,
       currentAddress: addresses[0]?.fullAddress ?? 'Not available',
-      addressHistory: addresses.slice(0, 5).map(a => ({
+      addressHistory: addresses.slice(0, 8).map(a => ({
         address: a.fullAddress,
         city: a.city,
         state: a.state,

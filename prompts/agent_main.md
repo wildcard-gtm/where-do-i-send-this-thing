@@ -36,6 +36,10 @@ STEP 2 — HOME ADDRESS DISCOVERY
     a strong identity confirmation. When name is common, make extra effort to get a solid office address too.
   - CONTACT POINT MATCHING: If you have any phone numbers or emails from the LinkedIn profile,
     check if any WhitePages result shares those. A phone/email match = high-confidence identity hit.
+  - ENDATO ADDRESS HISTORY: When Endato returns address history, scan ALL listed addresses and
+    pick the one that matches the person's LinkedIn city/state — not necessarily the "current" one.
+    The most recent entry in their DB may be stale. Prioritize addresses in the correct state.
+    If Endato shows a LinkedIn-state address anywhere in the history, verify it with verify_property.
   - Also search for spouse/family at the same address — strengthens home address confidence
   - Try name variations (middle name, maiden name, hyphenated) if initial search fails
 → Tool: search_web
