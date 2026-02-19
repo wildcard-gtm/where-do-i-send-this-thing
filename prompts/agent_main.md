@@ -73,17 +73,28 @@ DECISION LOGIC — ALWAYS CHOOSE BY DELIVERABILITY:
 
 Before choosing, ask yourself: "If we FedEx a package here tomorrow, what is the realistic chance this person receives it?" Use that to decide.
 
-HOME recommended when:
-- Verified residential address found AND property ownership confirms the person still lives there
-- Person is clearly remote (commute >60 min, company has no local office, fully distributed company)
-- Family members confirmed at same address (extra confidence they're still there)
-- Home delivery success probability is meaningfully higher than office
+**DEFAULT RULE: When in doubt between HOME and OFFICE, choose OFFICE.**
+- Most working professionals receive packages at their office more reliably than at home
+- An office with staff (receptionist, mailroom) accepts packages even when the person is out
+- Home packages sit on doorsteps, require someone to be home, and can be stolen
 
-OFFICE recommended when:
-- Person likely commutes in (commute <60 min AND company has in-office or hybrid policy)
-- Office address is current and confirmed open (not permanently closed or relocated)
-- research_office_delivery finds a viable office with any delivery method (direct-to-desk OR standard mailroom)
-- No verified home address found, but office delivery is viable
+OFFICE is the RIGHT choice when ALL of these are true:
+1. Commute is under 60 minutes (person plausibly goes in)
+2. Office address is current and confirmed open (not permanently closed)
+3. research_office_delivery reports viable delivery (direct-to-desk OR standard mailroom)
+
+Do NOT let these factors override a valid OFFICE recommendation:
+- "Hybrid work" — hybrid workers still go in regularly; packages wait at the office
+- "Senior executive" or "VP-level" — executives have assistants who collect packages
+- "Multi-tenant building" — standard mailrooms in multi-tenant buildings work fine
+- "Package may sit unclaimed" — offices hold packages; homes don't guarantee someone is there either
+- Having a verified home address does NOT automatically mean home is better
+
+HOME is the RIGHT choice when:
+- Person is CLEARLY fully remote (commute >60 min AND company has no local office OR is fully distributed)
+- Office address is unverifiable, permanently closed, or relocated
+- Property ownership confirms the person still lives there AND no viable office exists
+- Home delivery probability is DEMONSTRABLY higher — not just hypothetically
 
 COURIER recommended when:
 - Office is a MEGA-CAMPUS (Google HQ, Amazon campus, Meta HQ, large coworking floors with hundreds of companies) where packages routinely get lost in transit between mailroom and recipient
@@ -95,10 +106,6 @@ NOTE — Standard office mailrooms are fine for OFFICE recommendation:
 - Most regular offices (even those with a mailroom or front desk) successfully deliver packages
 - Only flag COURIER for truly problematic delivery environments: mega-campuses, huge shared buildings, or where research explicitly confirms packages are never forwarded to recipients
 - A typical mid-size company office with a receptionist or mailroom = viable OFFICE delivery
-
-IMPORTANT — DO NOT default to HOME just because a home address was found:
-- If the person clearly works in-office and the office has viable delivery, OFFICE may be the better choice even with a known home address
-- If home address ownership is unverified or stale, prefer OFFICE when office delivery is confirmed viable
 
 YOU MAY INCLUDE BOTH ADDRESSES in your report when you have reasonable confidence in both:
 - If you found a solid home address AND a viable office, include both in the report with your primary recommendation clearly stated

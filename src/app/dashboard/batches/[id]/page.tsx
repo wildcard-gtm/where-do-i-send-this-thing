@@ -244,7 +244,7 @@ function LeadStatus({ job, onRetry }: { job: Job; onRetry: (jobId: string) => vo
 
 // ─── Main page ──────────────────────────────────────────
 
-const CONCURRENCY = 5;
+const CONCURRENCY = 2;
 
 export default function BatchDetailPage() {
   const params = useParams();
@@ -317,13 +317,15 @@ export default function BatchDetailPage() {
         }
         // Refresh UI after each job completes
         fetchBatch();
+        // Small delay between jobs to avoid hitting Bedrock token-per-minute limits
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
     };
 
-    // Start concurrent workers
-    const workers = Array.from(
-      { length: Math.min(CONCURRENCY, jobIds.length) },
-      () => runNext()
+    // Start concurrent workers with staggered start to avoid simultaneous Bedrock requests
+    const workerCount = Math.min(CONCURRENCY, jobIds.length);
+    const workers = Array.from({ length: workerCount }, (_, i) =>
+      new Promise<void>((resolve) => setTimeout(resolve, i * 5000)).then(() => runNext())
     );
     await Promise.allSettled(workers);
 

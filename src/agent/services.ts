@@ -319,7 +319,9 @@ Office address: [full address with street, city, state, ZIP — or "none found"]
 Building type: [small office / large corporate campus / co-working / other]
 Delivery policy: [direct-to-desk / mailroom pickup / security desk / unknown]
 Delivery success estimate: [high/medium/low] — [brief reason]
-Recommendation: [OFFICE if person is likely in-office and building is a regular office (including standard mailrooms) / COURIER only if mega-campus or package delivery is explicitly unreliable / HOME if fully remote]
+Recommendation: [OFFICE unless the person is CLEARLY fully remote OR the building is a mega-campus where packages get lost / COURIER only if mega-campus (Google HQ, Amazon, Meta, etc.) or delivery is explicitly unreliable / HOME only if fully remote with no local office]
+
+DEFAULT TO OFFICE: If the person works hybrid or in-office and the building is a regular office (any size, including those with mailrooms or security desks), recommend OFFICE. Hybrid workers go in regularly; packages wait at the office. Do NOT recommend HOME just because the person might sometimes work from home or because they are a senior executive — executives have assistants who collect packages.
 
 IMPORTANT: Most regular office mailrooms DO successfully deliver packages. Only recommend COURIER for truly problematic environments like Google HQ, Amazon campus, Meta HQ, or very large multi-tenant buildings where packages are known to get lost. A standard mid-size company office = OFFICE recommendation.`;
 
