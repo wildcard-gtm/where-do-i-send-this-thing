@@ -274,7 +274,7 @@ async function searchEndato(
   };
 }
 
-// ─── Public: Search Person Address (WhitePages → Endato) ─
+// ─── Public: Search Person Address (WhitePages + Endato parallel) ─
 
 export async function searchPersonAddress(
   firstName: string,
@@ -288,29 +288,47 @@ export async function searchPersonAddress(
 ): Promise<ToolResult> {
   const fullName = [firstName, middleName, lastName].filter(Boolean).join(' ');
 
-  // Try WhitePages first (with all available filters)
-  const wpResult = await searchWhitePages(fullName, city, state, phone, street, zipCode);
-  if (wpResult.success && wpResult.data !== null) {
-    return { ...wpResult, summary: `[WhitePages] ${wpResult.summary}` };
+  // Run WhitePages and Endato in parallel — both results shown to AI regardless
+  const [wpResult, endatoResult] = await Promise.all([
+    searchWhitePages(fullName, city, state, phone, street, zipCode).catch((err) => ({
+      success: false as const,
+      data: null,
+      summary: `WhitePages error: ${(err as Error).message}`,
+    })),
+    searchEndato(firstName, lastName, middleName, city, state).catch((err) => ({
+      success: false as const,
+      data: null,
+      summary: `Endato error: ${(err as Error).message}`,
+    })),
+  ]);
+
+  const wpOk = wpResult.success && wpResult.data !== null;
+  const endatoOk = endatoResult.success && endatoResult.data !== null;
+
+  if (!wpOk && !endatoOk) {
+    return {
+      success: false,
+      data: null,
+      summary: `Both sources failed. WhitePages: ${wpResult.summary}. Endato: ${endatoResult.summary}`,
+    };
   }
 
-  // If WhitePages failed or returned nothing, try Endato
-  try {
-    const endatoResult = await searchEndato(firstName, lastName, middleName, city, state);
-    if (endatoResult.success) {
-      const prefix = wpResult.success
-        ? '[WhitePages: no results, Endato fallback] '
-        : '[WhitePages error, Endato fallback] ';
-      return { ...endatoResult, summary: `${prefix}${endatoResult.summary}` };
-    }
-    return endatoResult;
-  } catch (err) {
-    const axiosErr = err as AxiosError;
-    const status = axiosErr.response?.status;
-    const detail = status ? ` (HTTP ${status})` : '';
-    const wpNote = wpResult.success ? 'WhitePages: no results. ' : `WhitePages failed. `;
-    return { success: false, summary: `${wpNote}Endato fallback failed${detail}: ${(err as Error).message}` };
-  }
+  // Merge both results into a single response so the AI sees everything
+  const combinedData: Record<string, unknown> = {};
+  if (wpOk) combinedData.whitepages = wpResult.data;
+  if (endatoOk) combinedData.endato = endatoResult.data;
+
+  const sources: string[] = [];
+  if (wpOk) sources.push(`WhitePages: ${wpResult.summary}`);
+  else sources.push(`WhitePages: ${wpResult.summary}`);
+  if (endatoOk) sources.push(`Endato: ${endatoResult.summary}`);
+  else sources.push(`Endato: ${endatoResult.summary}`);
+
+  return {
+    success: true,
+    data: combinedData,
+    summary: sources.join(' | '),
+  };
 }
 
 // ─── Office Delivery Research (OpenAI sub-call) ──────────

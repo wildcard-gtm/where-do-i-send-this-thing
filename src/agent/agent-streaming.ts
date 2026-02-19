@@ -15,6 +15,7 @@ import type {
 import { getToolDefinitions, executeTool } from './tools';
 import { PrismaClient } from '@prisma/client';
 import { getAIClientForRole, getModelConfigForRole } from '@/lib/ai/config';
+import { createAIClient } from '@/lib/ai/index';
 import fs from 'fs';
 import path from 'path';
 
@@ -272,7 +273,8 @@ export async function runAgentStreaming(
   };
 
   const modelConfig = await getModelConfigForRole('agent');
-  const aiClient = await getAIClientForRole('agent');
+  let aiClient = await getAIClientForRole('agent');
+  let usingFallback = false;
   const [{ agentPrompt, initialMessageTemplate }, tools] = await Promise.all([
     getAgentPrompts(),
     getToolDefinitions(),
@@ -290,105 +292,125 @@ export async function runAgentStreaming(
     minConfidence: MIN_CONFIDENCE,
   });
 
+  // Helper: detect Bedrock rate limit errors
+  const isRateLimit = (err: unknown): boolean => {
+    const msg = (err as Error)?.message ?? '';
+    return msg.includes('Too many tokens per day') || msg.includes('ThrottlingException') || msg.includes('rate limit');
+  };
+
   while (iteration < MAX_ITERATIONS && !decision) {
     iteration++;
     emit('iteration_start', { maxIterations: MAX_ITERATIONS }, iteration);
 
+    let response;
     try {
-      const response = await aiClient.callModel(messages, tools);
-
-      // Extract any text blocks as "thinking"
-      const textBlocks = response.content.filter(
-        (block): block is TextBlock => block.type === 'text',
-      );
-      if (textBlocks.length > 0) {
-        const thinkingText = textBlocks.map((b) => b.text).join('\n');
-        emit('thinking', { text: thinkingText }, iteration);
-      }
-
-      // Model finished without calling tools
-      if (response.stop_reason === 'end_turn') {
-        messages.push({ role: 'assistant', content: response.content });
-        messages.push({
-          role: 'user',
-          content: 'You must call tools to gather evidence. Start by searching for the person and company.',
-        });
-        continue;
-      }
-
-      // Model wants to call tools
-      if (response.stop_reason === 'tool_use') {
-        const toolUses = response.content.filter(
-          (block): block is ToolUseBlock => block.type === 'tool_use',
-        );
-
-        const toolResults: ToolResultBlock[] = [];
-
-        for (const toolUse of toolUses) {
-          emit('tool_call_start', {
-            toolName: toolUse.name,
-            toolInput: toolUse.input,
-          }, iteration);
-
-          const { toolResult, decision: submitted } = await executeTool(toolUse);
-
-          // Handle decision submission
-          if (toolUse.name === 'submit_decision' && submitted) {
-            if (submitted.confidence < MIN_CONFIDENCE) {
-              emit('decision_rejected', {
-                confidence: submitted.confidence,
-                threshold: MIN_CONFIDENCE,
-                reason: `Confidence ${submitted.confidence}% is below the ${MIN_CONFIDENCE}% threshold.`,
-              }, iteration);
-
-              toolResults.push({
-                type: 'tool_result',
-                tool_use_id: toolUse.id,
-                content: JSON.stringify({
-                  rejected: true,
-                  reason: `Confidence ${submitted.confidence}% is below the ${MIN_CONFIDENCE}% threshold. Gather more evidence and try again.`,
-                }),
-              });
-
-              emit('tool_call_result', {
-                toolName: toolUse.name,
-                success: false,
-                summary: `Decision rejected: ${submitted.confidence}% < ${MIN_CONFIDENCE}%`,
-              }, iteration);
-              continue;
-            }
-            decision = submitted;
-
-            emit('decision_accepted', {
-              decision: submitted,
-            }, iteration);
-          }
-
-          emit('tool_call_result', {
-            toolName: toolUse.name,
-            success: toolResult.success,
-            summary: toolResult.summary,
-            data: toolResult.data,
-          }, iteration);
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: JSON.stringify(toolResult),
-          });
+      response = await aiClient.callModel(messages, tools);
+    } catch (err) {
+      // On rate limit, fall back to GPT-5.2 and retry the same iteration
+      if (isRateLimit(err) && !usingFallback) {
+        usingFallback = true;
+        aiClient = createAIClient('openai', 'gpt-5.2');
+        emit('thinking', { text: '[Switching to GPT-5.2 fallback due to rate limit]' }, iteration);
+        try {
+          response = await aiClient.callModel(messages, tools);
+        } catch (fallbackErr) {
+          emit('error', { message: (fallbackErr as Error).message }, iteration);
+          break;
         }
-
-        messages.push({ role: 'assistant', content: response.content });
-        messages.push({ role: 'user', content: toolResults as unknown as Message['content'] });
-      }
-
-      // Context window exhausted
-      if (response.stop_reason === 'max_tokens') {
-        emit('error', { message: 'Hit max_tokens limit.' }, iteration);
+      } else {
+        emit('error', { message: (err as Error).message }, iteration);
         break;
       }
-    } catch (err) {
-      emit('error', { message: (err as Error).message }, iteration);
+    }
+
+    // Extract any text blocks as "thinking"
+    const textBlocks = response!.content.filter(
+      (block): block is TextBlock => block.type === 'text',
+    );
+    if (textBlocks.length > 0) {
+      const thinkingText = textBlocks.map((b) => b.text).join('\n');
+      emit('thinking', { text: thinkingText }, iteration);
+    }
+
+    // Model finished without calling tools
+    if (response!.stop_reason === 'end_turn') {
+      messages.push({ role: 'assistant', content: response!.content });
+      messages.push({
+        role: 'user',
+        content: 'You must call tools to gather evidence. Start by searching for the person and company.',
+      });
+      continue;
+    }
+
+    // Model wants to call tools
+    if (response!.stop_reason === 'tool_use') {
+      const toolUses = response!.content.filter(
+        (block): block is ToolUseBlock => block.type === 'tool_use',
+      );
+
+      const toolResults: ToolResultBlock[] = [];
+
+      for (const toolUse of toolUses) {
+        emit('tool_call_start', {
+          toolName: toolUse.name,
+          toolInput: toolUse.input,
+        }, iteration);
+
+        const { toolResult, decision: submitted } = await executeTool(toolUse);
+
+        // Handle decision submission
+        if (toolUse.name === 'submit_decision' && submitted) {
+          if (submitted.confidence < MIN_CONFIDENCE) {
+            emit('decision_rejected', {
+              confidence: submitted.confidence,
+              threshold: MIN_CONFIDENCE,
+              reason: `Confidence ${submitted.confidence}% is below the ${MIN_CONFIDENCE}% threshold.`,
+            }, iteration);
+
+            toolResults.push({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({
+                rejected: true,
+                reason: `Confidence ${submitted.confidence}% is below the ${MIN_CONFIDENCE}% threshold. Gather more evidence and try again.`,
+              }),
+            });
+
+            emit('tool_call_result', {
+              toolName: toolUse.name,
+              success: false,
+              summary: `Decision rejected: ${submitted.confidence}% < ${MIN_CONFIDENCE}%`,
+            }, iteration);
+            continue;
+          }
+          decision = submitted;
+
+          emit('decision_accepted', {
+            decision: submitted,
+          }, iteration);
+        }
+
+        emit('tool_call_result', {
+          toolName: toolUse.name,
+          success: toolResult.success,
+          summary: toolResult.summary,
+          data: toolResult.data,
+        }, iteration);
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: JSON.stringify(toolResult),
+        });
+      }
+
+      messages.push({ role: 'assistant', content: response!.content });
+      messages.push({ role: 'user', content: toolResults as unknown as Message['content'] });
+    }
+
+    // Context window exhausted
+    if (response!.stop_reason === 'max_tokens') {
+      emit('error', { message: 'Hit max_tokens limit.' }, iteration);
       break;
     }
   }
