@@ -63,6 +63,13 @@ STEP 4 — VERIFICATION (use when you have candidate addresses)
   - Check if property is owned by the person or their spouse/family
   - OWNER-OCCUPIED CHECK: If the property owner name is completely different with no family connection,
     the person may have sold and moved. Treat this as a stale address — do a fresh search.
+  - MARRIED NAME CHECK: If the person's current surname differs from the owner (e.g. maiden name vs married
+    name), check if there is a spouse/partner at the same address. A maiden-name-to-married-name change is
+    common — "Jill Trotter" at "2823 Wildwood" owned by "Jill East" = same person, married name changed.
+    If you see this pattern (female name, address in the right city/state), use it — flag the name change.
+  - MULTIPLE CANDIDATES: When you have two address candidates in the correct city/state, verify BOTH with
+    verify_property and pick the one where ownership confirms the person (or their spouse). Do not stop
+    at the first candidate.
   - If it's an apartment or rental, note that — it's fine, just flag it
   - This confirms you have the right person at the right address
 → Tool: calculate_distance
