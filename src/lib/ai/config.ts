@@ -2,7 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { parseModelConfig, createAIClient } from './index';
 import type { AIClient, AIProvider } from './types';
 
-const DEFAULT_MODEL = 'bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0';
+const DEFAULT_MODEL = 'openai::gpt-5.2';
 
 export type ModelRole = 'agent' | 'chat';
 

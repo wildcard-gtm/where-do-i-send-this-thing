@@ -310,10 +310,10 @@ export async function runAgentStreaming(
     minConfidence: MIN_CONFIDENCE,
   });
 
-  // Helper: detect Bedrock rate limit errors
+  // Helper: detect rate limit / throttling errors
   const isRateLimit = (err: unknown): boolean => {
     const msg = (err as Error)?.message ?? '';
-    return msg.includes('Too many tokens per day') || msg.includes('ThrottlingException') || msg.includes('rate limit');
+    return msg.includes('Too many tokens per day') || msg.includes('ThrottlingException') || msg.includes('rate limit') || msg.includes('Rate limit');
   };
 
   while (iteration < MAX_ITERATIONS && !decision) {
@@ -324,11 +324,16 @@ export async function runAgentStreaming(
     try {
       response = await aiClient.callModel(messages, tools);
     } catch (err) {
-      // On rate limit, fall back to GPT-5.2 and retry the same iteration
+      // On rate limit, fall back to the other provider and retry once
       if (isRateLimit(err) && !usingFallback) {
         usingFallback = true;
-        aiClient = createAIClient('openai', 'gpt-5.2');
-        emit('thinking', { text: '[Switching to GPT-5.2 fallback due to rate limit]' }, iteration);
+        // If primary is OpenAI, fall back to Bedrock; if Bedrock, fall back to OpenAI
+        const primaryProvider = modelConfig?.provider ?? 'openai';
+        const fallbackClient = primaryProvider === 'openai'
+          ? createAIClient('bedrock', 'global.anthropic.claude-sonnet-4-5-20250929-v1:0')
+          : createAIClient('openai', 'gpt-5.2');
+        aiClient = fallbackClient;
+        emit('thinking', { text: `[Rate limited — switching to fallback provider]` }, iteration);
         try {
           response = await aiClient.callModel(messages, tools);
         } catch (fallbackErr) {
