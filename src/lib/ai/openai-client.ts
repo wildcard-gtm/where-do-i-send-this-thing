@@ -30,13 +30,20 @@ export function createOpenAIClient(modelId: string): AIClient {
         },
       }));
 
+      // GPT-5.2+ / o-series use max_completion_tokens and don't support temperature
+      const isNewModel = modelId.startsWith('gpt-5') || modelId.startsWith('o3') || modelId.startsWith('o4');
+      const tokenParam = isNewModel
+        ? { max_completion_tokens: options?.maxTokens ?? 16384 }
+        : { max_tokens: options?.maxTokens ?? 65536 };
+      const tempParam = isNewModel ? {} : { temperature: options?.temperature ?? 0.3 };
+
       const response = await client.chat.completions.create({
         model: modelId,
         messages: openaiMessages,
         tools: openaiTools,
-        max_tokens: options?.maxTokens ?? 65536,
-        temperature: options?.temperature ?? 0.3,
-      });
+        ...tokenParam,
+        ...tempParam,
+      } as Parameters<typeof client.chat.completions.create>[0]);
 
       return translateResponseToClaude(response);
     },

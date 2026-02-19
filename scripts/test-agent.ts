@@ -14,6 +14,7 @@ import 'dotenv/config';
 import fs from 'fs';
 import path from 'path';
 import { runAgentStreaming, type AgentStreamEvent } from '../src/agent/agent-streaming';
+import type { AgentDecision } from '../src/agent/types';
 
 // ─── Ground truth type ────────────────────────────────────
 interface GroundTruth {
@@ -22,9 +23,26 @@ interface GroundTruth {
   expectedAddress: string;
 }
 
+interface BatchResult {
+  name: string;
+  linkedinUrl: string;
+  expectedAddress: string;
+  recommendation: string | null;
+  homeAddress: string | null;
+  officeAddress: string | null;
+  confidence: number | null;
+  addrFound: boolean;
+  noDecision: boolean;
+}
+
 // ─── Normalise address for fuzzy matching ─────────────────
 function norm(s: string): string {
-  return (s || '').toLowerCase().replace(/[,\.#]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return (s || '')
+    .toLowerCase()
+    .replace(/\bten+th\b/g, '10')   // Tenth -> 10
+    .replace(/[,\.#]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function addressMatches(expected: string, got: string | undefined): boolean {
@@ -37,7 +55,7 @@ function addressMatches(expected: string, got: string | undefined): boolean {
 }
 
 // ─── Run a single LinkedIn URL through the agent ──────────
-async function runOne(url: string, groundTruth?: GroundTruth): Promise<void> {
+async function runOne(url: string, groundTruth?: GroundTruth): Promise<BatchResult | null> {
   const sep = '═'.repeat(70);
   console.log(`\n${sep}`);
   if (groundTruth) {
@@ -67,7 +85,6 @@ async function runOne(url: string, groundTruth?: GroundTruth): Promise<void> {
         toolCallCount++;
         process.stdout.write(`\n    [CALL] ${d.toolName} `);
         const input = d.toolInput as Record<string,unknown>;
-        // Print abbreviated input
         const brief = Object.entries(input).map(([k,v]) => `${k}=${JSON.stringify(v).slice(0,40)}`).join(', ');
         process.stdout.write(`(${brief})`);
         break;
@@ -97,35 +114,62 @@ async function runOne(url: string, groundTruth?: GroundTruth): Promise<void> {
 
   // ─── Print final decision ───────────────────────────────
   console.log(`\n${'─'.repeat(70)}`);
+
   if (!result.decision) {
     console.log('  RESULT: NO DECISION SUBMITTED');
     console.log(`  Iterations: ${result.iterations} / Tool calls: ${toolCallCount}`);
-  } else {
-    const d = result.decision;
-    console.log(`  RESULT:     ${d.recommendation} (${d.confidence}%)`);
-    console.log(`  Home:       ${d.home_address?.address ?? '—'} (${d.home_address?.confidence ?? '—'}%)`);
-    console.log(`  Office:     ${d.office_address?.address ?? '—'} (${d.office_address?.confidence ?? '—'}%)`);
-    console.log(`  Iterations: ${result.iterations} / Tool calls: ${toolCallCount}`);
-    if (d.flags?.length) console.log(`  Flags:      ${d.flags.join(', ')}`);
+    console.log('─'.repeat(70));
+    if (!groundTruth) return null;
+    return {
+      name: groundTruth.name,
+      linkedinUrl: url,
+      expectedAddress: groundTruth.expectedAddress,
+      recommendation: null,
+      homeAddress: null,
+      officeAddress: null,
+      confidence: null,
+      addrFound: false,
+      noDecision: true,
+    };
+  }
 
-    // Compare against ground truth
-    if (groundTruth) {
+  const d = result.decision as AgentDecision;
+  console.log(`  RESULT:     ${d.recommendation} (${d.confidence}%)`);
+  console.log(`  Home:       ${d.home_address?.address ?? '—'} (${d.home_address?.confidence ?? '—'}%)`);
+  console.log(`  Office:     ${d.office_address?.address ?? '—'} (${d.office_address?.confidence ?? '—'}%)`);
+  console.log(`  Iterations: ${result.iterations} / Tool calls: ${toolCallCount}`);
+  if (d.flags?.length) console.log(`  Flags:      ${d.flags.join(', ')}`);
+
+  let addrFound = false;
+  if (groundTruth) {
+    addrFound =
+      addressMatches(groundTruth.expectedAddress, d.home_address?.address) ||
+      addressMatches(groundTruth.expectedAddress, d.office_address?.address);
+
+    const verdict = addrFound ? '✅ ADDRESS FOUND' : '❌ ADDRESS MISS';
+    console.log(`\n  ${verdict}`);
+    if (!addrFound) {
       const primaryAddr = d.recommendation === 'HOME' ? d.home_address?.address
         : d.recommendation === 'OFFICE' ? d.office_address?.address
         : (d.home_address?.address || d.office_address?.address);
-
-      const addrHit = addressMatches(groundTruth.expectedAddress, d.home_address?.address)
-        || addressMatches(groundTruth.expectedAddress, d.office_address?.address);
-
-      const verdict = addrHit ? '✅ ADDRESS FOUND' : '❌ ADDRESS MISS';
-      console.log(`\n  ${verdict}`);
-      if (!addrHit) {
-        console.log(`  Expected: ${groundTruth.expectedAddress}`);
-        console.log(`  Got:      ${primaryAddr ?? '(none)'}`);
-      }
+      console.log(`  Expected: ${groundTruth.expectedAddress}`);
+      console.log(`  Got:      ${primaryAddr ?? '(none)'}`);
     }
   }
   console.log('─'.repeat(70));
+
+  if (!groundTruth) return null;
+  return {
+    name: groundTruth.name,
+    linkedinUrl: url,
+    expectedAddress: groundTruth.expectedAddress,
+    recommendation: d.recommendation,
+    homeAddress: d.home_address?.address ?? null,
+    officeAddress: d.office_address?.address ?? null,
+    confidence: d.confidence,
+    addrFound,
+    noDecision: false,
+  };
 }
 
 // ─── Parse ground truth CSV ───────────────────────────────
@@ -149,7 +193,6 @@ async function main() {
   const args = process.argv.slice(2);
 
   if (args[0] === '--batch') {
-    // Batch mode: compare all leads against ground truth CSV
     const csvPath = args[1];
     if (!csvPath || !fs.existsSync(csvPath)) {
       console.error('Usage: --batch <path-to-ground-truth.csv>');
@@ -159,26 +202,40 @@ async function main() {
     const leads = parseGroundTruth(csvPath);
     console.log(`\nBatch mode: ${leads.length} leads from ${path.basename(csvPath)}`);
 
-    let correct = 0, missed = 0, noDecision = 0;
-    const summary: string[] = [];
+    const batchResults: BatchResult[] = [];
 
     for (const lead of leads) {
-      await runOne(lead.linkedinUrl, lead);
-
-      // Re-run agent to get result for summary (already printed above)
-      // The result is captured inside runOne — but for batch scoring we need it
-      // So we track inline in a quick re-eval of what was just printed (simplified)
-      summary.push(lead.name);
+      const r = await runOne(lead.linkedinUrl, lead);
+      if (r) batchResults.push(r);
     }
 
+    // ─── Final accuracy report ─────────────────────────────
+    const total = batchResults.length;
+    const found = batchResults.filter(r => r.addrFound).length;
+    const noDecision = batchResults.filter(r => r.noDecision).length;
+    const missed = total - found - noDecision;
+
     console.log(`\n${'═'.repeat(70)}`);
-    console.log('  BATCH COMPLETE — check output above for per-lead results');
+    console.log('  BATCH ACCURACY REPORT');
+    console.log(`${'═'.repeat(70)}`);
+    console.log(`  Total leads:       ${total}`);
+    console.log(`  Address found:     ${found}/${total} (${Math.round(found/total*100)}%)`);
+    console.log(`  Address missed:    ${missed}/${total}`);
+    console.log(`  No decision:       ${noDecision}/${total}`);
+    console.log('');
+    console.log('  PER-LEAD SUMMARY:');
+    for (const r of batchResults) {
+      const icon = r.noDecision ? '[ ]' : r.addrFound ? '[✓]' : '[✗]';
+      const rec = r.recommendation ?? 'NO-DEC';
+      const addr = r.recommendation === 'HOME' ? r.homeAddress
+        : r.recommendation === 'OFFICE' ? r.officeAddress
+        : (r.homeAddress || r.officeAddress);
+      console.log(`  ${icon} ${r.name.padEnd(30)} ${rec.padEnd(7)} ${addr ?? '(none)'}`);
+    }
     console.log(`${'═'.repeat(70)}\n`);
 
   } else if (args[0]) {
-    // Single URL mode
-    const url = args[0];
-    await runOne(url);
+    await runOne(args[0]);
   } else {
     console.log(`
 Usage:
