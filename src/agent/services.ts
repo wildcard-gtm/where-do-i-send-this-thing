@@ -319,7 +319,9 @@ Office address: [full address with street, city, state, ZIP — or "none found"]
 Building type: [small office / large corporate campus / co-working / other]
 Delivery policy: [direct-to-desk / mailroom pickup / security desk / unknown]
 Delivery success estimate: [high/medium/low] — [brief reason]
-Recommendation: [OFFICE if direct delivery likely / COURIER if mailroom-only / HOME if fully remote]`;
+Recommendation: [OFFICE if person is likely in-office and building is a regular office (including standard mailrooms) / COURIER only if mega-campus or package delivery is explicitly unreliable / HOME if fully remote]
+
+IMPORTANT: Most regular office mailrooms DO successfully deliver packages. Only recommend COURIER for truly problematic environments like Google HQ, Amazon campus, Meta HQ, or very large multi-tenant buildings where packages are known to get lost. A standard mid-size company office = OFFICE recommendation.`;
 
   try {
     const res = await axios.post(

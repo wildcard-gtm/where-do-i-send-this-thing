@@ -80,22 +80,25 @@ HOME recommended when:
 - Home delivery success probability is meaningfully higher than office
 
 OFFICE recommended when:
-- research_office_delivery confirms DIRECT-TO-DESK delivery (receptionist or team member signs, not a locked mailroom)
 - Person likely commutes in (commute <60 min AND company has in-office or hybrid policy)
-- Office is NOT a large campus/mega HQ — avoid Google HQ, Amazon HQ, Meta campus, large coworking buildings with shared mailrooms
 - Office address is current and confirmed open (not permanently closed or relocated)
+- research_office_delivery finds a viable office with any delivery method (direct-to-desk OR standard mailroom)
 - No verified home address found, but office delivery is viable
 
 COURIER recommended when:
-- Office is mailroom-only, large corporate campus, or security desk pickup required (packages often lost or never reach the person)
-- Home address cannot be verified with confidence
-- Person is international or in an area with no reliable office
+- Office is a MEGA-CAMPUS (Google HQ, Amazon campus, Meta HQ, large coworking floors with hundreds of companies) where packages routinely get lost in transit between mailroom and recipient
+- Home address cannot be verified with confidence AND office delivery is also unreliable
+- Person is international or in an area with no reliable office or home address
 - Include the best known address with a note explaining courier is needed and why
 
+NOTE — Standard office mailrooms are fine for OFFICE recommendation:
+- Most regular offices (even those with a mailroom or front desk) successfully deliver packages
+- Only flag COURIER for truly problematic delivery environments: mega-campuses, huge shared buildings, or where research explicitly confirms packages are never forwarded to recipients
+- A typical mid-size company office with a receptionist or mailroom = viable OFFICE delivery
+
 IMPORTANT — DO NOT default to HOME just because a home address was found:
-- If the home address has weak ownership verification, prefer office if office delivery is confirmed direct-to-desk
-- If the person clearly works in-office and the office has good delivery, OFFICE may be higher probability even with a known home address
-- Mailrooms at large corporate offices are a trap — packages often never reach the recipient. Flag this and use COURIER instead.
+- If the person clearly works in-office and the office has viable delivery, OFFICE may be the better choice even with a known home address
+- If home address ownership is unverified or stale, prefer OFFICE when office delivery is confirmed viable
 
 YOU MAY INCLUDE BOTH ADDRESSES in your report when you have reasonable confidence in both:
 - If you found a solid home address AND a viable office, include both in the report with your primary recommendation clearly stated
