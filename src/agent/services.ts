@@ -192,19 +192,44 @@ async function searchEndato(
     body.Addresses = [addr];
   }
 
-  const res = await axios.post(
-    'https://devapi.enformion.com/PersonSearch',
-    body,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'galaxy-ap-name': apiName,
-        'galaxy-ap-password': apiPassword,
-        'galaxy-search-type': 'Person',
+  let res;
+  try {
+    res = await axios.post(
+      'https://devapi.enformion.com/PersonSearch',
+      body,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'galaxy-ap-name': apiName,
+          'galaxy-ap-password': apiPassword,
+          'galaxy-search-type': 'Person',
+        },
+        timeout: TIMEOUT,
       },
-      timeout: TIMEOUT,
-    },
-  );
+    );
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    // HTTP 400 often means the city-specific filter returned no results.
+    // Retry with state-only (drop the city) if we had a city in the request.
+    if (axiosErr.response?.status === 400 && city && state) {
+      const bodyStateOnly = { ...body, Addresses: [{ StateCode: state }] };
+      res = await axios.post(
+        'https://devapi.enformion.com/PersonSearch',
+        bodyStateOnly,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'galaxy-ap-name': apiName,
+            'galaxy-ap-password': apiPassword,
+            'galaxy-search-type': 'Person',
+          },
+          timeout: TIMEOUT,
+        },
+      );
+    } else {
+      throw err;
+    }
+  }
 
   const persons: EndatoPerson[] = res.data?.persons ?? [];
   if (persons.length === 0) {
