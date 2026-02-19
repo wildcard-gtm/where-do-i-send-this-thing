@@ -443,10 +443,9 @@ export async function GET(
   }
 
   const pdfBytes = await doc.save();
-  const buffer = Buffer.from(pdfBytes);
 
   const safeName = contact.name.replace(/[^a-z0-9]/gi, "_").toLowerCase();
-  return new Response(buffer as unknown as BodyInit, {
+  return new Response(pdfBytes as unknown as BodyInit, {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="wdistt_${safeName}_report.pdf"`,
