@@ -366,7 +366,9 @@ Recommendation: [OFFICE unless the person is CLEARLY fully remote OR the buildin
 
 DEFAULT TO OFFICE: If the person works hybrid or in-office and the building is a regular office (any size, including those with mailrooms or security desks), recommend OFFICE. Hybrid workers go in regularly; packages wait at the office. Do NOT recommend HOME just because the person might sometimes work from home or because they are a senior executive — executives have assistants who collect packages.
 
-IMPORTANT: Most regular office mailrooms DO successfully deliver packages. Only recommend COURIER for truly problematic environments like Google HQ, Amazon campus, Meta HQ, or very large multi-tenant buildings where packages are known to get lost. A standard mid-size company office = OFFICE recommendation.`;
+IMPORTANT: Most regular office mailrooms DO successfully deliver packages. Only recommend COURIER for truly problematic environments like Google HQ, Amazon campus, Meta HQ, or very large multi-tenant buildings where packages are known to get lost. A standard mid-size company office = OFFICE recommendation.
+
+FedEx label: Output a complete, copy-pasteable FedEx shipping label for the best office address found. Include recipient name, company, full street address, city, state, ZIP. If no office found, write "No office address found".`;
 
   try {
     const res = await axios.post(
