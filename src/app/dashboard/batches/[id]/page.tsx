@@ -551,7 +551,10 @@ export default function BatchDetailPage() {
 
       {/* Leads List */}
       <div className="glass-card rounded-2xl divide-y divide-border/30 overflow-hidden">
-        {batch.jobs.map((job) => (
+        {[...batch.jobs].sort((a, b) => {
+          const order: Record<string, number> = { running: 0, pending: 1, failed: 2, cancelled: 3, complete: 4 };
+          return (order[a.status] ?? 5) - (order[b.status] ?? 5);
+        }).map((job) => (
           <div key={job.id} className="px-5 py-4 hover:bg-card-hover/50 transition">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
