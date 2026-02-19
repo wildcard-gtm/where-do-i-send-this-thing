@@ -3,6 +3,8 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getAIClientForRole } from "@/lib/ai/config";
 import type { ChatMessage } from "@/lib/bedrock";
+import fs from "fs";
+import path from "path";
 
 export async function GET(
   _request: Request,
@@ -79,12 +81,19 @@ export async function POST(
     researchLog = buildResearchLogFromEvents(contact.job.events);
   }
 
-  // Load chat system prompt from DB (fallback to hardcoded)
+  // Load chat system prompt from file, then DB, then hardcoded fallback
   let chatPromptTemplate = "";
   try {
-    const dbPrompt = await prisma.systemPrompt.findUnique({ where: { key: "chat_system" } });
-    chatPromptTemplate = dbPrompt?.content ?? "";
-  } catch { /* use fallback */ }
+    const filePath = path.join(process.cwd(), "prompts", "chat_system.md");
+    chatPromptTemplate = fs.readFileSync(filePath, "utf-8");
+  } catch { /* file not found, try DB */ }
+
+  if (!chatPromptTemplate) {
+    try {
+      const dbPrompt = await prisma.systemPrompt.findUnique({ where: { key: "chat_system" } });
+      chatPromptTemplate = dbPrompt?.content ?? "";
+    } catch { /* use fallback */ }
+  }
 
   if (!chatPromptTemplate) {
     chatPromptTemplate = `You are a helpful assistant for WDISTT (Where Do I Send This Thing), an address verification platform. You help users understand lookup results for their contacts.

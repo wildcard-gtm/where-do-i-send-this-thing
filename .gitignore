@@ -41,7 +41,11 @@ dev.db
 
 # docs/reports
 *.md
+!prompts/*.md
 apidocs/
+
+# test/export files in root
+/*.csv
 
 # vercel
 .vercel
