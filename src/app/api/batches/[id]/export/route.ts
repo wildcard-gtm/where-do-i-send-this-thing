@@ -37,7 +37,6 @@ export async function GET(
     "Home Confidence",
     "Office Address",
     "Office Confidence",
-    "Reasoning",
     "Flags",
   ];
 
@@ -55,7 +54,6 @@ export async function GET(
       decision?.home_address?.confidence?.toString() || "",
       decision?.office_address?.address || "",
       decision?.office_address?.confidence?.toString() || "",
-      decision?.reasoning || "",
       decision?.flags?.join("; ") || "",
     ];
   });
