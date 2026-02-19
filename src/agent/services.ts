@@ -129,7 +129,6 @@ async function searchWhitePages(
     if (city) url.searchParams.set('city', city);
     if (stateCode) url.searchParams.set('state_code', stateCode);
     if (zipCode) url.searchParams.set('zip_code', zipCode);
-    url.searchParams.set('limit', '10');
 
     const res = await axios.get<WhitepagesPerson[]>(url.toString(), {
       headers: { Accept: 'application/json', 'X-Api-Key': apiKey },
