@@ -42,7 +42,7 @@ export interface AgentStreamEvent {
 
 // ─── Configuration ──────────────────────────────────────
 
-const MAX_ITERATIONS = 40;
+const MAX_ITERATIONS = 25;
 const MIN_CONFIDENCE = 75;
 
 // ─── Initial Prompt ─────────────────────────────────────
@@ -53,7 +53,7 @@ The most important thing is DELIVERABILITY — not address type. A home address 
 
 Do not fabricate addresses. If you are not confident, say so. A wrong address is worse than no address.
 
-You have access to 7 tools. Each tool can be called up to 15 times. Be thorough and use all relevant tools.
+You have access to 7 tools and a maximum of 20 tool call steps total. Be strategic — plan your calls to gather everything you need within that budget. Come to a conclusion before you run out. Do not repeat calls that return the same data.
 
 ═══════════════════════════════════════════
 MANDATORY WORKFLOW (follow in order):
