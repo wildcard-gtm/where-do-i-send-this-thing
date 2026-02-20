@@ -44,6 +44,9 @@ dev.db
 !prompts/*.md
 apidocs/
 
+# private notes (gitignored)
+notes/
+
 # test/export files in root
 /*.csv
 
