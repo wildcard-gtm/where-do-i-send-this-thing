@@ -12,7 +12,7 @@
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
 import { createAIClient } from '@/lib/ai/index';
-import { fetchCompanyLogo, searchExaAI, researchOfficeDelivery } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, searchExaAI } from './services';
 import axios, { type AxiosError } from 'axios';
 
 // ─── Types ───────────────────────────────────────────────
@@ -70,7 +70,7 @@ export interface EnrichmentEvent {
 const ENRICHMENT_TOOLS = [
   {
     name: 'fetch_company_logo',
-    description: 'Fetch company logo from Hunter.io using the company domain. Try this first before scraping.',
+    description: 'Fetch company logo and brand data. Tries Hunter.io first (free, fast), then Brandfetch as fallback (also returns brand colors and description). Always call this before scraping.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -159,7 +159,7 @@ const ENRICHMENT_TOOLS = [
 
 const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Given a contact's name, company, and LinkedIn URL, your job is to research and collect the following data about their company:
 
-1. **Company logo** — Try fetch_company_logo first with the company domain. If it fails, use search_web to find the logo URL from the company website.
+1. **Company logo** — Call fetch_company_logo with the company domain. It tries Hunter.io first (fast/free), then Brandfetch (may also return brand colors and company description). If both fail, use fetch_url on the company homepage and look for logo image tags in the HTML.
 2. **Top 3 open roles** — Find the 3 highest-level open positions (prioritize Director, VP, Staff, Principal, Senior roles). Include the location for each role.
 3. **Company values** — Find 3-6 core company values from their website or about page.
 4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
@@ -185,8 +185,19 @@ async function executeEnrichmentTool(
 ): Promise<{ result: Record<string, unknown>; enrichmentData?: EnrichmentResult }> {
   switch (toolName) {
     case 'fetch_company_logo': {
-      const res = await fetchCompanyLogo(args.domain as string);
-      return { result: { success: res.success, data: res.data, summary: res.summary } };
+      const domain = args.domain as string;
+      // 1. Hunter.io — primary (free, unlimited)
+      const hunterRes = await fetchCompanyLogo(domain);
+      if (hunterRes.success) {
+        return { result: { success: true, data: hunterRes.data, summary: hunterRes.summary, source: 'hunter' } };
+      }
+      // 2. Brandfetch — secondary fallback (also provides colors + description)
+      const brandRes = await fetchBrandfetch(domain);
+      if (brandRes.success) {
+        return { result: { success: true, data: brandRes.data, summary: brandRes.summary, source: 'brandfetch' } };
+      }
+      // Both failed
+      return { result: { success: false, summary: `Logo not found via Hunter.io (${hunterRes.summary}) or Brandfetch (${brandRes.summary}). Try fetching the company website directly.` } };
     }
 
     case 'search_web': {

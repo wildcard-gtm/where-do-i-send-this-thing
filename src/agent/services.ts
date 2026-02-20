@@ -691,3 +691,90 @@ export async function fetchCompanyLogo(domain: string): Promise<ToolResult> {
     return { success: false, summary: `Hunter.io logo fetch failed: ${(err as Error).message}` };
   }
 }
+
+// ─── Brandfetch Brand Data API (secondary logo fallback) ─
+
+interface BrandfetchLogo {
+  type: string; // "icon" | "logo" | "symbol" | etc.
+  formats: Array<{ src: string; format: string; width?: number; height?: number }>;
+}
+
+interface BrandfetchColor {
+  hex: string;
+  type: string; // "accent" | "dark" | "light" | "brand"
+  brightness: number;
+}
+
+export interface BrandfetchResult {
+  logoUrl?: string;
+  colors?: Array<{ hex: string; type: string }>;
+  description?: string;
+  domain?: string;
+  website?: string;
+  employeeCount?: string;
+  foundedYear?: number;
+  industry?: string;
+}
+
+export async function fetchBrandfetch(domain: string): Promise<ToolResult> {
+  const apiKey = process.env.BRANDFETCH_API_KEY;
+  if (!apiKey) return { success: false, summary: 'BRANDFETCH_API_KEY not configured' };
+
+  try {
+    const res = await axios.get(`https://api.brandfetch.io/v2/brands/${domain}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      timeout: 10_000,
+    });
+
+    const data = res.data;
+    if (!data) return { success: false, summary: 'Brandfetch returned no data' };
+
+    // Find best logo — prefer SVG logo type, then PNG icon, then any format
+    let logoUrl: string | undefined;
+    const logos: BrandfetchLogo[] = data.logos ?? [];
+
+    // Priority: logo type SVG > logo type PNG/WebP > icon type SVG > any
+    const logoTypes = ['logo', 'symbol', 'icon'];
+    const formatPriority = ['svg', 'webp', 'png'];
+
+    outer:
+    for (const logoType of logoTypes) {
+      const match = logos.find(l => l.type === logoType);
+      if (!match) continue;
+      for (const fmt of formatPriority) {
+        const format = match.formats.find(f => f.format === fmt && f.src);
+        if (format) {
+          logoUrl = format.src;
+          break outer;
+        }
+      }
+    }
+
+    const colors: BrandfetchColor[] = data.colors ?? [];
+    const result: BrandfetchResult = {
+      logoUrl,
+      colors: colors.slice(0, 5).map(c => ({ hex: c.hex, type: c.type })),
+      description: data.description ?? undefined,
+      domain: data.domain ?? domain,
+      website: data.links?.find((l: { name: string; url: string }) => l.name === 'website')?.url,
+      employeeCount: data.company?.employees,
+      foundedYear: data.company?.foundedYear,
+      industry: data.company?.industries?.[0]?.slug,
+    };
+
+    const parts: string[] = [];
+    if (logoUrl) parts.push(`logo: ${logoUrl}`);
+    if (result.colors?.length) parts.push(`colors: ${result.colors.map(c => c.hex).join(', ')}`);
+    if (result.description) parts.push(`desc: ${result.description.slice(0, 100)}`);
+
+    return {
+      success: true,
+      data: result,
+      summary: `Brandfetch for ${domain}: ${parts.join(' | ') || 'data found but no logo/colors'}`,
+    };
+  } catch (err) {
+    const status = (err as AxiosError).response?.status;
+    if (status === 404) return { success: false, summary: `Brandfetch: no data found for ${domain}` };
+    return { success: false, summary: `Brandfetch fetch failed: ${(err as Error).message}` };
+  }
+}
