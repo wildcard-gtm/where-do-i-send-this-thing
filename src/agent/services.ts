@@ -669,3 +669,25 @@ export async function calculateDistance(
     return { success: false, summary: `Distance calculation failed: ${(err as Error).message}` };
   }
 }
+
+// ─── Hunter.io Logo API ──────────────────────────────────
+
+export async function fetchCompanyLogo(domain: string): Promise<ToolResult> {
+  try {
+    const url = `https://logos.hunter.io/${domain}`;
+    const res = await axios.get(url, { timeout: 10_000, validateStatus: (status) => status === 200 || status === 404 });
+
+    if (res.status === 404) {
+      return { success: false, summary: `No logo found for ${domain} on Hunter.io` };
+    }
+
+    // Hunter.io returns the logo image directly
+    return {
+      success: true,
+      data: { logoUrl: url },
+      summary: `Logo found: ${url}`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Hunter.io logo fetch failed: ${(err as Error).message}` };
+  }
+}

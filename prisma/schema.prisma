@@ -59,28 +59,30 @@ model AgentEvent {
 }
 
 model Contact {
-  id              String         @id @default(cuid())
-  userId          String
-  user            User           @relation(fields: [userId], references: [id])
-  name            String
-  email           String?
-  linkedinUrl     String
-  company         String?
-  title           String?
-  profileImageUrl String?
-  careerSummary   String?
-  homeAddress     String?
-  officeAddress   String?
-  recommendation  String?
-  confidence      Int?
-  lastScannedAt   DateTime?
-  notes           String?
-  jobId           String?        @unique
-  job             Job?           @relation(fields: [jobId], references: [id])
-  chatMessages    ChatMessage[]
-  feedbacks       Feedback[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id                  String               @id @default(cuid())
+  userId              String
+  user                User                 @relation(fields: [userId], references: [id])
+  name                String
+  email               String?
+  linkedinUrl         String
+  company             String?
+  title               String?
+  profileImageUrl     String?
+  careerSummary       String?
+  homeAddress         String?
+  officeAddress       String?
+  recommendation      String?
+  confidence          Int?
+  lastScannedAt       DateTime?
+  notes               String?
+  jobId               String?              @unique
+  job                 Job?                 @relation(fields: [jobId], references: [id])
+  chatMessages        ChatMessage[]
+  feedbacks           Feedback[]
+  companyEnrichments  CompanyEnrichment[]
+  revisions           ContactRevision[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model ChatMessage {
@@ -119,4 +121,73 @@ model ContactMessage {
   subject   String
   message   String
   createdAt DateTime @default(now())
+}
+
+model CompanyEnrichment {
+  id               String   @id @default(cuid())
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Revision tracking
+  revisionNumber   Int      @default(1)
+  isLatest         Boolean  @default(true)
+
+  // Enriched company data
+  companyName      String
+  companyWebsite   String?
+  companyLogo      String?  // URL to logo image
+
+  // Open roles (stored as JSON array)
+  openRoles        Json?    // [{ title: string, location: string, level: string, url?: string }]
+
+  // Company culture
+  companyValues    Json?    // ["value1", "value2", ...]
+  companyMission   String?
+
+  // Locations
+  officeLocations  Json?    // ["City, State", ...]
+
+  // Team member photos (stored as JSON array)
+  teamPhotos       Json?    // [{ name?: string, photoUrl: string, title?: string }]
+
+  // Metadata
+  enrichmentStatus String   @default("pending") // "pending" | "enriching" | "completed" | "failed"
+  errorMessage     String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([contactId, revisionNumber])
+  @@index([contactId, isLatest])
+}
+
+model ContactRevision {
+  id                String   @id @default(cuid())
+  contactId         String
+  contact           Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Revision tracking
+  revisionNumber    Int
+  isLatest          Boolean  @default(false)
+
+  // Snapshot of contact data at this revision
+  name              String
+  email             String?
+  linkedinUrl       String
+  company           String?
+  title             String?
+  profileImageUrl   String?
+  careerSummary     String?
+  homeAddress       String?
+  officeAddress     String?
+  recommendation    String?
+  confidence        Int?
+
+  // Job data snapshot (for context)
+  jobResult         String?  // JSON string of full job result
+
+  createdAt         DateTime @default(now())
+
+  @@index([contactId, revisionNumber])
+  @@index([contactId, isLatest])
 }

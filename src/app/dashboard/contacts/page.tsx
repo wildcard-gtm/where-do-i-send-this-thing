@@ -38,6 +38,9 @@ export default function ContactsPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [batchFilter, setBatchFilter] = useState("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [enriching, setEnriching] = useState(false);
+  const [enrichMessage, setEnrichMessage] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -56,6 +59,54 @@ export default function ContactsPage() {
       });
   }, [search, filter, batchFilter]);
 
+  const toggleSelect = (id: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === contacts.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(contacts.map((c) => c.id)));
+    }
+  };
+
+  const handleEnrich = async () => {
+    const ids = selected.size > 0 ? Array.from(selected) : contacts.map((c) => c.id);
+    if (ids.length === 0) return;
+
+    setEnriching(true);
+    setEnrichMessage(null);
+
+    try {
+      const res = await fetch("/api/contacts/enrich-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contactIds: ids }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEnrichMessage(
+          `Enrichment started for ${data.started} contact${data.started !== 1 ? "s" : ""}${data.skipped > 0 ? ` (${data.skipped} skipped — no company data)` : ""}`
+        );
+        setSelected(new Set());
+      } else {
+        setEnrichMessage(`Error: ${data.error}`);
+      }
+    } catch {
+      setEnrichMessage("Network error — please try again");
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -63,6 +114,9 @@ export default function ContactsPage() {
       </div>
     );
   }
+
+  const allSelected = contacts.length > 0 && selected.size === contacts.length;
+  const someSelected = selected.size > 0;
 
   return (
     <div>
@@ -73,7 +127,34 @@ export default function ContactsPage() {
             {total} contact{total !== 1 ? "s" : ""} in your database
           </p>
         </div>
+
+        {/* Enrich button — shows when contacts exist */}
+        {contacts.length > 0 && (
+          <button
+            onClick={handleEnrich}
+            disabled={enriching}
+            className="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2.5 rounded-lg font-medium transition text-sm shrink-0"
+          >
+            {enriching ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            )}
+            {someSelected
+              ? `Enrich Selected (${selected.size})`
+              : "Enrich All"}
+          </button>
+        )}
       </div>
+
+      {/* Status message */}
+      {enrichMessage && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-primary/10 text-primary text-sm border border-primary/20">
+          {enrichMessage}
+        </div>
+      )}
 
       {/* Search + Scan Filter */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
@@ -148,61 +229,87 @@ export default function ContactsPage() {
           )}
         </div>
       ) : (
-        <div className="glass-card rounded-2xl divide-y divide-border/50 overflow-hidden">
-          {contacts.map((contact) => (
-            <Link
-              key={contact.id}
-              href={`/dashboard/contacts/${contact.id}`}
-              className="flex items-center justify-between px-5 py-4 hover:bg-card-hover transition"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                  {contact.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
-                    {contact.name}
-                  </p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {[contact.title, contact.company]
-                      .filter(Boolean)
-                      .join(" at ") || contact.linkedinUrl.replace(
-                        /^https?:\/\/(www\.)?linkedin\.com\/in\//,
-                        ""
-                      ).replace(/\/$/, "")}
-                  </p>
-                </div>
+        <div className="glass-card rounded-2xl overflow-hidden">
+          {/* Select all row */}
+          <div className="flex items-center gap-3 px-5 py-3 border-b border-border/50 bg-muted/30">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded accent-primary cursor-pointer"
+            />
+            <span className="text-xs text-muted-foreground">
+              {someSelected ? `${selected.size} selected` : "Select all"}
+            </span>
+          </div>
+
+          <div className="divide-y divide-border/50">
+            {contacts.map((contact) => (
+              <div key={contact.id} className="flex items-center gap-3 px-5 py-4 hover:bg-card-hover transition">
+                {/* Checkbox */}
+                <input
+                  type="checkbox"
+                  checked={selected.has(contact.id)}
+                  onClick={(e) => toggleSelect(contact.id, e)}
+                  onChange={() => {}}
+                  className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0"
+                />
+
+                {/* Row content — clickable link */}
+                <Link
+                  href={`/dashboard/contacts/${contact.id}`}
+                  className="flex items-center justify-between flex-1 min-w-0"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
+                      {contact.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {contact.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {[contact.title, contact.company]
+                          .filter(Boolean)
+                          .join(" at ") || contact.linkedinUrl.replace(
+                            /^https?:\/\/(www\.)?linkedin\.com\/in\//,
+                            ""
+                          ).replace(/\/$/, "")}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 shrink-0 ml-4">
+                    {contact.recommendation && (
+                      <span
+                        className={`text-xs font-semibold ${
+                          recommendationColors[contact.recommendation] ||
+                          "text-muted-foreground"
+                        }`}
+                      >
+                        {contact.recommendation}
+                      </span>
+                    )}
+                    {contact.confidence !== null && (
+                      <span
+                        className={`text-xs font-medium ${
+                          contact.confidence >= 85
+                            ? "text-success"
+                            : contact.confidence >= 75
+                            ? "text-warning"
+                            : "text-danger"
+                        }`}
+                      >
+                        {contact.confidence}%
+                      </span>
+                    )}
+                    <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </Link>
               </div>
-              <div className="flex items-center gap-4 shrink-0 ml-4">
-                {contact.recommendation && (
-                  <span
-                    className={`text-xs font-semibold ${
-                      recommendationColors[contact.recommendation] ||
-                      "text-muted-foreground"
-                    }`}
-                  >
-                    {contact.recommendation}
-                  </span>
-                )}
-                {contact.confidence !== null && (
-                  <span
-                    className={`text-xs font-medium ${
-                      contact.confidence >= 85
-                        ? "text-success"
-                        : contact.confidence >= 75
-                        ? "text-warning"
-                        : "text-danger"
-                    }`}
-                  >
-                    {contact.confidence}%
-                  </span>
-                )}
-                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </Link>
-          ))}
+            ))}
+          </div>
         </div>
       )}
     </div>

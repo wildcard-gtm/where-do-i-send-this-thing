@@ -188,6 +188,39 @@ export async function GET(
             };
 
             if (existingContact) {
+              // Save a revision snapshot of the current state before overwriting
+              const latestRevision = await prisma.contactRevision.findFirst({
+                where: { contactId: existingContact.id },
+                orderBy: { revisionNumber: "desc" },
+                select: { revisionNumber: true },
+              });
+              const nextRevision = (latestRevision?.revisionNumber ?? 0) + 1;
+
+              await prisma.contactRevision.updateMany({
+                where: { contactId: existingContact.id, isLatest: true },
+                data: { isLatest: false },
+              });
+
+              await prisma.contactRevision.create({
+                data: {
+                  contactId: existingContact.id,
+                  revisionNumber: nextRevision,
+                  isLatest: true,
+                  name: existingContact.name,
+                  email: existingContact.email,
+                  linkedinUrl: existingContact.linkedinUrl,
+                  company: existingContact.company,
+                  title: existingContact.title,
+                  profileImageUrl: existingContact.profileImageUrl,
+                  careerSummary: existingContact.careerSummary,
+                  homeAddress: existingContact.homeAddress,
+                  officeAddress: existingContact.officeAddress,
+                  recommendation: existingContact.recommendation,
+                  confidence: existingContact.confidence,
+                  jobResult: JSON.stringify(result),
+                },
+              });
+
               await prisma.contact.update({
                 where: { id: existingContact.id },
                 data: {

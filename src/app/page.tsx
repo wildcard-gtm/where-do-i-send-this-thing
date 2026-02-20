@@ -7,7 +7,6 @@ import SmoothScroll from "@/components/landing/smooth-scroll";
 const navLinks = [
   { href: "#features", label: "Features" },
   { href: "#how-it-works", label: "How It Works" },
-  { href: "#pricing", label: "Pricing" },
   { href: "#faq", label: "FAQ" },
 ];
 
@@ -75,14 +74,6 @@ export default function Home() {
                     className="text-sm text-muted-foreground hover:text-foreground transition"
                   >
                     Features
-                  </Link>
-                </li>
-                <li>
-                  <Link
-                    href="#pricing"
-                    className="text-sm text-muted-foreground hover:text-foreground transition"
-                  >
-                    Pricing
                   </Link>
                 </li>
                 <li>
