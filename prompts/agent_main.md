@@ -12,15 +12,18 @@ MANDATORY WORKFLOW (follow in order):
 
 STEP 1 — PROFILE ENRICHMENT (required first step)
 → Tool: enrich_linkedin_profile
-→ Extract: full name, current company, job title, location, work history
-→ This gives you the foundation for all subsequent searches
+→ This now runs Bright Data + People Data Labs (PDL) in parallel and returns BOTH in one result
+→ Extract: full name, current company, job title, city/state, experience history, phones, emails
+→ The result includes a "phones" and "emails" field from PDL — save these for identity matching in Step 2
+→ EMPLOYER DISCREPANCY: If the result contains "employer_discrepancy", LinkedIn and PDL disagree on current
+  employer. Cross-check the "experience" array (look for entries with is_current=true or no end_date).
+  The experience list is ground truth. PDL may show a stale employer. Confirm before proceeding.
+→ If enrich_linkedin_profile fails or times out, THEN call enrich_with_pdl as a standalone fallback
 
-STEP 1.5 — PDL CONTACT ENRICHMENT (run immediately after Step 1)
+STEP 1.5 — PDL CONTACT ENRICHMENT (only if Step 1 failed)
 → Tool: enrich_with_pdl
-→ Pass the same LinkedIn URL from Step 1
-→ This returns verified phone numbers, emails, and location history from People Data Labs
-→ Save the phones/emails — use them in Step 2 to confirm identity (phone match = high confidence)
-→ If PDL returns a location that differs from LinkedIn, note the discrepancy
+→ Only call this if enrich_linkedin_profile returned no data at all
+→ If Step 1 succeeded, phones/emails are already in the result — do NOT call enrich_with_pdl again
 
 STEP 2 — HOME ADDRESS DISCOVERY
 → Tool: search_person_address
@@ -40,6 +43,9 @@ STEP 2 — HOME ADDRESS DISCOVERY
     pick the one that matches the person's LinkedIn city/state — not necessarily the "current" one.
     The most recent entry in their DB may be stale. Prioritize addresses in the correct state.
     If Endato shows a LinkedIn-state address anywhere in the history, verify it with verify_property.
+  - MULTIPLE ENDATO PERSONS: Endato may return 2-3 matched persons for a name. Check the "persons"
+    array — pick the one whose age, state, or phone matches your LinkedIn data. Do not blindly use
+    the first person if a different one in the list better matches the known city/state.
   - SPOUSE/FAMILY FALLBACK: If no address found in the correct state under the person's name,
     search again using a spouse/partner name. To find spouse names: (a) check verify_property
     results from any candidate address — owners listed alongside the target are likely spouses,

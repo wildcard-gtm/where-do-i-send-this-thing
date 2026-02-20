@@ -116,73 +116,112 @@ export async function searchExaPerson(
 
 const LINKEDIN_DATASET_ID = 'gd_l1viktl72bvl7bjuj0';
 
-export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
+async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProfile | null> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
-  if (!apiKey) return { success: false, summary: 'BRIGHT_DATA_API_KEY not configured' };
+  if (!apiKey) return null;
 
-  try {
-    const trigger = await axios.post(
-      `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${LINKEDIN_DATASET_ID}&include_errors=true`,
-      [{ url }],
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: TIMEOUT,
-      },
-    );
+  const trigger = await axios.post(
+    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${LINKEDIN_DATASET_ID}&include_errors=true`,
+    [{ url }],
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: TIMEOUT,
+    },
+  );
 
-    const snapshotId: string | undefined = trigger.data?.snapshot_id;
-    if (!snapshotId) {
-      return { success: false, summary: 'No snapshot ID returned from Bright Data' };
-    }
+  const snapshotId: string | undefined = trigger.data?.snapshot_id;
+  if (!snapshotId) return null;
 
-    // Poll for results (up to ~20 seconds)
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await new Promise(r => setTimeout(r, 2000));
-
-      try {
-        const res = await axios.get(
-          `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
-          { headers: { Authorization: `Bearer ${apiKey}` }, timeout: TIMEOUT },
-        );
-
-        if (Array.isArray(res.data) && res.data.length > 0) {
-          const profile = res.data[0] as LinkedInProfile;
-          return {
-            success: true,
-            data: {
-              name: profile.name,
-              headline: profile.headline,
-              company: profile.current_company_name,
-              position: profile.current_company_position,
-              city: profile.city,
-              state: profile.state,
-              country: profile.country,
-              about: profile.about?.slice(0, 500),
-              avatar: (profile as Record<string, unknown>).avatar as string | undefined,
-              experience: (profile.experience ?? []).slice(0, 5).map(e => ({
-                company: e.company,
-                title: e.title,
-                location: e.location,
-                start_date: e.start_date,
-                end_date: e.end_date,
-              })),
-            },
-            summary: `${profile.name ?? 'Unknown'}, ${profile.current_company_name ?? 'N/A'}, ${profile.city ?? 'N/A'}`,
-          };
-        }
-      } catch (err) {
-        const status = (err as AxiosError).response?.status;
-        // 404 means still processing; anything else is a real error
-        if (status !== 404) {
-          return { success: false, summary: `Bright Data poll error (HTTP ${status})` };
-        }
+  // Poll for results (up to ~20 seconds)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const res = await axios.get(
+        `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
+        { headers: { Authorization: `Bearer ${apiKey}` }, timeout: TIMEOUT },
+      );
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        return res.data[0] as LinkedInProfile;
       }
+    } catch (err) {
+      const status = (err as AxiosError).response?.status;
+      if (status !== 404) return null;
     }
-
-    return { success: false, summary: 'Timeout waiting for LinkedIn profile data' };
-  } catch (err) {
-    return { success: false, summary: `LinkedIn enrichment failed: ${(err as Error).message}` };
   }
+  return null;
+}
+
+export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
+  // Run Bright Data and PDL in parallel — get everything in one shot
+  const [profile, pdlResult] = await Promise.allSettled([
+    fetchBrightDataLinkedIn(url),
+    enrichWithPDL(url),
+  ]);
+
+  const bdProfile = profile.status === 'fulfilled' ? profile.value : null;
+  const pdl = pdlResult.status === 'fulfilled' && pdlResult.value.success ? pdlResult.value.data as Record<string, unknown> : null;
+
+  if (!bdProfile && !pdl) {
+    return { success: false, summary: 'Timeout waiting for LinkedIn profile data' };
+  }
+
+  // Build combined enrichment — LinkedIn is ground truth for current role, PDL fills in contact points
+  const name = bdProfile?.name ?? (pdl?.name as string | undefined) ?? 'Unknown';
+  const company = bdProfile?.current_company_name ?? (pdl?.company as string | undefined) ?? 'N/A';
+  const position = bdProfile?.current_company_position ?? (pdl?.jobTitle as string | undefined) ?? '';
+  const city = bdProfile?.city ?? '';
+  const state = bdProfile?.state ?? '';
+
+  // Expose full experience so agent can verify current employer
+  const experience = (bdProfile?.experience ?? []).slice(0, 8).map(e => ({
+    company: e.company,
+    title: e.title,
+    location: e.location,
+    start_date: e.start_date,
+    end_date: e.end_date,
+    is_current: !e.end_date || e.end_date === 'Present',
+  }));
+
+  // PDL contact points — phones, emails, location history
+  const phones: string[] = (pdl?.phones as string[] | undefined) ?? [];
+  const emails: string[] = (pdl?.emails as string[] | undefined) ?? [];
+  const pdlCompany = pdl?.company as string | undefined;
+
+  // Flag employer discrepancy — PDL and LinkedIn disagree on current employer
+  const employerMismatch = pdlCompany && company && pdlCompany !== company &&
+    !pdlCompany.toLowerCase().includes(company.toLowerCase()) &&
+    !company.toLowerCase().includes(pdlCompany.toLowerCase());
+
+  const data = {
+    name,
+    headline: bdProfile?.headline ?? '',
+    company,
+    position,
+    city,
+    state,
+    country: bdProfile?.country ?? '',
+    about: bdProfile?.about?.slice(0, 500) ?? '',
+    avatar: (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined,
+    experience,
+    // PDL contact data merged in — agent gets phones/emails without a separate tool call
+    phones,
+    emails,
+    pdl_company: pdlCompany,
+    employer_discrepancy: employerMismatch
+      ? `LinkedIn shows "${company}" but PDL shows "${pdlCompany}" — verify which is current before proceeding`
+      : undefined,
+  };
+
+  const summaryParts = [`${name}, ${company}, ${city || 'location unknown'}`];
+  if (phones.length) summaryParts.push(`phones: ${phones.join(', ')}`);
+  if (emails.length) summaryParts.push(`emails: ${emails.join(', ')}`);
+  if (employerMismatch) summaryParts.push(`⚠ employer mismatch: LinkedIn="${company}" vs PDL="${pdlCompany}"`);
+
+  return {
+    success: true,
+    data,
+    summary: summaryParts.join(' | '),
+  };
 }
 
 // ─── WhitePages People Search (primary) ──────────────────
@@ -332,16 +371,13 @@ async function searchEndato(
     return { success: true, data: null, summary: `No Endato records found for ${firstName} ${lastName}` };
   }
 
-  const person = persons[0];
-  const addresses = person.addresses ?? [];
-  const phones = person.phoneNumbers ?? [];
-  const fullName = person.fullName
-    ?? [person.name?.firstName, person.name?.middleName, person.name?.lastName].filter(Boolean).join(' ');
-
-  return {
-    success: true,
-    data: {
-      source: 'endato',
+  // Return all matched persons (up to 3) so agent can pick the right one by state/age/phone
+  const mappedPersons = persons.slice(0, 3).map(person => {
+    const addresses = person.addresses ?? [];
+    const phones = person.phoneNumbers ?? [];
+    const fullName = person.fullName
+      ?? [person.name?.firstName, person.name?.middleName, person.name?.lastName].filter(Boolean).join(' ');
+    return {
       name: fullName,
       age: person.age,
       isCurrentPropertyOwner: person.isCurrentPropertyOwner,
@@ -351,8 +387,6 @@ async function searchEndato(
         city: a.city,
         state: a.state,
         zip: a.zip,
-        lat: a.latitude,
-        lng: a.longitude,
         firstReported: a.firstReportedDate,
         lastReported: a.lastReportedDate,
         deliverable: a.isDeliverable,
@@ -364,9 +398,30 @@ async function searchEndato(
         connected: p.isConnected,
       })),
       emails: (person.emailAddresses ?? []).slice(0, 3).map((e: EndatoEmail) => e.emailAddress),
-      totalResults: res.data?.counts?.searchResults ?? persons.length,
+    };
+  });
+
+  const primary = mappedPersons[0];
+  const totalResults = res.data?.counts?.searchResults ?? persons.length;
+  const summaryLabel = mappedPersons.length > 1
+    ? `Endato: ${mappedPersons.length} persons matched for ${firstName} ${lastName} (showing top ${mappedPersons.length}), age ${primary.age ?? '?'}, ${(persons[0].addresses ?? []).length} address(es)`
+    : `Endato: ${primary.name}, age ${primary.age ?? '?'}, ${(persons[0].addresses ?? []).length} address(es)`;
+
+  return {
+    success: true,
+    data: {
+      source: 'endato',
+      totalResults,
+      persons: mappedPersons,
+      // Keep top-level fields pointing at primary match for backwards compatibility
+      name: primary.name,
+      age: primary.age,
+      currentAddress: primary.currentAddress,
+      addressHistory: primary.addressHistory,
+      phones: primary.phones,
+      emails: primary.emails,
     },
-    summary: `Endato: ${fullName}, age ${person.age ?? '?'}, ${addresses.length} address(es)`,
+    summary: summaryLabel,
   };
 }
 
