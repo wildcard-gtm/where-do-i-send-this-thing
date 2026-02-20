@@ -7,6 +7,7 @@ export const AVAILABLE_MODELS: ModelConfig[] = [
   { provider: 'bedrock', modelId: 'global.anthropic.claude-sonnet-4-5-20250929-v1:0', label: 'Claude Sonnet 4.5' },
   { provider: 'bedrock', modelId: 'anthropic.claude-sonnet-4-20250514-v1:0', label: 'Claude Sonnet 4' },
   { provider: 'bedrock', modelId: 'anthropic.claude-opus-4-20250514-v1:0', label: 'Claude Opus 4' },
+  { provider: 'bedrock', modelId: 'us.anthropic.claude-opus-4-20250514-v1:0', label: 'Claude Opus 4 (US)' },
   { provider: 'bedrock', modelId: 'global.anthropic.claude-opus-4-6-v1:0', label: 'Claude Opus 4.6' },
   // OpenAI
   { provider: 'openai', modelId: 'gpt-5.2', label: 'GPT-5.2' },

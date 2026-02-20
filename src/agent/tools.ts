@@ -316,11 +316,28 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
         ),
       };
 
-    case 'submit_decision':
-      return {
-        toolResult: { success: true, summary: 'Decision submitted', data: args },
-        decision: args as unknown as AgentDecision,
+    case 'submit_decision': {
+      // Sanitize address fields — model occasionally passes a raw string instead of an object
+      const sanitizeAddress = (val: unknown): { address: string; confidence?: number; reasoning?: string } | undefined => {
+        if (!val) return undefined;
+        if (typeof val === 'object' && val !== null && 'address' in val) {
+          return val as { address: string; confidence?: number; reasoning?: string };
+        }
+        if (typeof val === 'string' && val.trim() && !val.includes('<parameter')) {
+          return { address: val.trim() };
+        }
+        return undefined;
       };
+      const decision = {
+        ...args,
+        home_address: sanitizeAddress(args.home_address),
+        office_address: sanitizeAddress(args.office_address),
+      } as unknown as AgentDecision;
+      return {
+        toolResult: { success: true, summary: 'Decision submitted', data: decision },
+        decision,
+      };
+    }
 
     default:
       return { toolResult: { success: false, summary: `Unknown tool: ${toolUse.name}` } };

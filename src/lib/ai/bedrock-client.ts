@@ -14,7 +14,7 @@ export function createBedrockAIClient(modelId: string): AIClient {
         accept: 'application/json',
         body: JSON.stringify({
           anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: options?.maxTokens ?? 65536,
+          max_tokens: options?.maxTokens ?? 16384,
           temperature: options?.temperature ?? 0.3,
           messages,
           tools,

@@ -45,7 +45,7 @@ export function createOpenAIClient(modelId: string): AIClient {
         ...tempParam,
       } as Parameters<typeof client.chat.completions.create>[0]);
 
-      return translateResponseToClaude(response);
+      return translateResponseToClaude(response as OpenAI.ChatCompletion);
     },
 
     async chat(systemPrompt: string, messages: ChatMessage[], options?) {
