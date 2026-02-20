@@ -81,6 +81,7 @@ model Contact {
   feedbacks           Feedback[]
   companyEnrichments  CompanyEnrichment[]
   revisions           ContactRevision[]
+  postcards           Postcard[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -190,4 +191,36 @@ model ContactRevision {
 
   @@index([contactId, revisionNumber])
   @@index([contactId, isLatest])
+}
+
+model Postcard {
+  id               String   @id @default(cuid())
+  contactId        String
+  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  template         String   // "warroom" | "zoom"
+  status           String   @default("pending") // "pending" | "generating" | "ready" | "approved" | "failed"
+  errorMessage     String?
+
+  // Generated images (relative paths under /public/postcards/)
+  backgroundUrl    String?  // AI-generated background scene
+  backgroundPrompt String?  // prompt used (for regeneration)
+  imageUrl         String?  // final composited PNG
+
+  // Data snapshot used at generation time
+  companyLogo      String?
+  openRoles        Json?    // [{ title, location, level }]
+  companyValues    Json?    // ["value1", ...]
+  companyMission   String?
+  officeLocations  Json?    // ["NYC", "London", ...]
+  contactName      String
+  contactTitle     String?
+  contactPhoto     String?
+  deliveryAddress  String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([contactId])
+  @@index([status])
 }

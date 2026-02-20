@@ -74,11 +74,15 @@ export async function POST(
           companyName: result.companyName,
           companyWebsite: result.companyWebsite ?? null,
           companyLogo: result.companyLogo ?? null,
-          openRoles: result.openRoles ?? undefined,
-          companyValues: result.companyValues ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          openRoles: (result.openRoles ?? undefined) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          companyValues: (result.companyValues ?? undefined) as any,
           companyMission: result.companyMission ?? null,
-          officeLocations: result.officeLocations ?? undefined,
-          teamPhotos: result.teamPhotos ?? undefined,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          officeLocations: (result.officeLocations ?? undefined) as any,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          teamPhotos: (result.teamPhotos ?? undefined) as any,
           enrichmentStatus: "completed",
           errorMessage: null,
         },

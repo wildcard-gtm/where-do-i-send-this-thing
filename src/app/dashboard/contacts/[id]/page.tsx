@@ -59,8 +59,12 @@ export default function ContactDetailPage() {
   const contactId = params.id as string;
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "chat">("overview");
+  const [tab, setTab] = useState<"overview" | "chat" | "postcard">("overview");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [postcard, setPostcard] = useState<{
+    id: string; status: string; imageUrl: string | null; template: string;
+  } | null>(null);
+  const [postcardGenerating, setPostcardGenerating] = useState(false);
 
   useEffect(() => {
     fetch(`/api/contacts/${contactId}`)
@@ -71,6 +75,54 @@ export default function ContactDetailPage() {
         setLoading(false);
       });
   }, [contactId]);
+
+  // Load postcard for this contact when Postcard tab is opened
+  useEffect(() => {
+    if (tab !== "postcard") return;
+    fetch(`/api/contacts/${contactId}/postcards`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const latest = data?.postcards?.[0] ?? null;
+        setPostcard(latest);
+      });
+  }, [tab, contactId]);
+
+  // Poll while postcard is generating
+  useEffect(() => {
+    if (!postcard) return;
+    if (postcard.status !== "pending" && postcard.status !== "generating") return;
+    const interval = setInterval(() => {
+      fetch(`/api/postcards/${postcard.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.postcard) setPostcard(data.postcard);
+        });
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [postcard?.id, postcard?.status]);
+
+  const handleGeneratePostcard = async () => {
+    setPostcardGenerating(true);
+    const res = await fetch("/api/postcards/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactId }),
+    });
+    const data = await res.json();
+    if (data.postcardId) {
+      setPostcard({ id: data.postcardId, status: "pending", imageUrl: null, template: data.template });
+    }
+    setPostcardGenerating(false);
+  };
+
+  const handleApprovePostcard = async (id: string) => {
+    await fetch(`/api/postcards/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" }),
+    });
+    setPostcard((p) => p ? { ...p, status: "approved" } : p);
+  };
 
   if (loading) {
     return (
@@ -178,6 +230,19 @@ export default function ContactDetailPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
           </svg>
           Chat
+        </button>
+        <button
+          onClick={() => setTab("postcard")}
+          className={`inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
+            tab === "postcard"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          Postcard
         </button>
       </div>
 
@@ -368,6 +433,98 @@ export default function ContactDetailPage() {
                 <p className="text-xs text-muted-foreground whitespace-pre-wrap font-mono leading-relaxed">
                   {contact.notes}
                 </p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : tab === "postcard" ? (
+        <div className="max-w-2xl">
+          <div className="glass-card rounded-2xl p-6">
+            <h3 className="text-sm font-medium text-foreground mb-4">Postcard</h3>
+
+            {!postcard ? (
+              <div className="text-center py-8">
+                <p className="text-sm text-muted-foreground mb-4">
+                  No postcard generated yet. Run company enrichment first, then generate a postcard.
+                </p>
+                <button
+                  onClick={handleGeneratePostcard}
+                  disabled={postcardGenerating}
+                  className="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2.5 rounded-lg font-medium transition text-sm mx-auto"
+                >
+                  {postcardGenerating ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                  Generate Postcard
+                </button>
+              </div>
+            ) : postcard.status === "pending" || postcard.status === "generating" ? (
+              <div className="flex flex-col items-center py-8 gap-3">
+                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                <p className="text-sm text-muted-foreground capitalize">
+                  {postcard.status === "pending" ? "Queued..." : "Generating background illustration..."}
+                </p>
+                <p className="text-xs text-muted-foreground">This takes about 30–60 seconds</p>
+              </div>
+            ) : postcard.status === "failed" ? (
+              <div className="text-center py-6">
+                <p className="text-danger text-sm font-medium mb-3">Generation failed</p>
+                <button
+                  onClick={handleGeneratePostcard}
+                  disabled={postcardGenerating}
+                  className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm"
+                >
+                  Try Again
+                </button>
+              </div>
+            ) : (
+              <div>
+                {postcard.imageUrl && (
+                  <img
+                    src={postcard.imageUrl}
+                    alt="Postcard preview"
+                    className="w-full rounded-lg mb-4"
+                  />
+                )}
+                <div className="flex items-center gap-3 flex-wrap">
+                  {postcard.status === "ready" && (
+                    <button
+                      onClick={() => handleApprovePostcard(postcard.id)}
+                      className="bg-success/10 text-success hover:bg-success/20 px-4 py-2 rounded-lg font-medium transition text-sm"
+                    >
+                      Approve
+                    </button>
+                  )}
+                  {postcard.status === "approved" && (
+                    <span className="text-success text-sm font-medium">Approved</span>
+                  )}
+                  {postcard.imageUrl && (
+                    <a
+                      href={postcard.imageUrl}
+                      download
+                      className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
+                    >
+                      Download
+                    </a>
+                  )}
+                  <button
+                    onClick={() => window.open(`/dashboard/postcards/${postcard.id}`, "_blank")}
+                    className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
+                  >
+                    Full Review
+                  </button>
+                  <button
+                    onClick={handleGeneratePostcard}
+                    disabled={postcardGenerating}
+                    className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition text-sm font-medium"
+                  >
+                    Regenerate
+                  </button>
+                </div>
               </div>
             )}
           </div>
