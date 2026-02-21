@@ -7,6 +7,84 @@ import { screenshotPostcard } from "@/lib/postcard/screenshot";
 
 export const maxDuration = 300;
 
+export const MAX_POSTCARD_ATTEMPTS = 5;
+
+// Run one postcard generation with up to MAX_POSTCARD_ATTEMPTS retries (exponential backoff).
+export async function generatePostcardWithRetry(postcardId: string): Promise<void> {
+  const record = await prisma.postcard.findUnique({
+    where: { id: postcardId },
+    select: { retryCount: true, backgroundPrompt: true, template: true },
+  });
+  if (!record) return;
+
+  let attempt = record.retryCount ?? 0;
+
+  while (attempt < MAX_POSTCARD_ATTEMPTS) {
+    attempt++;
+
+    await prisma.postcard.update({
+      where: { id: postcardId },
+      data: {
+        status: "generating",
+        retryCount: attempt,
+        errorMessage: null,
+      },
+    });
+
+    let succeeded = false;
+    let lastError = "";
+
+    try {
+      // Reuse existing backgroundPrompt on retries to avoid re-billing image generation
+      const prompt =
+        record.backgroundPrompt ??
+        (record.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
+
+      const bgBase64 = await generateBackground(prompt);
+      const backgroundUrl = `data:image/png;base64,${bgBase64}`;
+
+      await prisma.postcard.update({
+        where: { id: postcardId },
+        data: { status: "generating", backgroundUrl, backgroundPrompt: prompt },
+      });
+
+      const imageBase64 = await screenshotPostcard(postcardId);
+      const imageUrl = `data:image/png;base64,${imageBase64}`;
+
+      await prisma.postcard.update({
+        where: { id: postcardId },
+        data: { status: "ready", imageUrl },
+      });
+
+      succeeded = true;
+    } catch (err) {
+      lastError = (err as Error).message;
+    }
+
+    if (succeeded) break;
+
+    if (attempt < MAX_POSTCARD_ATTEMPTS) {
+      const delayMs = Math.pow(2, attempt) * 1000;
+      await prisma.postcard.update({
+        where: { id: postcardId },
+        data: {
+          status: "generating",
+          errorMessage: `Attempt ${attempt} failed, retrying in ${delayMs / 1000}s: ${lastError}`,
+        },
+      });
+      await new Promise((r) => setTimeout(r, delayMs));
+    } else {
+      await prisma.postcard.update({
+        where: { id: postcardId },
+        data: {
+          status: "failed",
+          errorMessage: `Failed after ${MAX_POSTCARD_ATTEMPTS} attempts: ${lastError}`,
+        },
+      });
+    }
+  }
+}
+
 export async function POST(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -54,6 +132,7 @@ export async function POST(request: Request) {
         contactId: contact.id,
         template,
         status: "pending",
+        retryCount: 0,
         contactName: contact.name,
         contactTitle: contact.title,
         contactPhoto: contact.profileImageUrl,
@@ -68,39 +147,8 @@ export async function POST(request: Request) {
 
     started.push(postcard.id);
 
-    const prompt = template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt();
-
-    // Fire-and-forget per contact
-    (async (pid: string) => {
-      try {
-        // Step 1: Generate background — returns base64 PNG
-        const bgBase64 = await generateBackground(prompt);
-        const backgroundUrl = `data:image/png;base64,${bgBase64}`;
-
-        await prisma.postcard.update({
-          where: { id: pid },
-          data: {
-            status: "generating",
-            backgroundUrl,
-            backgroundPrompt: prompt,
-          },
-        });
-
-        // Step 2: Render composited postcard via next/og image route
-        const imageBase64 = await screenshotPostcard(pid);
-        const imageUrl = `data:image/png;base64,${imageBase64}`;
-
-        await prisma.postcard.update({
-          where: { id: pid },
-          data: { status: "ready", imageUrl },
-        });
-      } catch (err) {
-        await prisma.postcard.update({
-          where: { id: pid },
-          data: { status: "failed", errorMessage: (err as Error).message },
-        });
-      }
-    })(postcard.id);
+    // Fire-and-forget with auto-retry
+    generatePostcardWithRetry(postcard.id);
   }
 
   return NextResponse.json({

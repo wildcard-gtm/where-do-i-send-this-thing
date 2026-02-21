@@ -18,6 +18,7 @@ interface Enrichment {
   enrichmentStatus: string;
   currentStep: string | null;
   errorMessage: string | null;
+  retryCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -30,12 +31,24 @@ interface EnrichmentBatch {
   enrichments: Enrichment[];
 }
 
-function StatusBadge({ status, currentStep, errorMessage }: { status: string; currentStep: string | null; errorMessage: string | null }) {
+const MAX_ATTEMPTS = 5;
+
+function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
+  status: string;
+  currentStep: string | null;
+  errorMessage: string | null;
+  retryCount: number;
+}) {
   if (status === "enriching") {
     return (
       <div className="flex items-center gap-2">
         <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
-        <span className="text-xs font-medium text-primary">{currentStep || "Enriching"}</span>
+        <div>
+          <span className="text-xs font-medium text-primary">{currentStep || "Enriching"}</span>
+          {retryCount > 1 && (
+            <span className="ml-1.5 text-xs text-muted-foreground">attempt {retryCount}/{MAX_ATTEMPTS}</span>
+          )}
+        </div>
       </div>
     );
   }
@@ -53,15 +66,20 @@ function StatusBadge({ status, currentStep, errorMessage }: { status: string; cu
 
   if (status === "failed") {
     return (
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-danger/10 text-danger">
-          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-          Failed
-        </span>
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-danger/10 text-danger">
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            Failed
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {retryCount}/{MAX_ATTEMPTS} attempts
+          </span>
+        </div>
         {errorMessage && (
-          <span className="text-xs text-muted-foreground truncate max-w-[200px]" title={errorMessage}>
+          <span className="text-xs text-muted-foreground/70 truncate max-w-[240px]" title={errorMessage}>
             {errorMessage}
           </span>
         )}
@@ -81,6 +99,8 @@ export default function EnrichmentDetailPage() {
   const batchId = params.id as string;
   const [batch, setBatch] = useState<EnrichmentBatch | null>(null);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/enrichment-batches/${batchId}`);
@@ -101,6 +121,19 @@ export default function EnrichmentDetailPage() {
     const interval = setInterval(fetchBatch, 3000);
     return () => clearInterval(interval);
   }, [batch, fetchBatch]);
+
+  const handleRetryFailed = async () => {
+    setRetrying(true);
+    setRetryError(null);
+    const res = await fetch(`/api/enrichment-batches/${batchId}/retry`, { method: "POST" });
+    const data = await res.json();
+    if (res.ok) {
+      await fetchBatch();
+    } else {
+      setRetryError(data.error || "Retry failed");
+    }
+    setRetrying(false);
+  };
 
   if (loading) {
     return (
@@ -127,6 +160,9 @@ export default function EnrichmentDetailPage() {
   const running = batch.enrichments.filter((e) => e.enrichmentStatus === "enriching").length;
   const done = completed + failed;
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  // Show retry button when batch is done but has failures
+  const canRetry = batch.status !== "running" && failed > 0;
 
   return (
     <div>
@@ -166,13 +202,37 @@ export default function EnrichmentDetailPage() {
           </p>
         </div>
 
-        <Link
-          href="/dashboard/enrichments"
-          className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm shrink-0"
-        >
-          Back
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {canRetry && (
+            <button
+              onClick={handleRetryFailed}
+              disabled={retrying}
+              className="inline-flex items-center gap-2 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 px-4 py-2 rounded-lg font-medium transition text-sm disabled:opacity-50"
+            >
+              {retrying ? (
+                <div className="w-4 h-4 border-2 border-danger border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              )}
+              Retry {failed} Failed
+            </button>
+          )}
+          <Link
+            href="/dashboard/enrichments"
+            className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm"
+          >
+            Back
+          </Link>
+        </div>
       </div>
+
+      {retryError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-danger/10 text-danger text-sm border border-danger/20">
+          {retryError}
+        </div>
+      )}
 
       {/* Progress bar while running */}
       {batch.status === "running" && (
@@ -223,6 +283,7 @@ export default function EnrichmentDetailPage() {
                   status={enrichment.enrichmentStatus}
                   currentStep={enrichment.currentStep}
                   errorMessage={enrichment.errorMessage}
+                  retryCount={enrichment.retryCount}
                 />
               </div>
             </div>

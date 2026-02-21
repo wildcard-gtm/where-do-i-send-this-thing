@@ -95,6 +95,13 @@ export default function PostcardsPage() {
     });
   };
 
+  const handleRetry = async (id: string) => {
+    await fetch(`/api/postcards/${id}/retry`, { method: "POST" });
+    setPostcards((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "generating" } : p))
+    );
+  };
+
   const handleExportCsv = () => {
     const rows = [
       ["Name", "Company", "Template", "Status", "Delivery Address"],
@@ -304,6 +311,14 @@ export default function PostcardsPage() {
                       className="text-xs font-medium px-3 py-1.5 rounded-lg bg-success/10 text-success hover:bg-success/20 transition"
                     >
                       Approve
+                    </button>
+                  )}
+                  {postcard.status === "failed" && (
+                    <button
+                      onClick={() => handleRetry(postcard.id)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition"
+                    >
+                      Retry
                     </button>
                   )}
                   {postcard.imageUrl && (

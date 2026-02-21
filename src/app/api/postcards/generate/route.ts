@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
-import { generateBackground } from "@/lib/postcard/background-generator";
-import { screenshotPostcard } from "@/lib/postcard/screenshot";
+import { generatePostcardWithRetry } from "@/app/api/postcards/generate-bulk/route";
 
 export const maxDuration = 300;
 
@@ -64,6 +63,7 @@ export async function POST(request: Request) {
       contactId,
       template,
       status: "pending",
+      retryCount: 0,
       contactName: contact.name,
       contactTitle: contact.title,
       contactPhoto: contact.profileImageUrl,
@@ -76,45 +76,8 @@ export async function POST(request: Request) {
     },
   });
 
-  const prompt = template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt();
-
-  // Fire-and-forget generation pipeline
-  (async () => {
-    try {
-      // Step 1: Generate background — returns base64 PNG
-      const bgBase64 = await generateBackground(prompt);
-      const backgroundUrl = `data:image/png;base64,${bgBase64}`;
-
-      await prisma.postcard.update({
-        where: { id: postcard.id },
-        data: {
-          status: "generating",
-          backgroundUrl,
-          backgroundPrompt: prompt,
-        },
-      });
-
-      // Step 2: Render the composited postcard via next/og image route
-      const imageBase64 = await screenshotPostcard(postcard.id);
-      const imageUrl = `data:image/png;base64,${imageBase64}`;
-
-      await prisma.postcard.update({
-        where: { id: postcard.id },
-        data: {
-          status: "ready",
-          imageUrl,
-        },
-      });
-    } catch (err) {
-      await prisma.postcard.update({
-        where: { id: postcard.id },
-        data: {
-          status: "failed",
-          errorMessage: (err as Error).message,
-        },
-      });
-    }
-  })();
+  // Fire-and-forget with auto-retry
+  generatePostcardWithRetry(postcard.id);
 
   return NextResponse.json({
     postcardId: postcard.id,

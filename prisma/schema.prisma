@@ -171,6 +171,7 @@ model CompanyEnrichment {
   enrichmentStatus String   @default("pending") // "pending" | "enriching" | "completed" | "failed"
   currentStep      String?  // e.g. "Identifying company", "Fetching logo", "Searching open roles"
   errorMessage     String?
+  retryCount       Int      @default(0) // number of attempts made so far (max 5)
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -218,6 +219,7 @@ model Postcard {
   template         String   // "warroom" | "zoom"
   status           String   @default("pending") // "pending" | "generating" | "ready" | "approved" | "failed"
   errorMessage     String?
+  retryCount       Int      @default(0) // number of generation attempts made (max 5)
 
   // Generated images (relative paths under /public/postcards/)
   backgroundUrl    String?  // AI-generated background scene
