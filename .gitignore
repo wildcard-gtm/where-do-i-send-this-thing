@@ -42,6 +42,7 @@ dev.db
 # docs/reports
 *.md
 !prompts/*.md
+!CLAUDE.md
 apidocs/
 
 # private notes (gitignored)
