@@ -65,11 +65,19 @@
 
 ## Architecture
 
+### AI Model Configuration (DB-driven)
+- Models stored in `SystemPrompt` table with keys: `config_agent_model`, `config_chat_model`, `config_fallback_model`
+- Format: `provider::modelId` (e.g. `openai::gpt-5.2`, `bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+- `src/lib/ai/config.ts` — `getAIClientForRole('agent' | 'chat' | 'fallback')` reads from DB, falls back to env vars / DEFAULT_MODEL
+- Configured in Admin → Models tab — now has 3 rows: Agent, Chat, Fallback
+- **Fallback model** is used when the agent model hits a rate limit (Bedrock ThrottlingException) — must be an OpenAI model
+- `gpt-5.2` uses the Responses API format (`max_completion_tokens`, no `temperature`) — already handled in `openai-client.ts`
+
 ### Enrichment Flow
 1. Contact created by address-lookup agent (may or may not have `company` field populated)
-2. `POST /api/contacts/enrich-bulk` — creates an `EnrichmentBatch` record, then for each contact creates a `CompanyEnrichment` record (status=`enriching`) linked to that batch, fire-and-forgets `runEnrichmentAgent()`. Returns `enrichmentBatchId` and redirects user to `/dashboard/enrichments/[id]`.
+2. `POST /api/contacts/enrich-bulk` — creates an `EnrichmentBatch` record, then for each contact creates a `CompanyEnrichment` record (status=`enriching`) linked to that batch. Runs agents with `CONCURRENCY = 3` using a shared-index worker pool. Returns `enrichmentBatchId` and redirects user to `/dashboard/enrichments/[id]`.
 3. `POST /api/contacts/[id]/enrich` — single contact path; creates `CompanyEnrichment` only (no batch).
-4. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — uses AWS Bedrock (Claude) to discover: company name, website, logo, open roles, values, mission, office locations, team photos.
+4. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — primary model from DB (`config_agent_model`), falls back to `config_fallback_model` on rate limit (NOT hardcoded `gpt-4o`).
 5. On completion each fire-and-forget `.finally()` checks if all enrichments in the batch are done and marks `EnrichmentBatch.status` → `complete` or `failed`.
 6. `/dashboard/enrichments/[id]` polls `GET /api/enrichment-batches/[id]` every 3s while `status === "running"`, showing per-contact spinner/completed/failed badges.
 

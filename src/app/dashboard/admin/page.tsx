@@ -46,6 +46,7 @@ interface ModelOption {
 interface ModelConfig {
   agent: { provider: string; modelId: string } | null;
   chat: { provider: string; modelId: string } | null;
+  fallback: { provider: string; modelId: string } | null;
 }
 
 interface BatchItem {
@@ -60,6 +61,7 @@ interface BatchItem {
 }
 
 type Tab = "prompts" | "models" | "feedback" | "messages" | "users" | "batches";
+type ModelRoleKey = "agent" | "chat" | "fallback";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("prompts");
@@ -70,7 +72,7 @@ export default function AdminPage() {
   const [batches, setBatches] = useState<BatchItem[]>([]);
   const [downloadingBatch, setDownloadingBatch] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
-  const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null });
+  const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null, fallback: null });
   const [savingModel, setSavingModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -205,7 +207,7 @@ export default function AdminPage() {
     }
   }
 
-  async function saveModelConfig(role: "agent" | "chat", provider: string, modelId: string) {
+  async function saveModelConfig(role: ModelRoleKey, provider: string, modelId: string) {
     setSavingModel(role);
     setError("");
     try {
@@ -216,7 +218,7 @@ export default function AdminPage() {
       });
       if (res.ok) {
         setModelConfig((prev) => ({ ...prev, [role]: { provider, modelId } }));
-        setSaveSuccess(`${role === "agent" ? "Agent" : "Chat"} model updated`);
+        setSaveSuccess(`${role === "agent" ? "Agent" : role === "fallback" ? "Fallback" : "Chat"} model updated`);
         setTimeout(() => setSaveSuccess(""), 3000);
       } else {
         const data = await res.json();
@@ -410,8 +412,9 @@ export default function AdminPage() {
               </p>
 
               {[
-                { role: "agent" as const, title: "Agent Model", description: "Used for address research and investigation. This model runs the multi-step agent loop with tool calls." },
-                { role: "chat" as const, title: "Chat Model", description: "Used for contact chat conversations. Responds to user questions about lookup results." },
+                { role: "agent" as ModelRoleKey, title: "Agent Model", description: "Used for address research and investigation. This model runs the multi-step agent loop with tool calls." },
+                { role: "chat" as ModelRoleKey, title: "Chat Model", description: "Used for contact chat conversations. Responds to user questions about lookup results." },
+                { role: "fallback" as ModelRoleKey, title: "Fallback Model", description: "Used when the agent model is rate-limited (e.g. Bedrock throttling). Should be an OpenAI model like GPT-5.2." },
               ].map(({ role, title, description }) => {
                 const current = modelConfig[role];
                 const currentValue = getModelValue(current);

@@ -11,7 +11,6 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { createAIClient } from '@/lib/ai/index';
 import { fetchCompanyLogo, fetchBrandfetch, searchExaAI } from './services';
 import axios, { type AxiosError } from 'axios';
 
@@ -302,7 +301,7 @@ Begin by determining the company domain, then follow the workflow above. Submit 
     } catch (err) {
       if (isRateLimit(err) && !usingFallback) {
         usingFallback = true;
-        aiClient = createAIClient('openai', 'gpt-4o');
+        aiClient = await getAIClientForRole('fallback');
         emit('step', { iteration, note: 'Rate limited — switching to fallback provider' });
         try {
           response = await aiClient.callModel(messages, ENRICHMENT_TOOLS);

@@ -19,17 +19,19 @@ export async function GET() {
 
   // Load current config from DB
   const configs = await prisma.systemPrompt.findMany({
-    where: { key: { in: ["config_agent_model", "config_chat_model"] } },
+    where: { key: { in: ["config_agent_model", "config_chat_model", "config_fallback_model"] } },
   });
 
   const agentConfig = configs.find((c) => c.key === "config_agent_model")?.content ?? null;
   const chatConfig = configs.find((c) => c.key === "config_chat_model")?.content ?? null;
+  const fallbackConfig = configs.find((c) => c.key === "config_fallback_model")?.content ?? null;
 
   return NextResponse.json({
     models: AVAILABLE_MODELS,
     current: {
       agent: agentConfig ? parseModelConfig(agentConfig) : null,
       chat: chatConfig ? parseModelConfig(chatConfig) : null,
+      fallback: fallbackConfig ? parseModelConfig(fallbackConfig) : null,
     },
   });
 }
@@ -46,8 +48,8 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "role, provider, and modelId are required" }, { status: 400 });
   }
 
-  if (role !== "agent" && role !== "chat") {
-    return NextResponse.json({ error: "role must be 'agent' or 'chat'" }, { status: 400 });
+  if (role !== "agent" && role !== "chat" && role !== "fallback") {
+    return NextResponse.json({ error: "role must be 'agent', 'chat', or 'fallback'" }, { status: 400 });
   }
 
   // Validate the model exists in our registry
@@ -58,8 +60,14 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Invalid model selection" }, { status: 400 });
   }
 
-  const key = role === "agent" ? "config_agent_model" : "config_chat_model";
-  const label = role === "agent" ? "Agent Model Config" : "Chat Model Config";
+  const key =
+    role === "agent" ? "config_agent_model" :
+    role === "fallback" ? "config_fallback_model" :
+    "config_chat_model";
+  const label =
+    role === "agent" ? "Agent Model Config" :
+    role === "fallback" ? "Fallback Model Config" :
+    "Chat Model Config";
   const value = serializeModelConfig(provider, modelId);
 
   await prisma.systemPrompt.upsert({
