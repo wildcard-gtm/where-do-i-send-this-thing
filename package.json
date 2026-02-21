@@ -10,7 +10,11 @@
     "lint": "eslint",
     "agent": "tsx src/agent/index.ts",
     "agent:experimental": "tsx src/agent/experimental/index.ts",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:enrichment": "tsx tests/test-enrichment.ts",
+    "test:background": "tsx tests/test-background.ts",
+    "test:image-route": "tsx tests/test-postcard-image-route.ts",
+    "test:pipeline": "tsx tests/test-postcard-pipeline.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.987.0",

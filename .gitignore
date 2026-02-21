@@ -50,6 +50,9 @@ notes/
 # test/export files in root
 /*.csv
 
+# local test scripts
+/tests/
+
 # vercel
 .vercel
 
