@@ -169,6 +169,7 @@ model CompanyEnrichment {
 
   // Metadata
   enrichmentStatus String   @default("pending") // "pending" | "enriching" | "completed" | "failed"
+  currentStep      String?  // e.g. "Identifying company", "Fetching logo", "Searching open roles"
   errorMessage     String?
 
   createdAt        DateTime @default(now())

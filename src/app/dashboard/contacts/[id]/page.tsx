@@ -137,10 +137,10 @@ export default function ContactDetailPage() {
       <div className="text-center py-12">
         <p className="text-muted-foreground">Contact not found.</p>
         <button
-          onClick={() => router.push("/dashboard/contacts")}
+          onClick={() => router.push("/dashboard/pipeline")}
           className="text-primary hover:text-primary-hover mt-4 text-sm"
         >
-          Back to Contacts
+          Back to Pipeline
         </button>
       </div>
     );
@@ -155,7 +155,7 @@ export default function ContactDetailPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => router.push("/dashboard/contacts")}
+            onClick={() => router.push("/dashboard/pipeline")}
             className="text-muted-foreground hover:text-foreground transition shrink-0"
             title="Back to contacts"
           >

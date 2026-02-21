@@ -16,6 +16,7 @@ interface Enrichment {
   contact: ContactInfo;
   companyName: string;
   enrichmentStatus: string;
+  currentStep: string | null;
   errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
@@ -29,12 +30,12 @@ interface EnrichmentBatch {
   enrichments: Enrichment[];
 }
 
-function StatusBadge({ status, errorMessage }: { status: string; errorMessage: string | null }) {
+function StatusBadge({ status, currentStep, errorMessage }: { status: string; currentStep: string | null; errorMessage: string | null }) {
   if (status === "enriching") {
     return (
       <div className="flex items-center gap-2">
         <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
-        <span className="text-xs font-medium text-primary">Enriching</span>
+        <span className="text-xs font-medium text-primary">{currentStep || "Enriching"}</span>
       </div>
     );
   }
@@ -220,6 +221,7 @@ export default function EnrichmentDetailPage() {
               <div className="shrink-0 sm:ml-4">
                 <StatusBadge
                   status={enrichment.enrichmentStatus}
+                  currentStep={enrichment.currentStep}
                   errorMessage={enrichment.errorMessage}
                 />
               </div>

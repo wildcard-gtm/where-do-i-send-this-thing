@@ -44,6 +44,18 @@ export async function GET(request: Request) {
       orderBy: { [sort]: order },
       skip: (page - 1) * limit,
       take: limit,
+      include: {
+        companyEnrichments: {
+          where: { isLatest: true },
+          select: { enrichmentStatus: true, currentStep: true },
+          take: 1,
+        },
+        postcards: {
+          orderBy: { createdAt: "desc" },
+          select: { status: true },
+          take: 1,
+        },
+      },
     }),
     prisma.contact.count({ where }),
     prisma.batch.findMany({

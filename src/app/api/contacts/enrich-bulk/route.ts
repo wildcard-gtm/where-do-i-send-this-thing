@@ -89,6 +89,14 @@ export async function POST(request: Request) {
       while (idx < jobs.length) {
         const job = jobs[idx++];
 
+        // Map tool calls → human-readable step labels
+        const STEP_LABELS: Record<string, string> = {
+          fetch_company_logo: "Fetching company logo",
+          search_web: "Searching the web",
+          fetch_url: "Reading company page",
+          submit_enrichment: "Finalising enrichment",
+        };
+
         try {
           const result = await runEnrichmentAgent(
             {
@@ -99,7 +107,25 @@ export async function POST(request: Request) {
               title: job.contact.title ?? undefined,
               officeAddress: job.contact.officeAddress ?? undefined,
             },
-            () => {},
+            async (event) => {
+              if (event.type === "tool_call") {
+                const toolName = event.data.tool as string;
+                // Specialise search_web labels based on the query
+                let step = STEP_LABELS[toolName] ?? "Working";
+                if (toolName === "search_web" && typeof event.data.input === "object") {
+                  const query = (event.data.input as { query?: string }).query ?? "";
+                  if (/role|job|career|hiring/i.test(query)) step = "Searching open roles";
+                  else if (/value|mission|culture/i.test(query)) step = "Finding company values";
+                  else if (/office|location|headquarter/i.test(query)) step = "Finding office locations";
+                  else if (/photo|team|people/i.test(query)) step = "Finding team photos";
+                  else step = "Searching the web";
+                }
+                await prisma.companyEnrichment.update({
+                  where: { id: job.enrichmentRecordId },
+                  data: { currentStep: step },
+                });
+              }
+            },
           );
 
           if (result) {
@@ -119,19 +145,20 @@ export async function POST(request: Request) {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 teamPhotos: (result.teamPhotos ?? undefined) as any,
                 enrichmentStatus: "completed",
+                currentStep: null,
                 errorMessage: null,
               },
             });
           } else {
             await prisma.companyEnrichment.update({
               where: { id: job.enrichmentRecordId },
-              data: { enrichmentStatus: "failed", errorMessage: "Agent returned no data" },
+              data: { enrichmentStatus: "failed", currentStep: null, errorMessage: "Agent returned no data" },
             });
           }
         } catch (err) {
           await prisma.companyEnrichment.update({
             where: { id: job.enrichmentRecordId },
-            data: { enrichmentStatus: "failed", errorMessage: (err as Error).message },
+            data: { enrichmentStatus: "failed", currentStep: null, errorMessage: (err as Error).message },
           });
         }
 
