@@ -58,9 +58,9 @@ export default function UploadPage() {
   }
 
   async function createBatch(skipDuplicateCheck: boolean) {
-    const validUrls = urls.filter((url) =>
-      /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?$/i.test(url)
-    );
+    const validUrls = urls
+      .filter((url) => /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?(\?.*)?$/i.test(url))
+      .map((url) => url.split("?")[0].replace(/\/$/, ""));
 
     if (validUrls.length === 0) {
       setError("No valid LinkedIn URLs found. Please add at least one.");

@@ -6,7 +6,7 @@ interface UrlPreviewListProps {
 }
 
 function isValidLinkedInUrl(url: string): boolean {
-  return /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?$/i.test(url);
+  return /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?(\?.*)?$/i.test(url);
 }
 
 export default function UrlPreviewList({
