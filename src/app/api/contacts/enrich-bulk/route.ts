@@ -19,13 +19,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
   }
 
-  // Verify all contacts belong to this user and have a company
+  // Verify all contacts belong to this user
   const contacts = await prisma.contact.findMany({
     where: { id: { in: contactIds }, userId: user.id },
     select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true },
   });
 
-  const valid = contacts.filter((c) => !!c.company);
+  const valid = contacts; // allow contacts without company — agent will discover it from LinkedIn
   const skipped = contactIds.filter((id) => !valid.find((c) => c.id === id));
 
   // Kick off enrichment for each valid contact
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
         contactId: contact.id,
         revisionNumber: nextRevision,
         isLatest: true,
-        companyName: contact.company!,
+        companyName: contact.company ?? "Unknown",
         enrichmentStatus: "enriching",
       },
     });
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
       {
         contactId: contact.id,
         name: contact.name,
-        company: contact.company!,
+        company: contact.company ?? "Unknown",
         linkedinUrl: contact.linkedinUrl,
         title: contact.title ?? undefined,
         officeAddress: contact.officeAddress ?? undefined,

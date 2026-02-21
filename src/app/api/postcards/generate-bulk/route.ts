@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import path from "path";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
 import { generateBackground } from "@/lib/postcard/background-generator";
 import { screenshotPostcard } from "@/lib/postcard/screenshot";
@@ -69,27 +68,31 @@ export async function POST(request: Request) {
 
     started.push(postcard.id);
 
-    const publicDir = path.join(process.cwd(), "public", "postcards");
-    const bgPath = path.join(publicDir, `bg-${postcard.id}.png`);
-    const finalPath = path.join(publicDir, `${postcard.id}.png`);
     const prompt = template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt();
 
     // Fire-and-forget per contact
     (async (pid: string) => {
       try {
-        await generateBackground(prompt, bgPath);
+        // Step 1: Generate background — returns base64 PNG
+        const bgBase64 = await generateBackground(prompt);
+        const backgroundUrl = `data:image/png;base64,${bgBase64}`;
+
         await prisma.postcard.update({
           where: { id: pid },
           data: {
             status: "generating",
-            backgroundUrl: `/postcards/bg-${pid}.png`,
+            backgroundUrl,
             backgroundPrompt: prompt,
           },
         });
-        await screenshotPostcard(pid, finalPath);
+
+        // Step 2: Render composited postcard via next/og image route
+        const imageBase64 = await screenshotPostcard(pid);
+        const imageUrl = `data:image/png;base64,${imageBase64}`;
+
         await prisma.postcard.update({
           where: { id: pid },
-          data: { status: "ready", imageUrl: `/postcards/${pid}.png` },
+          data: { status: "ready", imageUrl },
         });
       } catch (err) {
         await prisma.postcard.update({

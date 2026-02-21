@@ -24,10 +24,6 @@ export async function POST(
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
-  if (!contact.company) {
-    return NextResponse.json({ error: "Contact has no company — cannot enrich" }, { status: 400 });
-  }
-
   // Mark any existing enrichments as not latest
   await prisma.companyEnrichment.updateMany({
     where: { contactId: id, isLatest: true },
@@ -48,7 +44,7 @@ export async function POST(
       contactId: id,
       revisionNumber: nextRevision,
       isLatest: true,
-      companyName: contact.company,
+      companyName: contact.company ?? "Unknown",
       enrichmentStatus: "enriching",
     },
   });
@@ -59,7 +55,7 @@ export async function POST(
     {
       contactId: id,
       name: contact.name,
-      company: contact.company,
+      company: contact.company ?? "Unknown",
       linkedinUrl: contact.linkedinUrl,
       title: contact.title ?? undefined,
       location: undefined,
