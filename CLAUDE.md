@@ -10,6 +10,15 @@
 
 ## Critical Gotchas (Never Forget)
 
+### Windows: never use `2>/dev/null` in bash commands
+- This is a Windows machine. `2>/dev/null` in bash **creates a literal file named `null`** in the working directory instead of discarding stderr.
+- Use `2>&1` to merge stderr into stdout, or just omit the redirect entirely.
+- `/null` and `/NUL` are gitignored to contain the damage, but the fix is to never use `2>/dev/null`.
+
+### Windows: use `powershell -Command` for file/process operations, not unix tools
+- `ls`, `find`, `grep` etc. may not behave as expected — prefer PowerShell or the dedicated Claude tools (Glob, Grep, Read).
+- Path separators: use forward slashes in bash commands (`d:/wildcard/...`), backslashes in PowerShell.
+
 ### JSX in API Routes must use `.tsx` not `.ts`
 - Turbopack (used by Next.js dev) **rejects JSX syntax in `.ts` files**
 - The postcard image route `/src/app/api/postcards/[id]/image/route.tsx` uses `ImageResponse` with JSX — it MUST be `.tsx`
