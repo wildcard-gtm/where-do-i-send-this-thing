@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface Contact {
@@ -31,6 +32,7 @@ const recommendationColors: Record<string, string> = {
 const filterTabs = ["all", "HOME", "OFFICE", "BOTH"];
 
 export default function ContactsPage() {
+  const router = useRouter();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [total, setTotal] = useState(0);
   const [batches, setBatches] = useState<BatchOption[]>([]);
@@ -40,7 +42,7 @@ export default function ContactsPage() {
   const [batchFilter, setBatchFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
-  const [enrichMessage, setEnrichMessage] = useState<string | null>(null);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams();
@@ -83,7 +85,7 @@ export default function ContactsPage() {
     if (ids.length === 0) return;
 
     setEnriching(true);
-    setEnrichMessage(null);
+    setEnrichError(null);
 
     try {
       const res = await fetch("/api/contacts/enrich-bulk", {
@@ -92,17 +94,14 @@ export default function ContactsPage() {
         body: JSON.stringify({ contactIds: ids }),
       });
       const data = await res.json();
-      if (res.ok) {
-        setEnrichMessage(
-          `Enrichment started for ${data.started} contact${data.started !== 1 ? "s" : ""}${data.skipped > 0 ? ` (${data.skipped} skipped — no company data)` : ""}`
-        );
-        setSelected(new Set());
+      if (res.ok && data.enrichmentBatchId) {
+        router.push(`/dashboard/enrichments/${data.enrichmentBatchId}`);
       } else {
-        setEnrichMessage(`Error: ${data.error}`);
+        setEnrichError(data.error || "Failed to start enrichment");
+        setEnriching(false);
       }
     } catch {
-      setEnrichMessage("Network error — please try again");
-    } finally {
+      setEnrichError("Network error — please try again");
       setEnriching(false);
     }
   };
@@ -149,10 +148,10 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {/* Status message */}
-      {enrichMessage && (
-        <div className="mb-4 px-4 py-3 rounded-lg bg-primary/10 text-primary text-sm border border-primary/20">
-          {enrichMessage}
+      {/* Error message */}
+      {enrichError && (
+        <div className="mb-4 px-4 py-3 rounded-lg bg-danger/10 text-danger text-sm border border-danger/20">
+          {enrichError}
         </div>
       )}
 

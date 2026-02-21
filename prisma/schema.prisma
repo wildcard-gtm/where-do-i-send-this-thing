@@ -9,16 +9,17 @@ datasource db {
 }
 
 model User {
-  id          String     @id @default(cuid())
-  email       String     @unique
-  password    String
-  name        String
-  role        String     @default("user")
-  autoProcess Boolean    @default(false)
-  createdAt   DateTime   @default(now())
-  batches     Batch[]
-  contacts    Contact[]
-  feedbacks   Feedback[]
+  id                String             @id @default(cuid())
+  email             String             @unique
+  password          String
+  name              String
+  role              String             @default("user")
+  autoProcess       Boolean            @default(false)
+  createdAt         DateTime           @default(now())
+  batches           Batch[]
+  contacts          Contact[]
+  feedbacks         Feedback[]
+  enrichmentBatches EnrichmentBatch[]
 }
 
 model Batch {
@@ -124,10 +125,25 @@ model ContactMessage {
   createdAt DateTime @default(now())
 }
 
+model EnrichmentBatch {
+  id          String              @id @default(cuid())
+  name        String?
+  userId      String
+  user        User                @relation(fields: [userId], references: [id])
+  status      String              @default("running") // "running" | "complete" | "failed"
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  enrichments CompanyEnrichment[]
+}
+
 model CompanyEnrichment {
-  id               String   @id @default(cuid())
-  contactId        String
-  contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  id                String           @id @default(cuid())
+  contactId         String
+  contact           Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  // Enrichment batch (optional — older records may not have this)
+  enrichmentBatchId String?
+  enrichmentBatch   EnrichmentBatch? @relation(fields: [enrichmentBatchId], references: [id])
 
   // Revision tracking
   revisionNumber   Int      @default(1)

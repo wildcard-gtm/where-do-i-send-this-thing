@@ -28,7 +28,26 @@ export async function POST(request: Request) {
   const valid = contacts; // allow contacts without company — agent will discover it from LinkedIn
   const skipped = contactIds.filter((id) => !valid.find((c) => c.id === id));
 
-  // Kick off enrichment for each valid contact
+  if (valid.length === 0) {
+    return NextResponse.json({ error: "No valid contacts found" }, { status: 400 });
+  }
+
+  // Create an EnrichmentBatch to group this run
+  const batchName = `Enrichment · ${new Date().toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+
+  const enrichmentBatch = await prisma.enrichmentBatch.create({
+    data: {
+      userId: user.id,
+      name: batchName,
+      status: "running",
+    },
+  });
+
   const started: string[] = [];
 
   for (const contact of valid) {
@@ -48,6 +67,7 @@ export async function POST(request: Request) {
     const enrichmentRecord = await prisma.companyEnrichment.create({
       data: {
         contactId: contact.id,
+        enrichmentBatchId: enrichmentBatch.id,
         revisionNumber: nextRevision,
         isLatest: true,
         companyName: contact.company ?? "Unknown",
@@ -57,7 +77,7 @@ export async function POST(request: Request) {
 
     started.push(contact.id);
 
-    // Fire and forget
+    // Fire and forget — update DB when done, then check if batch is complete
     runEnrichmentAgent(
       {
         contactId: contact.id,
@@ -100,10 +120,28 @@ export async function POST(request: Request) {
         where: { id: enrichmentRecord.id },
         data: { enrichmentStatus: "failed", errorMessage: (err as Error).message },
       });
+    }).finally(async () => {
+      // Check if all enrichments in this batch are done
+      const remaining = await prisma.companyEnrichment.count({
+        where: {
+          enrichmentBatchId: enrichmentBatch.id,
+          enrichmentStatus: { in: ["pending", "enriching"] },
+        },
+      });
+      if (remaining === 0) {
+        const failedCount = await prisma.companyEnrichment.count({
+          where: { enrichmentBatchId: enrichmentBatch.id, enrichmentStatus: "failed" },
+        });
+        await prisma.enrichmentBatch.update({
+          where: { id: enrichmentBatch.id },
+          data: { status: failedCount > 0 ? "failed" : "complete" },
+        });
+      }
     });
   }
 
   return NextResponse.json({
+    enrichmentBatchId: enrichmentBatch.id,
     started: started.length,
     skipped: skipped.length,
     skippedIds: skipped,
