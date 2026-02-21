@@ -45,6 +45,9 @@ export async function GET(request: Request) {
       skip: (page - 1) * limit,
       take: limit,
       include: {
+        job: {
+          select: { status: true, batchId: true },
+        },
         companyEnrichments: {
           where: { isLatest: true },
           select: { enrichmentStatus: true, currentStep: true },
