@@ -1,6 +1,12 @@
 # CLAUDE.md — Project Memory
 <!-- Always update this file after any changes! Write new entries at the TOP of each section. -->
 
+## Git Rules
+- **Never add `Co-Authored-By: Claude` or any Claude co-author trailer** to commit messages.
+- Commit and push to `origin main` after completing features.
+
+---
+
 ## What This Project Is
 "Where Do I Send This Thing" — a Next.js fullstack app for automated contact enrichment and physical postcard generation targeting recruitment outreach. It scrapes LinkedIn profiles, finds home/office addresses, enriches company data, then generates printed postcards.
 
@@ -61,9 +67,11 @@
 
 ### Enrichment Flow
 1. Contact created by address-lookup agent (may or may not have `company` field populated)
-2. `POST /api/contacts/enrich-bulk` or `POST /api/contacts/[id]/enrich` — creates `CompanyEnrichment` record (status=`enriching`), fire-and-forgets `runEnrichmentAgent()`
-3. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — uses AWS Bedrock (Claude) to discover: company name, website, logo, open roles, values, mission, office locations, team photos
-4. Updates `CompanyEnrichment` record to status=`completed` or `failed` with `errorMessage`
+2. `POST /api/contacts/enrich-bulk` — creates an `EnrichmentBatch` record, then for each contact creates a `CompanyEnrichment` record (status=`enriching`) linked to that batch, fire-and-forgets `runEnrichmentAgent()`. Returns `enrichmentBatchId` and redirects user to `/dashboard/enrichments/[id]`.
+3. `POST /api/contacts/[id]/enrich` — single contact path; creates `CompanyEnrichment` only (no batch).
+4. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — uses AWS Bedrock (Claude) to discover: company name, website, logo, open roles, values, mission, office locations, team photos.
+5. On completion each fire-and-forget `.finally()` checks if all enrichments in the batch are done and marks `EnrichmentBatch.status` → `complete` or `failed`.
+6. `/dashboard/enrichments/[id]` polls `GET /api/enrichment-batches/[id]` every 3s while `status === "running"`, showing per-contact spinner/completed/failed badges.
 
 ### Postcard Generation Flow
 1. `POST /api/postcards/generate` (single) or `POST /api/postcards/generate-bulk`
@@ -101,8 +109,12 @@
 | `src/app/api/postcards/generate/route.ts` | Single postcard generation |
 | `src/app/api/postcards/generate-bulk/route.ts` | Bulk postcard generation |
 | `src/app/api/contacts/[id]/enrich/route.ts` | Single contact enrichment |
-| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk contact enrichment |
-| `prisma/schema.prisma` | DB schema (Contact, CompanyEnrichment, Postcard, Job, Batch) |
+| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk contact enrichment — creates EnrichmentBatch, returns enrichmentBatchId |
+| `src/app/api/enrichment-batches/route.ts` | GET list of user's enrichment batches |
+| `src/app/api/enrichment-batches/[id]/route.ts` | GET single enrichment batch with per-contact statuses |
+| `src/app/dashboard/enrichments/page.tsx` | Enrichments list page |
+| `src/app/dashboard/enrichments/[id]/page.tsx` | Enrichment detail page (polls every 3s while running) |
+| `prisma/schema.prisma` | DB schema (Contact, CompanyEnrichment, EnrichmentBatch, Postcard, Job, Batch) |
 
 ---
 
