@@ -666,7 +666,7 @@ export default function CampaignDetailPage() {
       {/* Action bar */}
       <div className="glass-card rounded-2xl px-4 py-3 mb-4 flex flex-wrap items-center gap-2">
         {/* Select All */}
-        <label className="flex items-center gap-2 cursor-pointer mr-2">
+        <label className="flex items-center gap-2 cursor-pointer">
           <input
             ref={selectAllRef}
             type="checkbox"
@@ -681,6 +681,80 @@ export default function CampaignDetailPage() {
             {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select all"}
           </span>
         </label>
+
+        {/* Select by status dropdown */}
+        <select
+          value=""
+          onChange={(e) => {
+            const val = e.target.value;
+            if (!val) return;
+            let ids: string[] = [];
+            if (val === "all") {
+              ids = contacts.map((c) => c.jobId);
+            } else if (val === "none") {
+              setSelectedIds(new Set());
+              return;
+            } else if (val === "failed") {
+              ids = contacts
+                .filter((c) =>
+                  c.jobStatus === "failed" ||
+                  c.enrichmentStatus === "failed" ||
+                  c.postcardStatus === "failed"
+                )
+                .map((c) => c.jobId);
+            } else if (val === "complete") {
+              ids = contacts
+                .filter((c) => c.postcardStatus === "ready" || c.postcardStatus === "approved")
+                .map((c) => c.jobId);
+            } else if (val === "scan_complete") {
+              ids = contacts.filter((c) => c.jobStatus === "complete").map((c) => c.jobId);
+            } else if (val === "enrich_complete") {
+              ids = contacts.filter((c) => c.enrichmentStatus === "completed").map((c) => c.jobId);
+            } else if (val === "needs_scan") {
+              ids = contacts
+                .filter((c) =>
+                  c.jobStatus === "pending" ||
+                  c.jobStatus === "failed" ||
+                  c.jobStatus === "cancelled"
+                )
+                .map((c) => c.jobId);
+            } else if (val === "needs_enrich") {
+              ids = contacts
+                .filter(
+                  (c) =>
+                    c.contactId &&
+                    c.jobStatus === "complete" &&
+                    (!c.enrichmentId ||
+                      c.enrichmentStatus === "failed" ||
+                      c.enrichmentStatus === "cancelled")
+                )
+                .map((c) => c.jobId);
+            } else if (val === "needs_postcard") {
+              ids = contacts
+                .filter(
+                  (c) =>
+                    c.enrichmentStatus === "completed" &&
+                    (!c.postcardId ||
+                      c.postcardStatus === "failed" ||
+                      c.postcardStatus === "cancelled")
+                )
+                .map((c) => c.jobId);
+            }
+            setSelectedIds(new Set(ids));
+          }}
+          className="text-sm text-muted-foreground bg-transparent border border-border rounded-lg px-2 py-1.5 cursor-pointer hover:border-muted-foreground transition focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <option value="">Filter select...</option>
+          <option value="all">All contacts</option>
+          <option value="none">None</option>
+          <option value="failed">Any failed</option>
+          <option value="needs_scan">Needs scan</option>
+          <option value="scan_complete">Scan complete</option>
+          <option value="needs_enrich">Needs enrich</option>
+          <option value="enrich_complete">Enrich complete</option>
+          <option value="needs_postcard">Needs postcard</option>
+          <option value="complete">Fully complete</option>
+        </select>
 
         <div className="h-4 w-px bg-border mx-1" />
 
