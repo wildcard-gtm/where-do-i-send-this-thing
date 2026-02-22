@@ -36,7 +36,7 @@ export async function GET(
               id: true,
               name: true,
               title: true,
-              enrichments: {
+              companyEnrichments: {
                 where: { isLatest: true },
                 take: 1,
                 select: {
@@ -80,7 +80,7 @@ export async function GET(
 
   const contacts = batch.jobs.map((job) => {
     const contact = job.contact ?? null;
-    const enrichment = contact?.enrichments[0] ?? null;
+    const enrichment = contact?.companyEnrichments[0] ?? null;
     const postcard = contact?.postcards[0] ?? null;
 
     const stages = job.events.map((e) => ({
