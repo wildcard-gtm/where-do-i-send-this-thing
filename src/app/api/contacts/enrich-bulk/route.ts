@@ -229,7 +229,7 @@ export async function POST(request: Request) {
         revisionNumber: nextRevision,
         isLatest: true,
         companyName: contact.company ?? "Unknown",
-        enrichmentStatus: "enriching",
+        enrichmentStatus: "pending",
         retryCount: 0,
       },
     });
@@ -237,31 +237,15 @@ export async function POST(request: Request) {
     jobs.push({ contact, enrichmentRecordId: enrichmentRecord.id });
   }
 
-  // Run agents with concurrency limit in the background — do NOT await
-  (async () => {
-    let idx = 0;
-
-    const runNext = async (): Promise<void> => {
-      while (idx < jobs.length) {
-        const job = jobs[idx++];
-        await runWithRetry({
-          enrichmentRecordId: job.enrichmentRecordId,
-          contact: job.contact,
-          batchId: enrichmentBatch.id,
-        });
-      }
-    };
-
-    // Start CONCURRENCY workers that pull from the shared idx
-    const workers = Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, () => runNext());
-    await Promise.allSettled(workers);
-  })();
-
+  // Return the batch ID and enrichment record IDs.
+  // The browser (enrichment detail page) dispatches individual POST /api/enrichments/[id]/run
+  // calls with concurrency control — this keeps Vercel function instances alive per-enrichment.
   return NextResponse.json({
     enrichmentBatchId: enrichmentBatch.id,
+    enrichmentIds: jobs.map((j) => j.enrichmentRecordId),
     started: jobs.length,
     skipped: skipped.length,
     skippedIds: skipped,
-    message: `Enrichment started for ${jobs.length} contact(s)`,
+    message: `Enrichment queued for ${jobs.length} contact(s)`,
   });
 }

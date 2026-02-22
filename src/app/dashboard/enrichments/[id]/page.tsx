@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -32,6 +32,7 @@ interface EnrichmentBatch {
 }
 
 const MAX_ATTEMPTS = 5;
+const CONCURRENCY = 3;
 
 function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
   status: string;
@@ -39,6 +40,14 @@ function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
   errorMessage: string | null;
   retryCount: number;
 }) {
+  if (status === "pending") {
+    return (
+      <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+        Queued
+      </span>
+    );
+  }
+
   if (status === "enriching") {
     return (
       <div className="flex items-center gap-2">
@@ -60,6 +69,14 @@ function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
         Completed
+      </span>
+    );
+  }
+
+  if (status === "cancelled") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-muted text-muted-foreground">
+        Cancelled
       </span>
     );
   }
@@ -100,7 +117,9 @@ export default function EnrichmentDetailPage() {
   const [batch, setBatch] = useState<EnrichmentBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
+  const dispatchingRef = useRef(false);
 
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/enrichment-batches/${batchId}`);
@@ -115,12 +134,52 @@ export default function EnrichmentDetailPage() {
     fetchBatch();
   }, [fetchBatch]);
 
-  // Poll every 3s while batch is still running
+  // Poll every 3s while batch is running
   useEffect(() => {
     if (!batch || batch.status !== "running") return;
     const interval = setInterval(fetchBatch, 3000);
     return () => clearInterval(interval);
   }, [batch, fetchBatch]);
+
+  // Dispatch pending enrichments from the browser with concurrency control
+  // This keeps each Vercel function alive for the duration of the enrichment
+  const dispatchPending = useCallback(async (enrichmentIds: string[]) => {
+    if (dispatchingRef.current || enrichmentIds.length === 0) return;
+    dispatchingRef.current = true;
+
+    let idx = 0;
+    const runNext = async (): Promise<void> => {
+      while (idx < enrichmentIds.length) {
+        const enrichmentId = enrichmentIds[idx++];
+        try {
+          await fetch(`/api/enrichments/${enrichmentId}/run`, { method: "POST" });
+        } catch {
+          // Individual failure is handled server-side
+        }
+        fetchBatch();
+      }
+    };
+
+    const workers = Array.from(
+      { length: Math.min(CONCURRENCY, enrichmentIds.length) },
+      () => runNext()
+    );
+    await Promise.allSettled(workers);
+    dispatchingRef.current = false;
+    fetchBatch();
+  }, [fetchBatch]);
+
+  // Auto-dispatch: when batch is running and has pending enrichments not yet being dispatched
+  useEffect(() => {
+    if (!batch || dispatchingRef.current) return;
+    if (batch.status !== "running") return;
+    const pendingIds = batch.enrichments
+      .filter((e) => e.enrichmentStatus === "pending")
+      .map((e) => e.id);
+    if (pendingIds.length > 0) {
+      dispatchPending(pendingIds);
+    }
+  }, [batch, dispatchPending]);
 
   const handleRetryFailed = async () => {
     setRetrying(true);
@@ -128,11 +187,24 @@ export default function EnrichmentDetailPage() {
     const res = await fetch(`/api/enrichment-batches/${batchId}/retry`, { method: "POST" });
     const data = await res.json();
     if (res.ok) {
+      dispatchingRef.current = false;
       await fetchBatch();
+      // Dispatch the reset enrichments
+      if (data.enrichmentIds?.length) {
+        dispatchPending(data.enrichmentIds);
+      }
     } else {
       setRetryError(data.error || "Retry failed");
     }
     setRetrying(false);
+  };
+
+  const handleCancel = async () => {
+    setCancelling(true);
+    await fetch(`/api/enrichment-batches/${batchId}/cancel`, { method: "POST" });
+    dispatchingRef.current = false;
+    await fetchBatch();
+    setCancelling(false);
   };
 
   if (loading) {
@@ -157,12 +229,20 @@ export default function EnrichmentDetailPage() {
   const total = batch.enrichments.length;
   const completed = batch.enrichments.filter((e) => e.enrichmentStatus === "completed").length;
   const failed = batch.enrichments.filter((e) => e.enrichmentStatus === "failed").length;
+  const cancelled = batch.enrichments.filter((e) => e.enrichmentStatus === "cancelled").length;
   const running = batch.enrichments.filter((e) => e.enrichmentStatus === "enriching").length;
-  const done = completed + failed;
+  const pending = batch.enrichments.filter((e) => e.enrichmentStatus === "pending").length;
+  const done = completed + failed + cancelled;
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  // Show retry button when batch is done but has failures
-  const canRetry = batch.status !== "running" && failed > 0;
+  const isRunning = batch.status === "running";
+  const canRetry = !isRunning && (failed > 0 || cancelled > 0);
+
+  // Sort: running/pending first, then completed, then failed/cancelled
+  const sortedEnrichments = [...batch.enrichments].sort((a, b) => {
+    const order: Record<string, number> = { enriching: 0, pending: 1, failed: 2, cancelled: 3, completed: 4 };
+    return (order[a.enrichmentStatus] ?? 5) - (order[b.enrichmentStatus] ?? 5);
+  });
 
   return (
     <div>
@@ -181,10 +261,16 @@ export default function EnrichmentDetailPage() {
                   ? "bg-success/15 text-success"
                   : batch.status === "failed"
                   ? "bg-danger/15 text-danger"
+                  : batch.status === "cancelled"
+                  ? "bg-muted text-muted-foreground"
                   : "bg-muted text-muted-foreground"
               }`}
             >
-              {batch.status === "running" ? "Running" : batch.status === "complete" ? "Complete" : batch.status === "failed" ? "Failed" : batch.status}
+              {batch.status === "running" ? "Running"
+                : batch.status === "complete" ? "Complete"
+                : batch.status === "failed" ? "Failed"
+                : batch.status === "cancelled" ? "Cancelled"
+                : batch.status}
             </span>
           </div>
           <p className="text-sm text-muted-foreground mt-1">
@@ -198,11 +284,29 @@ export default function EnrichmentDetailPage() {
             {` · ${total} contact${total !== 1 ? "s" : ""}`}
             {completed > 0 && ` · ${completed} completed`}
             {running > 0 && ` · ${running} running`}
+            {pending > 0 && ` · ${pending} queued`}
             {failed > 0 && ` · ${failed} failed`}
+            {cancelled > 0 && ` · ${cancelled} cancelled`}
           </p>
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {isRunning && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="inline-flex items-center gap-2 bg-muted hover:bg-card text-muted-foreground hover:text-foreground border border-border px-4 py-2 rounded-lg font-medium transition text-sm disabled:opacity-50"
+            >
+              {cancelling ? (
+                <div className="w-4 h-4 border-2 border-muted-foreground border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              )}
+              Cancel
+            </button>
+          )}
           {canRetry && (
             <button
               onClick={handleRetryFailed}
@@ -216,7 +320,7 @@ export default function EnrichmentDetailPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
               )}
-              Retry {failed} Failed
+              Retry {failed + cancelled} Failed
             </button>
           )}
           <Link
@@ -235,13 +339,15 @@ export default function EnrichmentDetailPage() {
       )}
 
       {/* Progress bar while running */}
-      {batch.status === "running" && (
+      {isRunning && (
         <div className="glass-card rounded-2xl p-5 mb-6">
           <div className="flex items-center justify-between mb-2.5">
             <span className="text-sm text-foreground font-medium">
               {running > 0
-                ? `Enriching ${running} contact${running !== 1 ? "s" : ""}`
-                : "Processing..."}
+                ? `Enriching ${running} contact${running !== 1 ? "s" : ""}${pending > 0 ? `, ${pending} queued` : ""}`
+                : pending > 0
+                ? `${pending} queued`
+                : "Finishing up..."}
             </span>
             <span className="text-sm text-muted-foreground">
               {done}/{total} ({progress}%)
@@ -258,7 +364,7 @@ export default function EnrichmentDetailPage() {
 
       {/* Enrichment list */}
       <div className="glass-card rounded-2xl divide-y divide-border/30 overflow-hidden">
-        {batch.enrichments.map((enrichment) => (
+        {sortedEnrichments.map((enrichment) => (
           <div key={enrichment.id} className="px-5 py-4 hover:bg-card-hover/50 transition">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3 min-w-0">
@@ -273,7 +379,11 @@ export default function EnrichmentDetailPage() {
                     {enrichment.contact.name}
                   </Link>
                   <p className="text-xs text-muted-foreground truncate">
-                    {enrichment.companyName !== "Unknown" ? enrichment.companyName : enrichment.contact.linkedinUrl.replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "").replace(/\/$/, "")}
+                    {enrichment.companyName !== "Unknown"
+                      ? enrichment.companyName
+                      : enrichment.contact.linkedinUrl
+                          .replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "")
+                          .replace(/\/$/, "")}
                   </p>
                 </div>
               </div>

@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { runWithRetry, MAX_ATTEMPTS } from "@/app/api/contacts/enrich-bulk/route";
-
-const CONCURRENCY = 3;
 
 // POST /api/enrichment-batches/[id]/retry
-// Re-queues all failed enrichments in a batch that haven't hit MAX_ATTEMPTS yet.
-// Also resets the retryCount to 0 for records the user manually retries (full fresh start).
+// Resets all failed/cancelled enrichments to pending and returns their IDs.
+// The browser (enrichment detail page) dispatches individual run calls.
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -23,12 +20,8 @@ export async function POST(
     where: { id, userId: user.id },
     include: {
       enrichments: {
-        where: { enrichmentStatus: "failed" },
-        include: {
-          contact: {
-            select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true },
-          },
-        },
+        where: { enrichmentStatus: { in: ["failed", "cancelled"] } },
+        select: { id: true },
       },
     },
   });
@@ -41,41 +34,18 @@ export async function POST(
     return NextResponse.json({ error: "No failed enrichments to retry" }, { status: 400 });
   }
 
-  // Reset retryCount to 0 so they get a fresh 5 attempts from this retry
+  const ids = batch.enrichments.map((e) => e.id);
+
+  // Reset to pending with fresh retry budget
   await prisma.companyEnrichment.updateMany({
-    where: { id: { in: batch.enrichments.map((e) => e.id) } },
-    data: { retryCount: 0, enrichmentStatus: "enriching", currentStep: "Queued for retry", errorMessage: null },
+    where: { id: { in: ids } },
+    data: { retryCount: 0, enrichmentStatus: "pending", currentStep: null, errorMessage: null },
   });
 
-  // Mark batch as running again
   await prisma.enrichmentBatch.update({
     where: { id },
     data: { status: "running" },
   });
 
-  // Fire-and-forget — re-run with full retry loop
-  (async () => {
-    let idx = 0;
-    const jobs = batch.enrichments;
-
-    const runNext = async (): Promise<void> => {
-      while (idx < jobs.length) {
-        const enrichment = jobs[idx++];
-        await runWithRetry({
-          enrichmentRecordId: enrichment.id,
-          contact: enrichment.contact,
-          batchId: id,
-        });
-      }
-    };
-
-    const workers = Array.from({ length: Math.min(CONCURRENCY, jobs.length) }, () => runNext());
-    await Promise.allSettled(workers);
-  })();
-
-  return NextResponse.json({
-    retrying: batch.enrichments.length,
-    maxAttemptsPerContact: MAX_ATTEMPTS,
-    message: `Retrying ${batch.enrichments.length} failed enrichment(s)`,
-  });
+  return NextResponse.json({ enrichmentIds: ids, retrying: ids.length });
 }
