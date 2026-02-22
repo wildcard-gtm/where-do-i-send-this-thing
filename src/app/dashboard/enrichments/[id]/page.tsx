@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 interface ContactInfo {
@@ -113,11 +113,13 @@ function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
 
 export default function EnrichmentDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const batchId = params.id as string;
   const [batch, setBatch] = useState<EnrichmentBatch | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [generatingPostcards, setGeneratingPostcards] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const dispatchingRef = useRef(false);
 
@@ -205,6 +207,26 @@ export default function EnrichmentDetailPage() {
     dispatchingRef.current = false;
     await fetchBatch();
     setCancelling(false);
+  };
+
+  const handleGeneratePostcards = async () => {
+    if (!batch) return;
+    const completedContactIds = batch.enrichments
+      .filter((e) => e.enrichmentStatus === "completed")
+      .map((e) => e.contactId);
+    if (completedContactIds.length === 0) return;
+    setGeneratingPostcards(true);
+    const res = await fetch("/api/postcards/generate-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactIds: completedContactIds }),
+    });
+    const data = await res.json();
+    if (res.ok && data.postcardBatchId) {
+      router.push(`/dashboard/postcards/batches/${data.postcardBatchId}`);
+    } else {
+      setGeneratingPostcards(false);
+    }
   };
 
   if (loading) {
@@ -321,6 +343,23 @@ export default function EnrichmentDetailPage() {
                 </svg>
               )}
               Retry {failed + cancelled} Failed
+            </button>
+          )}
+          {/* Generate Postcards — primary CTA when enrichment is done */}
+          {!isRunning && completed > 0 && (
+            <button
+              onClick={handleGeneratePostcards}
+              disabled={generatingPostcards}
+              className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition text-sm"
+            >
+              {generatingPostcards ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              )}
+              {generatingPostcards ? "Starting..." : `Generate ${completed} Postcard${completed !== 1 ? "s" : ""} →`}
             </button>
           )}
           <Link

@@ -255,6 +255,7 @@ export default function BatchDetailPage() {
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [enriching, setEnriching] = useState(false);
   const dispatchingRef = useRef(false);
 
   // Reset dispatching ref when batchId changes (navigating between batches)
@@ -388,6 +389,26 @@ export default function BatchDetailPage() {
     }
   }
 
+  async function handleEnrichContacts() {
+    if (!batch) return;
+    const completedContactIds = batch.jobs
+      .filter((j) => j.status === "complete" && j.contactId)
+      .map((j) => j.contactId as string);
+    if (completedContactIds.length === 0) return;
+    setEnriching(true);
+    const res = await fetch("/api/contacts/enrich-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactIds: completedContactIds }),
+    });
+    const data = await res.json();
+    if (res.ok && data.enrichmentBatchId) {
+      router.push(`/dashboard/enrichments/${data.enrichmentBatchId}`);
+    } else {
+      setEnriching(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -511,13 +532,31 @@ export default function BatchDetailPage() {
           {completed > 0 && isStopped && (
             <a
               href={`/api/batches/${batchId}/export`}
-              className="bg-success hover:opacity-90 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+              className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
               Export CSV
             </a>
+          )}
+
+          {/* Enrich Contacts — primary CTA when scan is done */}
+          {completed > 0 && isStopped && (
+            <button
+              onClick={handleEnrichContacts}
+              disabled={enriching}
+              className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+            >
+              {enriching ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              )}
+              {enriching ? "Starting..." : `Enrich ${completed} Contact${completed !== 1 ? "s" : ""} →`}
+            </button>
           )}
 
           <Link

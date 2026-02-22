@@ -128,7 +128,8 @@ function EnrichList({ batches }: { batches: EnrichBatch[] }) {
   if (batches.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-10 text-center">
-        <p className="text-muted-foreground text-sm">No enrichment runs yet. Complete a scan first.</p>
+        <p className="text-muted-foreground text-sm mb-2">No enrichment runs yet.</p>
+        <p className="text-muted-foreground/70 text-xs">Open a completed scan and click <span className="font-medium text-foreground">Enrich Contacts →</span></p>
       </div>
     );
   }
@@ -175,7 +176,8 @@ function PostcardList({ batches }: { batches: PostcardBatch[] }) {
   if (batches.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-10 text-center">
-        <p className="text-muted-foreground text-sm">No postcard runs yet. Complete enrichment first.</p>
+        <p className="text-muted-foreground text-sm mb-2">No postcard batches yet.</p>
+        <p className="text-muted-foreground/70 text-xs">Open a completed enrichment and click <span className="font-medium text-foreground">Generate Postcards →</span></p>
       </div>
     );
   }
@@ -289,7 +291,7 @@ export default function BatchesPage() {
             onClick={() => setTab(key)}
             className={`relative px-5 py-2.5 text-sm font-medium transition rounded-t-lg ${
               tab === key
-                ? "text-primary bg-primary/8"
+                ? "text-primary bg-primary/10"
                 : "text-muted-foreground hover:text-foreground hover:bg-card"
             }`}
           >
