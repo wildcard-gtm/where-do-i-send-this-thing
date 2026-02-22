@@ -38,6 +38,7 @@ interface Campaign {
   postcardStatus: string | null;
   postcardReady: number;
   postcardTotal: number;
+  postcardRunning: number;
 }
 
 // ─── Stage definitions (short, professional labels) ─────
@@ -190,6 +191,10 @@ function LeadStatus({ job, onRetry }: { job: Job; onRetry: (jobId: string) => vo
       BOTH: {
         cls: "text-accent bg-accent/10",
         icon: (<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>),
+      },
+      COURIER: {
+        cls: "text-warning bg-warning/10",
+        icon: (<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 10V7" /></svg>),
       },
     };
 
@@ -569,8 +574,8 @@ export default function BatchDetailPage() {
 
             // Stage 3: postcards exist
             if (hasPostcards) {
-              const postcardFailed = campaign!.postcardTotal - campaign!.postcardReady;
-              const postcardRunning = campaign!.postcardStatus === "running";
+              const postcardFailed = campaign!.postcardTotal - campaign!.postcardReady - campaign!.postcardRunning;
+              const postcardRunning = campaign!.postcardRunning > 0;
               const postcardsMissing = postcardFailed > 0 && !postcardRunning;
               return (
                 <>
