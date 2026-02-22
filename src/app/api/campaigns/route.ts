@@ -43,7 +43,10 @@ export async function GET() {
     const postcardTotal = pb ? pb.postcards.length : 0;
     const postcardReady = pb ? pb.postcards.filter((p) => p.status === "ready" || p.status === "approved").length : 0;
     const postcardFailed = pb ? pb.postcards.filter((p) => p.status === "failed").length : 0;
-    const postcardRunning = pb ? pb.postcards.filter((p) => p.status === "pending" || p.status === "generating").length : 0;
+    // Only count pending/generating as "running" when the batch itself is still running
+    const postcardRunning = (pb && pb.status === "running")
+      ? pb.postcards.filter((p) => p.status === "pending" || p.status === "generating").length
+      : 0;
 
     return {
       id: batch.id,
