@@ -129,16 +129,17 @@ model ContactMessage {
 }
 
 model PostcardBatch {
-  id          String     @id @default(cuid())
-  name        String?
-  userId      String
-  user        User       @relation(fields: [userId], references: [id])
-  scanBatchId String?
-  scanBatch   Batch?     @relation(fields: [scanBatchId], references: [id])
-  status      String     @default("running") // "running" | "complete" | "failed" | "cancelled"
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  postcards   Postcard[]
+  id           String     @id @default(cuid())
+  name         String?
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  scanBatchId  String?
+  scanBatch    Batch?     @relation(fields: [scanBatchId], references: [id])
+  status       String     @default("running") // "running" | "complete" | "failed" | "cancelled"
+  backMessage  String?    // Custom back-of-card message used for all postcards in this batch
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  postcards    Postcard[]
 }
 
 model EnrichmentBatch {
@@ -247,6 +248,9 @@ model Postcard {
   backgroundUrl    String?  // AI-generated background scene
   backgroundPrompt String?  // prompt used (for regeneration)
   imageUrl         String?  // final composited PNG
+
+  // Back-of-card message (personalised outreach copy)
+  backMessage      String?  // e.g. "Hi [Name], we'd love to connect..."
 
   // Data snapshot used at generation time
   companyLogo      String?

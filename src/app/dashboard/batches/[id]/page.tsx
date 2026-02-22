@@ -29,6 +29,17 @@ interface Batch {
   jobs: Job[];
 }
 
+interface Campaign {
+  enrichBatchId: string | null;
+  enrichStatus: string | null;
+  enrichCompleted: number;
+  enrichTotal: number;
+  postcardBatchId: string | null;
+  postcardStatus: string | null;
+  postcardReady: number;
+  postcardTotal: number;
+}
+
 // ─── Stage definitions (short, professional labels) ─────
 
 const LEAD_STAGES = [
@@ -251,6 +262,7 @@ export default function BatchDetailPage() {
   const router = useRouter();
   const batchId = params.id as string;
   const [batch, setBatch] = useState<Batch | null>(null);
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -264,10 +276,18 @@ export default function BatchDetailPage() {
   }, [batchId]);
 
   const fetchBatch = useCallback(async () => {
-    const res = await fetch(`/api/batches/${batchId}`);
-    if (res.ok) {
-      const data = await res.json();
+    const [batchRes, campaignRes] = await Promise.all([
+      fetch(`/api/batches/${batchId}`),
+      fetch(`/api/campaigns`),
+    ]);
+    if (batchRes.ok) {
+      const data = await batchRes.json();
       setBatch(data.batch);
+    }
+    if (campaignRes.ok) {
+      const data = await campaignRes.json();
+      const match = (data.campaigns ?? []).find((c: Campaign & { id: string }) => c.id === batchId);
+      if (match) setCampaign(match);
     }
     setLoading(false);
   }, [batchId]);
@@ -541,23 +561,123 @@ export default function BatchDetailPage() {
             </a>
           )}
 
-          {/* Enrich Contacts — primary CTA when scan is done */}
-          {completed > 0 && isStopped && (
-            <button
-              onClick={handleEnrichContacts}
-              disabled={enriching}
-              className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
-            >
-              {enriching ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              )}
-              {enriching ? "Starting..." : `Enrich ${completed} Contact${completed !== 1 ? "s" : ""} →`}
-            </button>
-          )}
+          {/* Next-step CTA — context-aware based on campaign stage */}
+          {completed > 0 && isStopped && (() => {
+            const hasPostcards = !!campaign?.postcardBatchId;
+            const hasEnrichment = !!campaign?.enrichBatchId;
+            const enrichDone = (campaign?.enrichStatus === "complete") || ((campaign?.enrichCompleted ?? 0) > 0 && campaign?.enrichStatus !== "running");
+
+            // Stage 3: postcards exist
+            if (hasPostcards) {
+              const postcardFailed = campaign!.postcardTotal - campaign!.postcardReady;
+              const postcardRunning = campaign!.postcardStatus === "running";
+              const postcardsMissing = postcardFailed > 0 && !postcardRunning;
+              return (
+                <>
+                  {postcardsMissing && (
+                    <Link
+                      href={`/dashboard/postcards/batches/${campaign!.postcardBatchId}`}
+                      className="border border-danger/40 hover:border-danger text-danger hover:text-danger px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Retry {postcardFailed} Failed
+                    </Link>
+                  )}
+                  <Link
+                    href={`/dashboard/postcards/batches/${campaign!.postcardBatchId}`}
+                    className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                  >
+                    {postcardRunning && (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {!postcardRunning && (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                    {postcardRunning ? "Generating..." : `View Postcards (${campaign!.postcardReady}/${campaign!.postcardTotal}) →`}
+                  </Link>
+                </>
+              );
+            }
+
+            // Stage 2b: enrichment done (fully or partially)
+            if (hasEnrichment && enrichDone) {
+              const enrichFailed = campaign!.enrichTotal - campaign!.enrichCompleted;
+              const hasPartial = enrichFailed > 0 && campaign!.enrichCompleted > 0;
+              return (
+                <>
+                  {hasPartial && (
+                    <Link
+                      href={`/dashboard/enrichments/${campaign!.enrichBatchId}`}
+                      className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Re-enrich {enrichFailed} Failed
+                    </Link>
+                  )}
+                  <Link
+                    href={`/dashboard/enrichments/${campaign!.enrichBatchId}`}
+                    className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    Generate Postcards →
+                  </Link>
+                </>
+              );
+            }
+
+            // Stage 2a: enrichment running
+            if (hasEnrichment && !enrichDone) {
+              return (
+                <Link
+                  href={`/dashboard/enrichments/${campaign!.enrichBatchId}`}
+                  className="bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                >
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  View Enrichment ({campaign!.enrichCompleted}/{campaign!.enrichTotal}) →
+                </Link>
+              );
+            }
+
+            // Stage 1: no enrichment yet → start it
+            const scanMissing = failed + cancelled;
+            return (
+              <>
+                {scanMissing > 0 && (
+                  <button
+                    onClick={handleRetryAllFailed}
+                    className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Retry {scanMissing} Failed
+                  </button>
+                )}
+                <button
+                  onClick={handleEnrichContacts}
+                  disabled={enriching}
+                  className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm inline-flex items-center gap-1.5"
+                >
+                  {enriching ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  )}
+                  {enriching ? "Starting..." : `Enrich ${completed}${scanMissing > 0 ? `/${total}` : ""} Contact${completed !== 1 ? "s" : ""} →`}
+                </button>
+              </>
+            );
+          })()}
 
           <Link
             href="/dashboard/batches"

@@ -1,25 +1,27 @@
 export function getWarRoomPrompt(): string {
   return (
-    "Vintage warm painterly illustration of a strategic war room. " +
-    "Four professionals gathered around a large wooden conference table covered in documents and papers. " +
-    "A very large vintage world map dominates the entire back wall — the map has absolutely NO text on it, NO city names, NO country labels, NO writing of any kind, just land masses and ocean. " +
-    "Two antique banker's lamps with green shades sit on the table. " +
-    "Leaded diamond-pattern windows on the right side wall let in warm light. " +
-    "Rich dark wood paneling on the walls. " +
-    "Warm sepia, brown, and cream color palette throughout. " +
-    "Detailed painterly illustration style with soft textures. " +
-    "Absolutely no text, no writing, no numbers, no words anywhere in the image — walls, table, map, documents, all blank."
+    "Bold modern business conference scene as a wide horizontal banner illustration. " +
+    "Left two-thirds: a sleek glass-walled conference room with a long dark table, leather chairs, " +
+    "floor-to-ceiling windows showing a city skyline at dusk, warm overhead lighting. " +
+    "Three or four professional people in business attire lean over documents on the table — " +
+    "no faces visible, figures from behind or in silhouette. " +
+    "Right one-third: a flat bold red accent panel with no text. " +
+    "Color palette: deep navy, charcoal, warm white, bold red accents. " +
+    "Clean modern graphic design style — flat areas of color mixed with photorealistic detail, " +
+    "high contrast, magazine editorial aesthetic. " +
+    "Absolutely no text, no words, no numbers, no logos anywhere in the image."
   );
 }
 
 export function getZoomRoomPrompt(): string {
   return (
-    "Realistic Zoom video conference interface screenshot. " +
-    "Dark charcoal gray top navigation bar — completely empty, no icons, no text. " +
-    "Left two-thirds of the screen is a clean white presentation slide area with no content. " +
-    "Right one-third shows a 2x2 grid of four video call participant tiles — each person in a different cozy home office setting (bookshelves, plants, soft lamp, neutral wall). " +
-    "Bottom dark gray control bar with small circular icon buttons but no text labels. " +
-    "No text anywhere in the image. No names on tiles. No labels on buttons. No writing on the slide. " +
-    "Clean modern digital interface style, photorealistic UI rendering."
+    "Modern remote work scene as a wide horizontal banner illustration. " +
+    "Left two-thirds: a bright airy home office — large monitor showing a grid of blurred video call thumbnails, " +
+    "a clean wooden desk, a potted plant, soft natural window light, neutral linen walls. " +
+    "No readable screen content — all screens are blurred glows of color. " +
+    "Right one-third: a bold flat navy accent panel with no text. " +
+    "Color palette: warm white, soft sage green, navy blue, light wood tones. " +
+    "Clean modern Scandinavian design aesthetic, high contrast, editorial illustration style. " +
+    "Absolutely no text, no words, no numbers, no logos anywhere in the image."
   );
 }

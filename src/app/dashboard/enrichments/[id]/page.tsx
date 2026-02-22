@@ -35,6 +35,9 @@ interface EnrichmentBatch {
 const MAX_ATTEMPTS = 5;
 const CONCURRENCY = 3;
 
+const DEFAULT_BACK_MESSAGE =
+  `Hi [First Name],\n\nWe came across your profile and were genuinely impressed by what you're building at [Company].\n\nWe're [Your Company] — we help teams like yours [value prop in one line]. We'd love to explore if there's a fit.\n\nGive us a shout at hello@yourcompany.com or scan the QR code to book 15 minutes.\n\nCheers,\n[Your Name]`;
+
 function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
   status: string;
   currentStep: string | null;
@@ -112,6 +115,86 @@ function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
   );
 }
 
+// ─── Back-message prompt modal ────────────────────────────────────────────────
+
+function BackMessageModal({
+  completedCount,
+  onConfirm,
+  onCancel,
+}: {
+  completedCount: number;
+  onConfirm: (message: string) => void;
+  onCancel: () => void;
+}) {
+  const [message, setMessage] = useState(DEFAULT_BACK_MESSAGE);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col">
+        {/* Header */}
+        <div className="flex items-start justify-between p-6 pb-4 border-b border-border/50">
+          <div>
+            <h2 className="text-lg font-bold text-foreground">Back-of-Card Message</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              This personalised message will be printed on the back of all {completedCount} postcard{completedCount !== 1 ? "s" : ""}. Edit it to match your outreach voice.
+            </p>
+          </div>
+          <button
+            onClick={onCancel}
+            className="text-muted-foreground hover:text-foreground transition ml-4 shrink-0"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 flex flex-col gap-3">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">
+            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Use <span className="font-mono mx-1">[First Name]</span> and <span className="font-mono mx-1">[Company]</span> as placeholders — they&apos;ll be swapped per recipient.
+          </div>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={12}
+            className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm text-foreground font-mono leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition placeholder:text-muted-foreground"
+            placeholder="Write your back-of-card message here…"
+          />
+          <p className="text-xs text-muted-foreground text-right">
+            {message.length} characters
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-6 pt-2 border-t border-border/50">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-muted-foreground transition"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm(message.trim())}
+            disabled={!message.trim()}
+            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            Generate {completedCount} Postcard{completedCount !== 1 ? "s" : ""} →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
 export default function EnrichmentDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -121,6 +204,7 @@ export default function EnrichmentDetailPage() {
   const [retrying, setRetrying] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [generatingPostcards, setGeneratingPostcards] = useState(false);
+  const [showBackMessageModal, setShowBackMessageModal] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const dispatchingRef = useRef(false);
 
@@ -145,7 +229,6 @@ export default function EnrichmentDetailPage() {
   }, [batch, fetchBatch]);
 
   // Dispatch pending enrichments from the browser with concurrency control
-  // This keeps each Vercel function alive for the duration of the enrichment
   const dispatchPending = useCallback(async (enrichmentIds: string[]) => {
     if (dispatchingRef.current || enrichmentIds.length === 0) return;
     dispatchingRef.current = true;
@@ -192,7 +275,6 @@ export default function EnrichmentDetailPage() {
     if (res.ok) {
       dispatchingRef.current = false;
       await fetchBatch();
-      // Dispatch the reset enrichments
       if (data.enrichmentIds?.length) {
         dispatchPending(data.enrichmentIds);
       }
@@ -210,8 +292,15 @@ export default function EnrichmentDetailPage() {
     setCancelling(false);
   };
 
-  const handleGeneratePostcards = async () => {
+  // Step 1: open the back-message modal
+  const handleGeneratePostcardsClick = () => {
+    setShowBackMessageModal(true);
+  };
+
+  // Step 2: user confirmed message — actually fire the generation
+  const handleConfirmGenerate = async (backMessage: string) => {
     if (!batch) return;
+    setShowBackMessageModal(false);
     const completedContactIds = batch.enrichments
       .filter((e) => e.enrichmentStatus === "completed")
       .map((e) => e.contactId);
@@ -220,7 +309,11 @@ export default function EnrichmentDetailPage() {
     const res = await fetch("/api/postcards/generate-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactIds: completedContactIds, scanBatchId: batch.scanBatchId }),
+      body: JSON.stringify({
+        contactIds: completedContactIds,
+        scanBatchId: batch.scanBatchId,
+        backMessage,
+      }),
     });
     const data = await res.json();
     if (res.ok && data.postcardBatchId) {
@@ -269,6 +362,15 @@ export default function EnrichmentDetailPage() {
 
   return (
     <div>
+      {/* Back-message modal */}
+      {showBackMessageModal && (
+        <BackMessageModal
+          completedCount={completed}
+          onConfirm={handleConfirmGenerate}
+          onCancel={() => setShowBackMessageModal(false)}
+        />
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div>
@@ -346,10 +448,10 @@ export default function EnrichmentDetailPage() {
               Retry {failed + cancelled} Failed
             </button>
           )}
-          {/* Generate Postcards — primary CTA when enrichment is done */}
+          {/* Generate Postcards — opens back-message prompt first */}
           {!isRunning && completed > 0 && (
             <button
-              onClick={handleGeneratePostcards}
+              onClick={handleGeneratePostcardsClick}
               disabled={generatingPostcards}
               className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg font-medium transition text-sm"
             >

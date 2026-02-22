@@ -7,7 +7,7 @@ export const maxDuration = 300;
 export const MAX_POSTCARD_ATTEMPTS = 5;
 
 // POST /api/postcards/generate-bulk
-// Body: { contactIds: string[] }
+// Body: { contactIds: string[], scanBatchId?: string, backMessage?: string }
 // Creates a PostcardBatch + individual Postcard records (status: "pending").
 // Returns the batch ID so the browser can redirect to the batch detail page,
 // which dispatches individual POST /api/postcards/[id]/run calls with concurrency control.
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { contactIds, scanBatchId } = await request.json();
+  const { contactIds, scanBatchId, backMessage } = await request.json();
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       name: batchName,
       status: "running",
       ...(scanBatchId ? { scanBatchId } : {}),
+      ...(backMessage ? { backMessage } : {}),
     },
   });
 
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
         companyValues: enrichment?.companyValues ?? undefined,
         companyMission: enrichment?.companyMission ?? null,
         officeLocations: enrichment?.officeLocations ?? undefined,
+        ...(backMessage ? { backMessage } : {}),
       },
     });
 

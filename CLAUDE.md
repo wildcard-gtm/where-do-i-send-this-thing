@@ -65,6 +65,22 @@
 
 ## Architecture
 
+### Campaign-Based Pipeline (New Structure)
+Each **Campaign** = one `Batch` record that owns three linked sub-batches flowing sequentially:
+
+```
+Batch (Campaign)
+  ├── Jobs[] → Contacts[]         (SCAN stage)
+  ├── EnrichmentBatch             (ENRICH stage, linked via scanBatchId)
+  │     └── CompanyEnrichments[]
+  └── PostcardBatch               (POSTCARD stage, linked via scanBatchId)
+        └── Postcards[]
+```
+
+- `GET /api/campaigns` aggregates all three stages into a single object for the dashboard
+- `/dashboard/batches` is now the **"Campaigns" page** — shows all 3 stage pills (Scan | Enrich | Postcard) with live counts and lock/unlock state
+- **Stage locking**: Enrich is locked until ≥1 contact is scanned; Postcard is locked until ≥1 contact is enriched
+
 ### AI Model Configuration (DB-driven)
 - Models stored in `SystemPrompt` table with keys: `config_agent_model`, `config_chat_model`, `config_fallback_model`
 - Format: `provider::modelId` (e.g. `openai::gpt-5.2`, `bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0`)
@@ -73,34 +89,41 @@
 - **Fallback model** is used when the agent model hits a rate limit (Bedrock ThrottlingException) — must be an OpenAI model
 - `gpt-5.2` uses the Responses API format (`max_completion_tokens`, no `temperature`) — already handled in `openai-client.ts`
 
-### Enrichment Flow
-1. Contact created by address-lookup agent (may or may not have `company` field populated)
-2. `POST /api/contacts/enrich-bulk` — creates an `EnrichmentBatch` record, then for each contact creates a `CompanyEnrichment` record (status=`enriching`) linked to that batch. Runs agents with `CONCURRENCY = 3` using a shared-index worker pool. Returns `enrichmentBatchId` and redirects user to `/dashboard/enrichments/[id]`.
-3. `POST /api/contacts/[id]/enrich` — single contact path; creates `CompanyEnrichment` only (no batch).
-4. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — primary model from DB (`config_agent_model`), falls back to `config_fallback_model` on rate limit (NOT hardcoded `gpt-4o`).
-5. On completion each fire-and-forget `.finally()` checks if all enrichments in the batch are done and marks `EnrichmentBatch.status` → `complete` or `failed`.
-6. `/dashboard/enrichments/[id]` polls `GET /api/enrichment-batches/[id]` every 3s while `status === "running"`, showing per-contact spinner/completed/failed badges.
+### Address Lookup Agent (Scan Stage)
+- `src/agent/agent-streaming.ts` — accepts a LinkedIn URL, runs up to 25 iterations with 9 tools
+- Tools: LinkedIn scraping (Bright Data), People Data Labs, WhitePages/Endato address search, property verification (PropMix), Exa AI web search, Google Maps distance calculation
+- Emits `AgentEvent` records to DB on each iteration (streamed via `GET /api/batches/[id]/jobs/[jobId]/stream`)
+- Output: `AgentDecision` → HOME / OFFICE / COURIER recommendation with confidence score
 
-### Postcard Generation Flow
-1. `POST /api/postcards/generate` (single) or `POST /api/postcards/generate-bulk`
-2. Creates `Postcard` record (status=`pending`), fire-and-forgets:
-   - `generateBackground(prompt)` → base64 PNG → stored as `data:image/png;base64,...` in `Postcard.backgroundUrl`
+### Enrichment Flow (Enrich Stage)
+1. `POST /api/contacts/enrich-bulk` — creates `EnrichmentBatch` (linked to `Batch.id` via `scanBatchId`), creates `CompanyEnrichment` records (status=`enriching`), runs agents at `CONCURRENCY=3`. Returns `enrichmentBatchId` → redirects to `/dashboard/enrichments/[id]`
+2. `POST /api/contacts/[id]/enrich` — single contact path (no batch)
+3. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — primary model from DB, falls back to fallback model on rate limit
+4. On completion, `.finally()` marks `EnrichmentBatch.status` → `complete` or `failed`
+5. `/dashboard/enrichments/[id]` polls `GET /api/enrichment-batches/[id]` every 3s while `status === "running"`
+
+### Postcard Generation Flow (Postcard Stage)
+1. `POST /api/postcards/generate-bulk` — creates `PostcardBatch` (linked to `Batch.id` via `scanBatchId`), fire-and-forgets generation. Returns `postcardBatchId` → redirects to `/dashboard/postcards/batches/[id]`
+2. `POST /api/postcards/generate` — single postcard path
+3. Fire-and-forget per postcard:
+   - `generateBackground(prompt)` → base64 PNG → `Postcard.backgroundUrl`
    - Status → `generating`
-   - `screenshotPostcard(postcardId)` → fetches `GET /api/postcards/[id]/image` → base64 PNG → stored in `Postcard.imageUrl`
+   - `screenshotPostcard(postcardId)` → fetches `GET /api/postcards/[id]/image` → base64 PNG → `Postcard.imageUrl`
    - Status → `ready`
-3. On any error: status → `failed`, error written to `Postcard.errorMessage`
 
 ### Image Rendering (`next/og`)
 - `src/app/api/postcards/[id]/image/route.tsx` — uses `ImageResponse` from `next/og`
 - Renders `WarRoomPostcard` or `ZoomRoomPostcard` React component at 1536×1024
-- Reads postcard data directly from DB (Prisma)
 - **Must be `.tsx`** (not `.ts`) — contains JSX
-- No auth required (used internally by screenshot function)
-- Works on Vercel Edge/Serverless with zero binary dependencies
+- No auth required; zero binary dependencies; works on Vercel
 
 ### Templates
 - **War Room** (default): vintage map + city pins + hiring panel + contact photo. Used when contact has an office address.
-- **Zoom Room**: simulated Zoom meeting UI. Used when contact is fully remote (no office address, or `fully_remote` flag).
+- **Zoom Room**: simulated Zoom meeting UI. Used when contact is fully remote (`fully_remote` flag or no office address).
+
+### Retry Logic (Enrichments + Postcards)
+- Both `CompanyEnrichment` and `Postcard` have `retryCount Int @default(0)`, max 5 attempts, exponential backoff (2^attempt seconds)
+- Manual retry resets `retryCount` to 0: `POST /api/enrichment-batches/[id]/retry` or `POST /api/postcards/[id]/retry`
 
 ---
 
@@ -108,21 +131,57 @@
 
 | File | Purpose |
 |---|---|
+| `src/app/api/campaigns/route.ts` | GET — aggregates Batch + EnrichmentBatch + PostcardBatch into unified campaign objects |
+| `src/app/dashboard/batches/page.tsx` | "Campaigns" page — 3-stage pills (Scan/Enrich/Postcard) with lock/unlock state |
+| `src/app/dashboard/batches/[id]/page.tsx` | Batch detail with per-job streaming events |
 | `src/agent/enrichment-agent.ts` | Company enrichment agent (Bedrock/Claude) |
 | `src/agent/agent-streaming.ts` | Address lookup agent with streaming |
-| `src/lib/postcard/background-generator.ts` | Generates AI background image (gpt-image-1 → dall-e-3 fallback) |
+| `src/agent/tools.ts` | Tool definitions and dispatch |
+| `src/agent/services.ts` | External API calls (Endato, Bright Data, PropMix, etc.) |
+| `src/lib/ai/config.ts` | `getAIClientForRole()` — DB-driven model routing with fallback |
+| `src/lib/postcard/background-generator.ts` | AI background image gen (gpt-image-1 → dall-e-3 fallback) |
 | `src/lib/postcard/screenshot.ts` | Fetches image route, returns base64 |
 | `src/lib/postcard/prompt-generator.ts` | War room / zoom room prompts |
 | `src/app/api/postcards/[id]/image/route.tsx` | **MUST BE .tsx** — next/og ImageResponse |
 | `src/app/api/postcards/generate/route.ts` | Single postcard generation |
-| `src/app/api/postcards/generate-bulk/route.ts` | Bulk postcard generation |
+| `src/app/api/postcards/generate-bulk/route.ts` | Bulk postcard generation — creates PostcardBatch |
 | `src/app/api/contacts/[id]/enrich/route.ts` | Single contact enrichment |
-| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk contact enrichment — creates EnrichmentBatch, returns enrichmentBatchId |
-| `src/app/api/enrichment-batches/route.ts` | GET list of user's enrichment batches |
+| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk enrichment — creates EnrichmentBatch, CONCURRENCY=3 |
 | `src/app/api/enrichment-batches/[id]/route.ts` | GET single enrichment batch with per-contact statuses |
-| `src/app/dashboard/enrichments/page.tsx` | Enrichments list page |
-| `src/app/dashboard/enrichments/[id]/page.tsx` | Enrichment detail page (polls every 3s while running) |
-| `prisma/schema.prisma` | DB schema (Contact, CompanyEnrichment, EnrichmentBatch, Postcard, Job, Batch) |
+| `src/app/api/enrichment-batches/[id]/retry/route.ts` | POST — resets failed enrichments, re-queues |
+| `src/app/api/enrichment-batches/[id]/cancel/route.ts` | POST — cancels running enrichments |
+| `src/app/api/postcard-batches/[id]/route.ts` | GET single postcard batch |
+| `src/app/api/postcard-batches/[id]/retry/route.ts` | POST — retries failed postcards |
+| `src/app/api/postcard-batches/[id]/cancel/route.ts` | POST — cancels postcard generation |
+| `src/app/api/batches/[id]/start/route.ts` | POST — starts job processing |
+| `src/app/api/batches/[id]/stop/route.ts` | POST — halts job processing |
+| `src/app/api/batches/[id]/retry-failed/route.ts` | POST — retries failed jobs |
+| `src/app/api/batches/[id]/jobs/[jobId]/stream/route.ts` | GET — streams AgentEvents for a job |
+| `src/app/api/admin/reset/route.ts` | POST — wipes DB by scope; requires `x-debug-key` header |
+| `src/app/api/debug/status/route.ts` | GET — platform status; requires `?key=` param |
+| `src/app/dashboard/enrichments/[id]/page.tsx` | Enrichment detail (per-contact spinners, polls every 3s) |
+| `src/app/dashboard/postcards/page.tsx` | Postcard gallery — filter, approve, download, export CSV |
+| `src/app/dashboard/postcards/batches/[id]/page.tsx` | Postcard batch detail |
+| `src/app/dashboard/pipeline/page.tsx` | Pipeline overview page |
+| `src/app/dashboard/upload/page.tsx` | Upload page — paste LinkedIn URLs or CSV |
+| `src/app/sammy/page.tsx` | Internal briefing page (Shane's requirements for Sammy) |
+| `src/lib/auth.ts` | JWT + session cookie utilities |
+| `src/lib/db.ts` | Prisma singleton |
+| `prisma/schema.prisma` | DB schema |
+| `prompts/agent_main.md` | Address lookup agent system prompt (editable via Admin UI) |
+
+---
+
+## Database Schema (Key Models)
+
+- **User** → **Batch** (1:many, the "Campaign") → **Job** (1:many) → **AgentEvent** (1:many)
+- **Job** → **Contact** (1:1)
+- **Batch** → **EnrichmentBatch** (1:many, `scanBatchId` FK) → **CompanyEnrichment** (1:many)
+- **Batch** → **PostcardBatch** (1:many, `scanBatchId` FK) → **Postcard** (1:many)
+- **Contact** → **CompanyEnrichment** (1:many, `isLatest` flag + `revisionNumber`)
+- **Contact** → **ContactRevision** (1:many, snapshots of contact data per scan)
+- **Contact** → **Postcard** (1:many)
+- **SystemPrompt** — admin-editable agent/chat/model prompts stored in DB
 
 ---
 
@@ -134,7 +193,7 @@ AWS_ACCESS_KEY_ID
 AWS_SECRET_ACCESS_KEY
 AWS_REGION
 
-# OpenAI (used for image generation)
+# OpenAI (used for image generation + fallback model)
 OPENAI_API_KEY
 
 # Database (Supabase/PostgreSQL)
@@ -152,6 +211,9 @@ GOOGLE_SEARCH_API_KEY
 # App URL (used by screenshotPostcard to call image route)
 NEXT_PUBLIC_APP_URL       # e.g. https://your-app.vercel.app
 # On Vercel, VERCEL_URL is set automatically as fallback
+
+# Debug/admin endpoints (not user-facing)
+DEBUG_API_KEY             # wdistt-debug-k9x2mq7p4r — used by /api/admin/reset and /api/debug/status
 ```
 
 ---
