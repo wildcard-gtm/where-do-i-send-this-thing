@@ -219,8 +219,8 @@ export default function EnrichmentDetailPage() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">Enrichment batch not found.</p>
-        <Link href="/dashboard/enrichments" className="text-primary hover:text-primary-hover mt-4 inline-block">
-          Back to Enrichments
+        <Link href="/dashboard/batches" className="text-primary hover:text-primary-hover mt-4 inline-block">
+          Back to Batches
         </Link>
       </div>
     );
@@ -324,7 +324,7 @@ export default function EnrichmentDetailPage() {
             </button>
           )}
           <Link
-            href="/dashboard/enrichments"
+            href="/dashboard/batches"
             className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm"
           >
             Back

@@ -400,8 +400,8 @@ export default function BatchDetailPage() {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">Batch not found.</p>
-        <button onClick={() => router.push("/dashboard")} className="text-primary hover:text-primary-hover mt-4">
-          Back to Dashboard
+        <button onClick={() => router.push("/dashboard/batches")} className="text-primary hover:text-primary-hover mt-4">
+          Back to Batches
         </button>
       </div>
     );
@@ -521,7 +521,7 @@ export default function BatchDetailPage() {
           )}
 
           <Link
-            href="/dashboard"
+            href="/dashboard/batches"
             className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-5 py-2 rounded-lg font-medium transition text-sm"
           >
             Back

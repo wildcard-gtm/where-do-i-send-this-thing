@@ -10,10 +10,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: "grid", exact: true },
-  { href: "/dashboard/upload", label: "New Scan", icon: "plus", exact: false },
-  { href: "/dashboard/batches", label: "Scans", icon: "search", exact: false },
-  { href: "/dashboard/pipeline", label: "Pipeline", icon: "pipeline", exact: false },
+  { href: "/dashboard/upload", label: "Upload", icon: "plus", exact: false },
+  { href: "/dashboard/batches", label: "Batches", icon: "pipeline", exact: false },
   { href: "/dashboard/postcards", label: "Postcards", icon: "postcard", exact: false },
   { href: "/dashboard/settings", label: "Settings", icon: "settings", exact: false },
 ];
