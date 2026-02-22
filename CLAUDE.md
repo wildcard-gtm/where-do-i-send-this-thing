@@ -131,9 +131,10 @@ Batch (Campaign)
 
 | File | Purpose |
 |---|---|
-| `src/app/api/campaigns/route.ts` | GET — aggregates Batch + EnrichmentBatch + PostcardBatch into unified campaign objects |
-| `src/app/dashboard/batches/page.tsx` | "Campaigns" page — 3-stage pills (Scan/Enrich/Postcard) with lock/unlock state |
-| `src/app/dashboard/batches/[id]/page.tsx` | Batch detail with per-job streaming events |
+| `src/app/api/campaigns/route.ts` | GET — aggregates Batch + EnrichmentBatch + PostcardBatch into unified campaign list |
+| `src/app/api/campaigns/[id]/route.ts` | GET — unified per-contact view: Job + CompanyEnrichment + Postcard in one query |
+| `src/app/dashboard/batches/page.tsx` | "Campaigns" list page — 3-stage pills (Scan/Enrich/Postcard) |
+| `src/app/dashboard/batches/[id]/page.tsx` | **Unified campaign page** — contact table with Scan/Enrich/Postcard pills, checkbox select, shared CONCURRENCY=5 dispatcher |
 | `src/agent/enrichment-agent.ts` | Company enrichment agent (Bedrock/Claude) |
 | `src/agent/agent-streaming.ts` | Address lookup agent with streaming |
 | `src/agent/tools.ts` | Tool definitions and dispatch |
@@ -182,6 +183,25 @@ Batch (Campaign)
 - **Contact** → **ContactRevision** (1:many, snapshots of contact data per scan)
 - **Contact** → **Postcard** (1:many)
 - **SystemPrompt** — admin-editable agent/chat/model prompts stored in DB
+
+### Exact Prisma relation field names (use these in `include`/`select` — wrong names cause TS build errors)
+
+| Model | Field name | Points to |
+|---|---|---|
+| `Batch` | `jobs` | `Job[]` |
+| `Batch` | `enrichmentBatches` | `EnrichmentBatch[]` |
+| `Batch` | `postcardBatches` | `PostcardBatch[]` |
+| `Job` | `events` | `AgentEvent[]` |
+| `Job` | `contact` | `Contact?` |
+| `Contact` | `companyEnrichments` | `CompanyEnrichment[]` ← **NOT `enrichments`** |
+| `Contact` | `postcards` | `Postcard[]` |
+| `Contact` | `job` | `Job?` |
+| `EnrichmentBatch` | `enrichments` | `CompanyEnrichment[]` |
+| `PostcardBatch` | `postcards` | `Postcard[]` |
+| `CompanyEnrichment` | `contact` | `Contact` |
+| `CompanyEnrichment` | `enrichmentBatch` | `EnrichmentBatch?` |
+| `Postcard` | `contact` | `Contact` |
+| `Postcard` | `postcardBatch` | `PostcardBatch?` |
 
 ---
 
