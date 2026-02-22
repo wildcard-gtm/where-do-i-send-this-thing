@@ -13,24 +13,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "address param required" }, { status: 400 });
   }
 
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "Geocoding not configured" }, { status: 503 });
-  }
-
   try {
+    // Nominatim (OpenStreetMap) — free, no API key, natural pair for Leaflet
     const res = await fetch(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`,
-      { next: { revalidate: 86400 } } // cache 24h — addresses don't change
+      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`,
+      {
+        headers: { "User-Agent": "wdistt-app/1.0" }, // Nominatim requires a User-Agent
+        next: { revalidate: 86400 }, // cache 24h — addresses don't change
+      }
     );
     const data = await res.json();
 
-    if (data.status !== "OK" || !data.results?.length) {
+    if (!data?.length) {
       return NextResponse.json({ lat: null, lng: null });
     }
 
-    const { lat, lng } = data.results[0].geometry.location;
-    return NextResponse.json({ lat, lng });
+    return NextResponse.json({ lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) });
   } catch {
     return NextResponse.json({ lat: null, lng: null });
   }
