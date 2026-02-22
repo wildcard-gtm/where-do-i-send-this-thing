@@ -28,6 +28,7 @@ interface EnrichmentBatch {
   name: string | null;
   status: string;
   createdAt: string;
+  scanBatchId: string | null;
   enrichments: Enrichment[];
 }
 
@@ -219,7 +220,7 @@ export default function EnrichmentDetailPage() {
     const res = await fetch("/api/postcards/generate-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactIds: completedContactIds }),
+      body: JSON.stringify({ contactIds: completedContactIds, scanBatchId: batch.scanBatchId }),
     });
     const data = await res.json();
     if (res.ok && data.postcardBatchId) {

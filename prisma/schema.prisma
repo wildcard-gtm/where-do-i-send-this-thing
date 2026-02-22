@@ -24,14 +24,16 @@ model User {
 }
 
 model Batch {
-  id        String   @id @default(cuid())
-  name      String?
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  status    String   @default("pending")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  jobs      Job[]
+  id               String            @id @default(cuid())
+  name             String?
+  userId           String
+  user             User              @relation(fields: [userId], references: [id])
+  status           String            @default("pending")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  jobs             Job[]
+  enrichmentBatches EnrichmentBatch[]
+  postcardBatches  PostcardBatch[]
 }
 
 model Job {
@@ -127,14 +129,16 @@ model ContactMessage {
 }
 
 model PostcardBatch {
-  id        String     @id @default(cuid())
-  name      String?
-  userId    String
-  user      User       @relation(fields: [userId], references: [id])
-  status    String     @default("running") // "running" | "complete" | "failed" | "cancelled"
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  postcards Postcard[]
+  id          String     @id @default(cuid())
+  name        String?
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  scanBatchId String?
+  scanBatch   Batch?     @relation(fields: [scanBatchId], references: [id])
+  status      String     @default("running") // "running" | "complete" | "failed" | "cancelled"
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  postcards   Postcard[]
 }
 
 model EnrichmentBatch {
@@ -142,6 +146,8 @@ model EnrichmentBatch {
   name        String?
   userId      String
   user        User                @relation(fields: [userId], references: [id])
+  scanBatchId String?
+  scanBatch   Batch?              @relation(fields: [scanBatchId], references: [id])
   status      String              @default("running") // "running" | "complete" | "failed"
   createdAt   DateTime            @default(now())
   updatedAt   DateTime            @updatedAt

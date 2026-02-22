@@ -399,7 +399,7 @@ export default function BatchDetailPage() {
     const res = await fetch("/api/contacts/enrich-bulk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contactIds: completedContactIds }),
+      body: JSON.stringify({ contactIds: completedContactIds, scanBatchId: batchId }),
     });
     const data = await res.json();
     if (res.ok && data.enrichmentBatchId) {

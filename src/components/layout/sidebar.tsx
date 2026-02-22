@@ -10,8 +10,8 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { href: "/dashboard/upload", label: "Upload", icon: "plus", exact: false },
-  { href: "/dashboard/batches", label: "Batches", icon: "pipeline", exact: false },
+  { href: "/dashboard/batches", label: "Campaigns", icon: "pipeline", exact: false },
+  { href: "/dashboard/contacts", label: "Contacts", icon: "users", exact: false },
   { href: "/dashboard/postcards", label: "Postcards", icon: "postcard", exact: false },
   { href: "/dashboard/settings", label: "Settings", icon: "settings", exact: false },
 ];

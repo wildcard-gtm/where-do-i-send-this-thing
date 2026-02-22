@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { contactIds } = await request.json();
+  const { contactIds, scanBatchId } = await request.json();
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
@@ -41,7 +41,12 @@ export async function POST(request: Request) {
   })}`;
 
   const postcardBatch = await prisma.postcardBatch.create({
-    data: { userId: user.id, name: batchName, status: "running" },
+    data: {
+      userId: user.id,
+      name: batchName,
+      status: "running",
+      ...(scanBatchId ? { scanBatchId } : {}),
+    },
   });
 
   const postcardIds: string[] = [];

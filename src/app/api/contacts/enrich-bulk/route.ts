@@ -170,7 +170,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { contactIds } = await request.json();
+  const { contactIds, scanBatchId } = await request.json();
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
@@ -198,7 +198,12 @@ export async function POST(request: Request) {
   })}`;
 
   const enrichmentBatch = await prisma.enrichmentBatch.create({
-    data: { userId: user.id, name: batchName, status: "running" },
+    data: {
+      userId: user.id,
+      name: batchName,
+      status: "running",
+      ...(scanBatchId ? { scanBatchId } : {}),
+    },
   });
 
   // Create all DB records upfront so the UI can show them immediately

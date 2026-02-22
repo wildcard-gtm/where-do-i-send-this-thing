@@ -4,255 +4,237 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-interface ScanBatch {
+interface Campaign {
   id: string;
   name: string | null;
   status: string;
   createdAt: string;
-  jobs: { status: string }[];
+  // Scan stage
+  totalJobs: number;
+  completedJobs: number;
+  failedJobs: number;
+  // Enrich stage
+  enrichBatchId: string | null;
+  enrichStatus: string | null;
+  enrichTotal: number;
+  enrichCompleted: number;
+  enrichFailed: number;
+  enrichRunning: number;
+  // Postcard stage
+  postcardBatchId: string | null;
+  postcardStatus: string | null;
+  postcardTotal: number;
+  postcardReady: number;
+  postcardFailed: number;
+  postcardRunning: number;
 }
 
-interface EnrichBatch {
-  id: string;
-  name: string | null;
-  status: string;
-  createdAt: string;
-  total: number;
-  completed: number;
-  failed: number;
-  running: number;
-}
-
-interface PostcardBatch {
-  id: string;
-  name: string | null;
-  status: string;
-  createdAt: string;
-  total: number;
-  ready: number;
-  failed: number;
-  generating: number;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
   });
 }
 
-function StatusPill({ status }: { status: string }) {
-  const cfg: Record<string, string> = {
-    pending:    "bg-muted text-muted-foreground",
-    processing: "bg-primary/15 text-primary",
-    running:    "bg-primary/15 text-primary",
-    complete:   "bg-success/15 text-success",
-    completed:  "bg-success/15 text-success",
-    failed:     "bg-danger/15 text-danger",
-    cancelled:  "bg-muted text-muted-foreground",
-  };
-  const label: Record<string, string> = {
-    pending: "Pending", processing: "Running", running: "Running",
-    complete: "Complete", completed: "Complete",
-    failed: "Failed", cancelled: "Cancelled",
-  };
+// ─── Stage chip: shows scan / enrich / postcard status inline ────────────────
+
+function StagePill({
+  label,
+  status,
+  count,
+  total,
+  locked,
+}: {
+  label: string;
+  status: string | null;
+  count: number;
+  total: number;
+  locked: boolean;
+}) {
+  if (locked) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-muted/50 text-muted-foreground/50 border border-border/30">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+        </svg>
+        {label}
+      </span>
+    );
+  }
+
+  if (status === "running" || status === "processing") {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+        {label} {count}/{total}
+      </span>
+    );
+  }
+
+  if (status === "complete" || status === "completed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-success/10 text-success border border-success/20">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+        </svg>
+        {label}
+      </span>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-danger/10 text-danger border border-danger/20">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+        {label} {count}/{total}
+      </span>
+    );
+  }
+
+  if (status === "pending") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-muted text-muted-foreground border border-border/50">
+        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3" strokeWidth={2} />
+        </svg>
+        {label} {count}/{total}
+      </span>
+    );
+  }
+
+  // Has data but no clear status — partial/complete
+  if (total > 0) {
+    const allDone = count + (status === "failed" ? 0 : 0) >= total;
+    return (
+      <span className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border ${
+        allDone
+          ? "bg-success/10 text-success border-success/20"
+          : "bg-muted text-muted-foreground border-border/50"
+      }`}>
+        {label} {count}/{total}
+      </span>
+    );
+  }
+
   return (
-    <span className={`text-xs font-medium px-2.5 py-1 rounded-full shrink-0 ${cfg[status] ?? "bg-muted text-muted-foreground"}`}>
-      {label[status] ?? status}
+    <span className="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full bg-muted/50 text-muted-foreground/50 border border-border/30">
+      {label}
     </span>
   );
 }
 
-// ─── Sub-lists ───────────────────────────────────────────────────────────────
+// ─── Campaign row ─────────────────────────────────────────────────────────────
 
-function ScansList({ batches }: { batches: ScanBatch[] }) {
-  const router = useRouter();
-  if (batches.length === 0) {
-    return (
-      <div className="glass-card rounded-2xl p-10 text-center">
-        <p className="text-muted-foreground text-sm mb-4">No scans yet.</p>
-        <Link href="/dashboard/upload" className="bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg font-medium transition text-sm inline-block">
-          New Scan
-        </Link>
-      </div>
-    );
-  }
+function CampaignRow({ c, onClick }: { c: Campaign; onClick: () => void }) {
+  const scanDone = c.completedJobs + c.failedJobs;
+  const scanProgress = c.totalJobs > 0 ? Math.round((scanDone / c.totalJobs) * 100) : 0;
+  const isActive =
+    c.status === "processing" ||
+    c.enrichRunning > 0 ||
+    c.postcardRunning > 0;
+
+  // Derive scan stage status
+  const scanStatus =
+    c.status === "processing" ? "running"
+    : c.status === "complete" ? "complete"
+    : c.status === "failed" ? "failed"
+    : c.status === "cancelled" ? "cancelled"
+    : "pending";
+
+  // Enrich is locked if scan has 0 completions
+  const enrichLocked = c.completedJobs === 0 && c.enrichBatchId === null;
+
+  // Postcard is locked if no enrichment completed
+  const postcardLocked = c.enrichCompleted === 0 && c.postcardBatchId === null;
+
   return (
-    <div className="space-y-2.5">
-      {batches.map((b) => {
-        const completed = b.jobs.filter((j) => j.status === "complete").length;
-        const total = b.jobs.length;
-        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
-        return (
-          <div
-            key={b.id}
-            className="glass-card glass-card-hover rounded-2xl p-4 cursor-pointer"
-            onClick={() => router.push(`/dashboard/batches/${b.id}`)}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {b.name || "Scan"} <span className="text-muted-foreground font-normal">· {total} lead{total !== 1 ? "s" : ""}</span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{formatDate(b.createdAt)}</p>
-              </div>
-              <div className="flex items-center gap-2.5 shrink-0">
-                <span className="text-xs text-muted-foreground">{completed}/{total}</span>
-                <StatusPill status={b.status} />
-                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-            {total > 0 && (
-              <div className="mt-3 w-full bg-muted rounded-full h-1">
-                <div className="bg-primary h-1 rounded-full transition-all" style={{ width: `${progress}%` }} />
-              </div>
+    <div
+      className="glass-card glass-card-hover rounded-2xl p-5 cursor-pointer"
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between gap-4 mb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            {isActive && (
+              <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
             )}
+            <p className="text-sm font-semibold text-foreground truncate">
+              {c.name || `Campaign ${formatDate(c.createdAt)}`}
+            </p>
           </div>
-        );
-      })}
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {formatDate(c.createdAt)} · {c.totalJobs} lead{c.totalJobs !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <svg className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </div>
+
+      {/* 3-stage pills */}
+      <div className="flex flex-wrap gap-2">
+        <StagePill
+          label="Scan"
+          status={scanStatus}
+          count={c.completedJobs}
+          total={c.totalJobs}
+          locked={false}
+        />
+        <StagePill
+          label="Enrich"
+          status={enrichLocked ? null : (c.enrichStatus ?? (c.enrichBatchId ? "pending" : null))}
+          count={c.enrichCompleted}
+          total={c.enrichTotal}
+          locked={enrichLocked}
+        />
+        <StagePill
+          label="Postcard"
+          status={postcardLocked ? null : (c.postcardStatus ?? (c.postcardBatchId ? "pending" : null))}
+          count={c.postcardReady}
+          total={c.postcardTotal}
+          locked={postcardLocked}
+        />
+      </div>
+
+      {/* Progress bar — only when scan is running */}
+      {c.status === "processing" && c.totalJobs > 0 && (
+        <div className="mt-3 w-full bg-muted rounded-full h-1">
+          <div className="bg-primary h-1 rounded-full transition-all" style={{ width: `${scanProgress}%` }} />
+        </div>
+      )}
     </div>
   );
 }
 
-function EnrichList({ batches }: { batches: EnrichBatch[] }) {
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function CampaignsPage() {
   const router = useRouter();
-  if (batches.length === 0) {
-    return (
-      <div className="glass-card rounded-2xl p-10 text-center">
-        <p className="text-muted-foreground text-sm mb-2">No enrichment runs yet.</p>
-        <p className="text-muted-foreground/70 text-xs">Open a completed scan and click <span className="font-medium text-foreground">Enrich Contacts →</span></p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-2.5">
-      {batches.map((b) => {
-        const done = b.completed + b.failed;
-        const progress = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
-        return (
-          <div
-            key={b.id}
-            className="glass-card glass-card-hover rounded-2xl p-4 cursor-pointer"
-            onClick={() => router.push(`/dashboard/enrichments/${b.id}`)}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {b.name || "Enrichment"} <span className="text-muted-foreground font-normal">· {b.total} contact{b.total !== 1 ? "s" : ""}</span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{formatDate(b.createdAt)}</p>
-              </div>
-              <div className="flex items-center gap-2.5 shrink-0">
-                <span className="text-xs text-muted-foreground">{b.completed}/{b.total}</span>
-                <StatusPill status={b.status} />
-                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-            {b.total > 0 && (
-              <div className="mt-3 w-full bg-muted rounded-full h-1">
-                <div className="bg-primary h-1 rounded-full transition-all" style={{ width: `${progress}%` }} />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function PostcardList({ batches }: { batches: PostcardBatch[] }) {
-  const router = useRouter();
-  if (batches.length === 0) {
-    return (
-      <div className="glass-card rounded-2xl p-10 text-center">
-        <p className="text-muted-foreground text-sm mb-2">No postcard batches yet.</p>
-        <p className="text-muted-foreground/70 text-xs">Open a completed enrichment and click <span className="font-medium text-foreground">Generate Postcards →</span></p>
-      </div>
-    );
-  }
-  return (
-    <div className="space-y-2.5">
-      {batches.map((b) => {
-        const done = b.ready + b.failed;
-        const progress = b.total > 0 ? Math.round((done / b.total) * 100) : 0;
-        return (
-          <div
-            key={b.id}
-            className="glass-card glass-card-hover rounded-2xl p-4 cursor-pointer"
-            onClick={() => router.push(`/dashboard/postcards/batches/${b.id}`)}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {b.name || "Postcards"} <span className="text-muted-foreground font-normal">· {b.total} postcard{b.total !== 1 ? "s" : ""}</span>
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">{formatDate(b.createdAt)}</p>
-              </div>
-              <div className="flex items-center gap-2.5 shrink-0">
-                <span className="text-xs text-muted-foreground">{b.ready}/{b.total} ready</span>
-                <StatusPill status={b.status} />
-                <svg className="w-4 h-4 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </div>
-            </div>
-            {b.total > 0 && (
-              <div className="mt-3 w-full bg-muted rounded-full h-1">
-                <div className="bg-primary h-1 rounded-full transition-all" style={{ width: `${progress}%` }} />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Main page ───────────────────────────────────────────────────────────────
-
-const TABS = [
-  { key: "scans",      label: "Scans" },
-  { key: "enrich",     label: "Enrichments" },
-  { key: "postcards",  label: "Postcards" },
-] as const;
-type TabKey = typeof TABS[number]["key"];
-
-export default function BatchesPage() {
-  const [tab, setTab] = useState<TabKey>("scans");
-  const [scanBatches, setScanBatches] = useState<ScanBatch[]>([]);
-  const [enrichBatches, setEnrichBatches] = useState<EnrichBatch[]>([]);
-  const [postcardBatches, setPostcardBatches] = useState<PostcardBatch[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([
-      fetch("/api/batches").then((r) => r.ok ? r.json() : { batches: [] }),
-      fetch("/api/enrichment-batches").then((r) => r.ok ? r.json() : { batches: [] }),
-      fetch("/api/postcard-batches").then((r) => r.ok ? r.json() : { batches: [] }),
-    ]).then(([scans, enrichs, postcards]) => {
-      setScanBatches(scans.batches ?? []);
-      setEnrichBatches(enrichs.batches ?? []);
-      setPostcardBatches(postcards.batches ?? []);
-      setLoading(false);
-    });
+    fetch("/api/campaigns")
+      .then((r) => (r.ok ? r.json() : { campaigns: [] }))
+      .then((data) => {
+        setCampaigns(data.campaigns ?? []);
+        setLoading(false);
+      });
   }, []);
 
-  const activeCount: Record<TabKey, number> = {
-    scans:     scanBatches.filter((b) => b.status === "processing").length,
-    enrich:    enrichBatches.filter((b) => b.status === "running").length,
-    postcards: postcardBatches.filter((b) => b.status === "running").length,
-  };
+  const activeCount = campaigns.filter(
+    (c) =>
+      c.status === "processing" ||
+      c.enrichRunning > 0 ||
+      c.postcardRunning > 0
+  ).length;
 
   if (loading) {
     return (
@@ -267,9 +249,18 @@ export default function BatchesPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6 gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-foreground">Batches</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-foreground">Campaigns</h1>
+            {activeCount > 0 && (
+              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white text-[10px] font-bold">
+                {activeCount}
+              </span>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground mt-1">
-            Track every scan, enrichment, and postcard run end-to-end
+            {campaigns.length === 0
+              ? "Start your first campaign to scan LinkedIn contacts"
+              : `${campaigns.length} campaign${campaigns.length !== 1 ? "s" : ""} · Scan → Enrich → Postcard`}
           </p>
         </div>
         <Link
@@ -279,39 +270,46 @@ export default function BatchesPage() {
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          New Scan
+          New Campaign
         </Link>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-border/50 pb-0">
-        {TABS.map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={`relative px-5 py-2.5 text-sm font-medium transition rounded-t-lg ${
-              tab === key
-                ? "text-primary bg-primary/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-card"
-            }`}
+      {/* Empty state */}
+      {campaigns.length === 0 && (
+        <div className="glass-card rounded-2xl p-12 text-center">
+          <div className="w-14 h-14 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <svg className="w-7 h-7 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-foreground mb-2">No campaigns yet</h2>
+          <p className="text-sm text-muted-foreground mb-6 max-w-xs mx-auto">
+            Paste LinkedIn URLs to scan, then enrich contacts and generate postcards — all tracked here.
+          </p>
+          <Link
+            href="/dashboard/upload"
+            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-2.5 rounded-lg font-medium transition text-sm"
           >
-            {label}
-            {activeCount[key] > 0 && (
-              <span className="ml-1.5 inline-flex items-center justify-center w-4 h-4 rounded-full bg-primary text-white text-[10px] font-bold">
-                {activeCount[key]}
-              </span>
-            )}
-            {tab === key && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-t" />
-            )}
-          </button>
-        ))}
-      </div>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New Campaign
+          </Link>
+        </div>
+      )}
 
-      {/* Tab content */}
-      {tab === "scans"     && <ScansList batches={scanBatches} />}
-      {tab === "enrich"    && <EnrichList batches={enrichBatches} />}
-      {tab === "postcards" && <PostcardList batches={postcardBatches} />}
+      {/* Campaign list */}
+      {campaigns.length > 0 && (
+        <div className="space-y-3">
+          {campaigns.map((c) => (
+            <CampaignRow
+              key={c.id}
+              c={c}
+              onClick={() => router.push(`/dashboard/batches/${c.id}`)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

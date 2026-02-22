@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
-// GET — all postcards for a specific contact
+// GET /api/contacts/[id]/postcards
+// Returns all postcards for a contact, newest first
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -26,6 +27,14 @@ export async function GET(
   const postcards = await prisma.postcard.findMany({
     where: { contactId: id },
     orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      status: true,
+      template: true,
+      imageUrl: true,
+      errorMessage: true,
+      createdAt: true,
+    },
   });
 
   return NextResponse.json({ postcards });
