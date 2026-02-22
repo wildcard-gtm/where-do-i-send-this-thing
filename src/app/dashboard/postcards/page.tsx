@@ -96,10 +96,14 @@ export default function PostcardsPage() {
   };
 
   const handleRetry = async (id: string) => {
-    await fetch(`/api/postcards/${id}/retry`, { method: "POST" });
-    setPostcards((prev) =>
-      prev.map((p) => (p.id === id ? { ...p, status: "generating" } : p))
-    );
+    const res = await fetch(`/api/postcards/${id}/retry`, { method: "POST" });
+    if (res.ok) {
+      setPostcards((prev) =>
+        prev.map((p) => (p.id === id ? { ...p, status: "pending" } : p))
+      );
+      // Kick off generation (keeps Vercel function alive via browser)
+      fetch(`/api/postcards/${id}/run`, { method: "POST" }).catch(() => {});
+    }
   };
 
   const handleExportCsv = () => {

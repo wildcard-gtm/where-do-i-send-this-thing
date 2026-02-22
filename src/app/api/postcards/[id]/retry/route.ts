@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generatePostcardWithRetry } from "@/app/api/postcards/generate-bulk/route";
+
+export const maxDuration = 300;
 
 // POST /api/postcards/[id]/retry
-// Resets a failed postcard's retryCount and re-runs generation with full retry loop.
+// Resets a failed postcard's retryCount to 0 and status to "pending".
+// Returns the postcardId so the caller can dispatch POST /api/postcards/[id]/run.
+// (The postcard detail page calls /run itself after this resets the record.)
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -32,11 +35,8 @@ export async function POST(
   // Reset retry count so it gets a fresh 5 attempts
   await prisma.postcard.update({
     where: { id },
-    data: { retryCount: 0, status: "generating", errorMessage: null },
+    data: { retryCount: 0, status: "pending", errorMessage: null },
   });
-
-  // Fire-and-forget
-  generatePostcardWithRetry(id);
 
   return NextResponse.json({ retrying: true, postcardId: id });
 }

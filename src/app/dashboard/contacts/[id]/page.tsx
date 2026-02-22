@@ -111,6 +111,8 @@ export default function ContactDetailPage() {
     const data = await res.json();
     if (data.postcardId) {
       setPostcard({ id: data.postcardId, status: "pending", imageUrl: null, template: data.template });
+      // Kick off generation (keeps Vercel function alive via browser)
+      fetch(`/api/postcards/${data.postcardId}/run`, { method: "POST" }).catch(() => {});
     }
     setPostcardGenerating(false);
   };

@@ -20,6 +20,7 @@ model User {
   contacts          Contact[]
   feedbacks         Feedback[]
   enrichmentBatches EnrichmentBatch[]
+  postcardBatches   PostcardBatch[]
 }
 
 model Batch {
@@ -125,6 +126,17 @@ model ContactMessage {
   createdAt DateTime @default(now())
 }
 
+model PostcardBatch {
+  id        String     @id @default(cuid())
+  name      String?
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  status    String     @default("running") // "running" | "complete" | "failed" | "cancelled"
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  postcards Postcard[]
+}
+
 model EnrichmentBatch {
   id          String              @id @default(cuid())
   name        String?
@@ -216,8 +228,12 @@ model Postcard {
   contactId        String
   contact          Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
+  // Postcard batch (optional — older records may not have this)
+  postcardBatchId  String?
+  postcardBatch    PostcardBatch? @relation(fields: [postcardBatchId], references: [id])
+
   template         String   // "warroom" | "zoom"
-  status           String   @default("pending") // "pending" | "generating" | "ready" | "approved" | "failed"
+  status           String   @default("pending") // "pending" | "generating" | "ready" | "approved" | "failed" | "cancelled"
   errorMessage     String?
   retryCount       Int      @default(0) // number of generation attempts made (max 5)
 

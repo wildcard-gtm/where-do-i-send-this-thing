@@ -239,7 +239,7 @@ export default function PipelinePage() {
       });
       const data = await res.json();
       if (res.ok) {
-        router.push("/dashboard/postcards");
+        router.push(`/dashboard/postcards/batches/${data.postcardBatchId}`);
       } else {
         setActionError(data.error || "Failed to generate postcards");
         setGeneratingPostcards(false);

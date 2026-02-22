@@ -93,7 +93,9 @@ export default function PostcardDetailPage() {
     });
     const data = await res.json();
     if (data.postcardId) {
+      // Navigate first, then kick off generation (keeps Vercel function alive via browser)
       router.push(`/dashboard/postcards/${data.postcardId}`);
+      fetch(`/api/postcards/${data.postcardId}/run`, { method: "POST" }).catch(() => {});
     }
     setActionLoading(false);
   };

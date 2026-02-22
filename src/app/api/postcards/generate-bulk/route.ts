@@ -1,90 +1,16 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
-import { generateBackground } from "@/lib/postcard/background-generator";
-import { screenshotPostcard } from "@/lib/postcard/screenshot";
 
 export const maxDuration = 300;
 
 export const MAX_POSTCARD_ATTEMPTS = 5;
 
-// Run one postcard generation with up to MAX_POSTCARD_ATTEMPTS retries (exponential backoff).
-export async function generatePostcardWithRetry(postcardId: string): Promise<void> {
-  const record = await prisma.postcard.findUnique({
-    where: { id: postcardId },
-    select: { retryCount: true, backgroundPrompt: true, template: true },
-  });
-  if (!record) return;
-
-  let attempt = record.retryCount ?? 0;
-
-  while (attempt < MAX_POSTCARD_ATTEMPTS) {
-    attempt++;
-
-    await prisma.postcard.update({
-      where: { id: postcardId },
-      data: {
-        status: "generating",
-        retryCount: attempt,
-        errorMessage: null,
-      },
-    });
-
-    let succeeded = false;
-    let lastError = "";
-
-    try {
-      // Reuse existing backgroundPrompt on retries to avoid re-billing image generation
-      const prompt =
-        record.backgroundPrompt ??
-        (record.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
-
-      const bgBase64 = await generateBackground(prompt);
-      const backgroundUrl = `data:image/png;base64,${bgBase64}`;
-
-      await prisma.postcard.update({
-        where: { id: postcardId },
-        data: { status: "generating", backgroundUrl, backgroundPrompt: prompt },
-      });
-
-      const imageBase64 = await screenshotPostcard(postcardId);
-      const imageUrl = `data:image/png;base64,${imageBase64}`;
-
-      await prisma.postcard.update({
-        where: { id: postcardId },
-        data: { status: "ready", imageUrl },
-      });
-
-      succeeded = true;
-    } catch (err) {
-      lastError = (err as Error).message;
-    }
-
-    if (succeeded) break;
-
-    if (attempt < MAX_POSTCARD_ATTEMPTS) {
-      const delayMs = Math.pow(2, attempt) * 1000;
-      await prisma.postcard.update({
-        where: { id: postcardId },
-        data: {
-          status: "generating",
-          errorMessage: `Attempt ${attempt} failed, retrying in ${delayMs / 1000}s: ${lastError}`,
-        },
-      });
-      await new Promise((r) => setTimeout(r, delayMs));
-    } else {
-      await prisma.postcard.update({
-        where: { id: postcardId },
-        data: {
-          status: "failed",
-          errorMessage: `Failed after ${MAX_POSTCARD_ATTEMPTS} attempts: ${lastError}`,
-        },
-      });
-    }
-  }
-}
-
+// POST /api/postcards/generate-bulk
+// Body: { contactIds: string[] }
+// Creates a PostcardBatch + individual Postcard records (status: "pending").
+// Returns the batch ID so the browser can redirect to the batch detail page,
+// which dispatches individual POST /api/postcards/[id]/run calls with concurrency control.
 export async function POST(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -102,7 +28,23 @@ export async function POST(request: Request) {
     include: { job: { select: { result: true } } },
   });
 
-  const started: string[] = [];
+  if (contacts.length === 0) {
+    return NextResponse.json({ error: "No valid contacts found" }, { status: 400 });
+  }
+
+  // Create a PostcardBatch to group this run
+  const batchName = `Postcards · ${new Date().toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+
+  const postcardBatch = await prisma.postcardBatch.create({
+    data: { userId: user.id, name: batchName, status: "running" },
+  });
+
+  const postcardIds: string[] = [];
 
   for (const contact of contacts) {
     // Load latest enrichment
@@ -130,6 +72,7 @@ export async function POST(request: Request) {
     const postcard = await prisma.postcard.create({
       data: {
         contactId: contact.id,
+        postcardBatchId: postcardBatch.id,
         template,
         status: "pending",
         retryCount: 0,
@@ -145,15 +88,16 @@ export async function POST(request: Request) {
       },
     });
 
-    started.push(postcard.id);
-
-    // Fire-and-forget with auto-retry
-    generatePostcardWithRetry(postcard.id);
+    postcardIds.push(postcard.id);
   }
 
+  // Return the batch ID. The browser (postcard batch detail page) dispatches
+  // individual POST /api/postcards/[id]/run calls with concurrency control —
+  // this keeps Vercel function instances alive per-postcard.
   return NextResponse.json({
-    started: started.length,
-    postcardIds: started,
-    message: `Postcard generation started for ${started.length} contact(s)`,
+    postcardBatchId: postcardBatch.id,
+    postcardIds,
+    started: postcardIds.length,
+    message: `Postcard generation queued for ${postcardIds.length} contact(s)`,
   });
 }

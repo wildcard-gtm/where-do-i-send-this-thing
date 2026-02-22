@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
-import { generatePostcardWithRetry } from "@/app/api/postcards/generate-bulk/route";
 
 export const maxDuration = 300;
 
+// POST /api/postcards/generate
+// Creates a single Postcard record (status: "pending") and returns its ID.
+// The caller is responsible for then calling POST /api/postcards/[id]/run
+// to actually generate the postcard (keeps Vercel function alive via browser dispatch).
 export async function POST(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
       ? contact.officeAddress
       : contact.homeAddress || contact.officeAddress;
 
-  // Create Postcard record
+  // Create Postcard record — caller dispatches /run to generate
   const postcard = await prisma.postcard.create({
     data: {
       contactId,
@@ -75,9 +77,6 @@ export async function POST(request: Request) {
       officeLocations: enrichment?.officeLocations ?? undefined,
     },
   });
-
-  // Fire-and-forget with auto-retry
-  generatePostcardWithRetry(postcard.id);
 
   return NextResponse.json({
     postcardId: postcard.id,
