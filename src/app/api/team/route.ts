@@ -10,11 +10,17 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  if (!user.teamId) {
+  // Resolve teamId from DB in case the JWT is stale (e.g. migration ran after login)
+  const teamId = user.teamId ?? (await prisma.user.findUnique({
+    where: { id: user.id },
+    select: { teamId: true },
+  }))?.teamId ?? null;
+
+  if (!teamId) {
     return NextResponse.json({ team: null });
   }
 
-  const team = await getTeamWithMembers(user.teamId);
+  const team = await getTeamWithMembers(teamId);
   if (!team) {
     return NextResponse.json({ team: null });
   }

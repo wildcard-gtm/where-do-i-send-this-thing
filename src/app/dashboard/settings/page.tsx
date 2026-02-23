@@ -227,8 +227,15 @@ export default function SettingsPage() {
   const [accountName, setAccountName] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [savingAccount, setSavingAccount] = useState(false);
   const [accountResult, setAccountResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // Invite form state (expanded when account needs to be created)
+  const [inviteNeedsPassword, setInviteNeedsPassword] = useState(false);
+  const [inviteName, setInviteName] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [inviteConfirmPassword, setInviteConfirmPassword] = useState("");
 
   const fetchData = useCallback(async () => {
     const [teamRes, accountRes] = await Promise.all([
@@ -263,12 +270,40 @@ export default function SettingsPage() {
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inviteEmail.trim()) return;
+
+    // If expanded form: validate passwords match
+    if (inviteNeedsPassword) {
+      if (!invitePassword.trim()) { setInviteResult({ ok: false, message: "Password required" }); return; }
+      if (invitePassword !== inviteConfirmPassword) { setInviteResult({ ok: false, message: "Passwords do not match" }); return; }
+    }
+
     setInviting(true);
     setInviteResult(null);
-    const res = await fetch("/api/team/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: inviteEmail }) });
+    const body: Record<string, string> = { email: inviteEmail };
+    if (inviteNeedsPassword) {
+      body.password = invitePassword;
+      if (inviteName.trim()) body.name = inviteName;
+    }
+    const res = await fetch("/api/team/invite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json();
+
+    if (!res.ok && data.needsPassword) {
+      // User doesn't exist — expand form to collect password
+      setInviteNeedsPassword(true);
+      setInviteResult({ ok: false, message: "No account found. Enter a name and password to create one." });
+      setInviting(false);
+      return;
+    }
+
     setInviteResult({ ok: res.ok, message: data.message || data.error || "Unknown error" });
-    if (res.ok) { setInviteEmail(""); await fetchData(); }
+    if (res.ok) {
+      setInviteEmail("");
+      setInviteNeedsPassword(false);
+      setInviteName("");
+      setInvitePassword("");
+      setInviteConfirmPassword("");
+      await fetchData();
+    }
     setInviting(false);
   };
 
@@ -315,8 +350,12 @@ export default function SettingsPage() {
 
   const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSavingAccount(true);
     setAccountResult(null);
+    if (newPassword && newPassword !== confirmPassword) {
+      setAccountResult({ ok: false, message: "New passwords do not match" });
+      return;
+    }
+    setSavingAccount(true);
     const body: Record<string, string> = {};
     if (accountName.trim() && accountName !== account?.name) body.name = accountName.trim();
     if (newPassword) { body.currentPassword = currentPassword; body.newPassword = newPassword; }
@@ -324,7 +363,7 @@ export default function SettingsPage() {
     const res = await fetch("/api/account", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     const data = await res.json();
     setAccountResult({ ok: res.ok, message: res.ok ? "Changes saved" : (data.error || "Failed") });
-    if (res.ok) { setCurrentPassword(""); setNewPassword(""); await fetchData(); }
+    if (res.ok) { setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); await fetchData(); }
     setSavingAccount(false);
   };
 
@@ -481,30 +520,72 @@ export default function SettingsPage() {
 
               {/* Invite form */}
               <div className="mt-5 border-t border-border/50 pt-5">
-                <h3 className="text-sm font-semibold text-foreground mb-3">Invite member</h3>
-                <form onSubmit={handleInvite} className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-foreground mb-3">Add member</h3>
+                <form onSubmit={handleInvite} className="flex flex-col gap-3">
                   <input
                     type="email"
                     value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
-                    className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    onChange={e => { setInviteEmail(e.target.value); setInviteNeedsPassword(false); setInviteResult(null); setInvitePassword(""); setInviteConfirmPassword(""); setInviteName(""); }}
+                    className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                     placeholder="Email address"
+                    required
                   />
+
+                  {inviteNeedsPassword && (
+                    <>
+                      <input
+                        type="text"
+                        value={inviteName}
+                        onChange={e => setInviteName(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        placeholder="Display name (optional)"
+                      />
+                      <input
+                        type="password"
+                        value={invitePassword}
+                        onChange={e => setInvitePassword(e.target.value)}
+                        className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                        placeholder="Password for new account"
+                        required
+                      />
+                      <div>
+                        <input
+                          type="password"
+                          value={inviteConfirmPassword}
+                          onChange={e => setInviteConfirmPassword(e.target.value)}
+                          className={`w-full bg-background border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition ${
+                            inviteConfirmPassword && inviteConfirmPassword !== invitePassword
+                              ? "border-danger focus:ring-danger/40"
+                              : "border-border focus:ring-primary/40"
+                          }`}
+                          placeholder="Confirm password"
+                          required
+                        />
+                        {inviteConfirmPassword && inviteConfirmPassword !== invitePassword && (
+                          <p className="mt-1 text-xs text-danger">Passwords do not match</p>
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {inviteResult && (
+                    <p className={`text-xs ${inviteResult.ok ? "text-success" : "text-danger"}`}>
+                      {inviteResult.message}
+                    </p>
+                  )}
+
                   <button
                     type="submit"
                     disabled={inviting || !inviteEmail.trim()}
-                    className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                    className="inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
                   >
                     {inviting ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : null}
-                    Invite
+                    {inviteNeedsPassword ? "Create Account & Add" : "Add Member"}
                   </button>
                 </form>
-                {inviteResult && (
-                  <p className={`mt-2 text-xs ${inviteResult.ok ? "text-success" : "text-danger"}`}>
-                    {inviteResult.message}
-                  </p>
-                )}
-                <p className="mt-2 text-xs text-muted-foreground">The user must already have an account to be added.</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  If they already have an account they&apos;ll be added directly. Otherwise you&apos;ll be prompted to set a password for them.
+                </p>
               </div>
             </div>
           )}
@@ -646,6 +727,24 @@ export default function SettingsPage() {
                 className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
                 placeholder="Leave blank to keep current"
               />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Confirm new password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className={`w-full bg-background border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 transition ${
+                  confirmPassword && confirmPassword !== newPassword
+                    ? "border-danger focus:ring-danger/40"
+                    : "border-border focus:ring-primary/40"
+                }`}
+                placeholder="Re-enter new password"
+              />
+              {confirmPassword && confirmPassword !== newPassword && (
+                <p className="mt-1 text-xs text-danger">Passwords do not match</p>
+              )}
             </div>
           </div>
 

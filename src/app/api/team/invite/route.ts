@@ -2,10 +2,12 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { signToken, setSessionCookie } from "@/lib/auth";
+import bcrypt from "bcryptjs";
 
 // POST /api/team/invite
-// Body: { email: string }
-// If the user exists, adds them to the team. If not, returns an error.
+// Body: { email: string, password?: string, name?: string }
+// If the user exists, adds them to the team.
+// If not and password is provided, creates the account then adds them.
 export async function POST(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -24,19 +26,42 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only owners can invite members" }, { status: 403 });
   }
 
-  const { email } = await request.json();
+  const { email, password, name } = await request.json();
   if (!email?.trim()) {
     return NextResponse.json({ error: "Email required" }, { status: 400 });
   }
 
-  const invitee = await prisma.user.findUnique({
+  let invitee = await prisma.user.findUnique({
     where: { email: email.toLowerCase().trim() },
   });
 
   if (!invitee) {
+    // Create the account if a password was supplied
+    if (!password?.trim()) {
+      return NextResponse.json({
+        error: "No account found for that email. Provide a password to create one.",
+        needsPassword: true,
+      }, { status: 404 });
+    }
+    const hashed = await bcrypt.hash(password, 10);
+    invitee = await prisma.user.create({
+      data: {
+        email: email.toLowerCase().trim(),
+        password: hashed,
+        name: name?.trim() || email.split("@")[0],
+        role: "user",
+        teamId: user.teamId,
+      },
+    });
+    // Add TeamMember record
+    await prisma.teamMember.create({
+      data: { teamId: user.teamId, userId: invitee.id, role: "member" },
+    });
     return NextResponse.json({
-      error: `No account found for ${email}. They need to sign up first.`,
-    }, { status: 404 });
+      success: true,
+      created: true,
+      message: `Account created and ${invitee.name} has been added to the team.`,
+    });
   }
 
   if (invitee.id === user.id) {
@@ -64,6 +89,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    created: false,
     message: `${invitee.name} has been added to the team.`,
   });
 }
