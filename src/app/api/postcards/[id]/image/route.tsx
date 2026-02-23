@@ -4,7 +4,6 @@ import { NextRequest } from "next/server";
 
 export const runtime = "nodejs";
 
-// 1536x1024 postcard canvas
 const W = 1536;
 const H = 1024;
 
@@ -27,16 +26,26 @@ interface PostcardData {
   contactTitle: string | null;
   contactPhoto: string | null;
   backMessage: string | null;
+  postcardHeadline: string | null;
+  postcardDescription: string | null;
+  accentColor: string | null;
 }
 
-// ─── WAR ROOM (office / hybrid contacts) ─────────────────────────────────────
-// Layout inspired by bold conference branding:
-//   Left ~62%: full-bleed background photo
-//   Right ~38%: dark accent panel with logo, headline, roles, contact info
-
-function WarRoomPostcard({ data }: { data: PostcardData }) {
+function PostcardTemplate({ data }: { data: PostcardData }) {
+  const accent = data.accentColor ?? "#1E3A5F";
   const roles = (data.openRoles ?? []).slice(0, 4);
-  const PANEL_LEFT = 62; // percent where the right panel starts
+
+  const headline = data.postcardHeadline ?? "The right hire changes everything";
+  const description =
+    data.postcardDescription ?? "We source the exact talent you need, fast. Let's talk.";
+
+  // Split headline: first half on line 1, remainder on line 2
+  const words = headline.split(" ");
+  const mid = Math.ceil(words.length / 2);
+  const line1 = words.slice(0, mid).join(" ");
+  const line2 = words.slice(mid).join(" ");
+
+  const PHOTO_PCT = 40;
 
   return (
     <div
@@ -46,11 +55,11 @@ function WarRoomPostcard({ data }: { data: PostcardData }) {
         width: W,
         height: H,
         overflow: "hidden",
+        background: "#FFFFFF",
         fontFamily: "'Helvetica Neue', Arial, sans-serif",
-        background: "#0F1923",
       }}
     >
-      {/* ── Left: full-bleed background photo ── */}
+      {/* ── Left: AI photo ── */}
       {data.backgroundUrl && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -60,124 +69,163 @@ function WarRoomPostcard({ data }: { data: PostcardData }) {
             position: "absolute",
             top: 0,
             left: 0,
-            width: `${PANEL_LEFT + 4}%`,
+            width: `${PHOTO_PCT + 6}%`,
             height: "100%",
             objectFit: "cover",
-            objectPosition: "center",
+            objectPosition: "center top",
           }}
         />
       )}
 
-      {/* Gradient fade on left photo edge into panel */}
+      {/* Fade from photo into white */}
       <div
         style={{
           position: "absolute",
           top: 0,
-          left: `${PANEL_LEFT - 8}%`,
-          width: "12%",
+          left: `${PHOTO_PCT - 4}%`,
+          width: "16%",
           height: "100%",
-          background: "linear-gradient(to right, transparent, #0F1923)",
+          background:
+            "linear-gradient(to right, transparent 0%, rgba(255,255,255,0.5) 30%, rgba(255,255,255,0.88) 60%, #ffffff 100%)",
           display: "flex",
-          zIndex: 5,
         }}
       />
 
-      {/* ── Right: dark panel ── */}
+      {/* ── Right: white content ── */}
       <div
         style={{
           position: "absolute",
           top: 0,
-          left: `${PANEL_LEFT}%`,
+          left: `${PHOTO_PCT + 8}%`,
           right: 0,
           bottom: 0,
-          background: "#0F1923",
           display: "flex",
           flexDirection: "column",
-          padding: "40px 44px",
-          zIndex: 10,
+          padding: "48px 56px 44px 24px",
+          background: "#FFFFFF",
         }}
       >
-        {/* Company logo */}
-        {data.companyLogo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.companyLogo}
-            alt="Logo"
-            style={{
-              maxHeight: 44,
-              maxWidth: 180,
-              objectFit: "contain",
-              objectPosition: "left center",
-              marginBottom: 28,
-              filter: "brightness(0) invert(1)",
-              opacity: 0.9,
-            }}
-          />
-        ) : (
-          <div style={{ height: 44, marginBottom: 28, display: "flex" }} />
-        )}
-
-        {/* Headline */}
-        <div
-          style={{
-            fontWeight: 900,
-            fontSize: 52,
-            lineHeight: 1.05,
-            color: "#FFFFFF",
-            letterSpacing: "-0.02em",
-            marginBottom: 8,
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
-          <span>IT&apos;S</span>
-          <span style={{ color: "#E63329" }}>GO TIME.</span>
+        {/* Logo — top right */}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 28 }}>
+          {data.companyLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={data.companyLogo}
+              alt="Logo"
+              style={{
+                maxHeight: 44,
+                maxWidth: 180,
+                objectFit: "contain",
+                objectPosition: "right center",
+              }}
+            />
+          ) : (
+            <div style={{ height: 44, display: "flex" }} />
+          )}
         </div>
 
-        {/* Thin red rule */}
+        {/* Decorative × top-left */}
         <div
           style={{
-            width: 48,
-            height: 3,
-            background: "#E63329",
-            marginBottom: 24,
+            position: "absolute",
+            top: 56,
+            left: 16,
+            fontSize: 32,
+            fontWeight: 900,
+            color: accent,
+            opacity: 0.25,
             display: "flex",
+            lineHeight: 1,
           }}
-        />
+        >
+          ×
+        </div>
 
-        {/* Open roles */}
-        {roles.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", marginBottom: 24 }}>
+        {/* Headline — large */}
+        <div style={{ display: "flex", flexDirection: "column", marginBottom: 22 }}>
+          <span
+            style={{
+              fontWeight: 800,
+              fontSize: 72,
+              lineHeight: 1.05,
+              color: accent,
+              letterSpacing: "-0.03em",
+              display: "flex",
+            }}
+          >
+            {line1}
+          </span>
+          {line2 && (
             <span
               style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#E63329",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                marginBottom: 10,
+                fontWeight: 800,
+                fontSize: 72,
+                lineHeight: 1.05,
+                color: accent,
+                letterSpacing: "-0.03em",
                 display: "flex",
               }}
             >
-              Now Hiring
+              {line2}
+            </span>
+          )}
+        </div>
+
+        {/* Description */}
+        <div
+          style={{
+            fontSize: 18,
+            lineHeight: 1.6,
+            color: "#555555",
+            marginBottom: 36,
+            maxWidth: 500,
+            display: "flex",
+          }}
+        >
+          {description}
+        </div>
+
+        {/* Role list — "We Source" label */}
+        {roles.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", marginBottom: 0 }}>
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: accent,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                marginBottom: 14,
+                display: "flex",
+              }}
+            >
+              We Source
             </span>
             {roles.map((role, i) => (
               <div
                 key={i}
                 style={{
                   display: "flex",
-                  flexDirection: "column",
-                  borderLeft: "2px solid rgba(230,51,41,0.35)",
-                  paddingLeft: 12,
-                  marginBottom: i < roles.length - 1 ? 10 : 0,
+                  alignItems: "center",
+                  gap: 12,
+                  marginBottom: i < roles.length - 1 ? 12 : 0,
                 }}
               >
+                <div
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: 4,
+                    background: accent,
+                    flexShrink: 0,
+                    display: "flex",
+                  }}
+                />
                 <span
                   style={{
-                    fontWeight: 700,
-                    fontSize: 14,
-                    color: "#FFFFFF",
-                    lineHeight: 1.25,
+                    fontWeight: 600,
+                    fontSize: 16,
+                    color: "#1a1a1a",
                     display: "flex",
                   }}
                 >
@@ -186,14 +234,12 @@ function WarRoomPostcard({ data }: { data: PostcardData }) {
                 {role.location && (
                   <span
                     style={{
-                      fontWeight: 400,
-                      fontSize: 11,
-                      color: "rgba(255,255,255,0.5)",
-                      marginTop: 2,
+                      fontSize: 13,
+                      color: "#999999",
                       display: "flex",
                     }}
                   >
-                    {role.location}
+                    · {role.location}
                   </span>
                 )}
               </div>
@@ -201,333 +247,130 @@ function WarRoomPostcard({ data }: { data: PostcardData }) {
           </div>
         )}
 
-        {/* Spacer */}
         <div style={{ flex: 1, display: "flex" }} />
 
-        {/* Contact card at bottom */}
+        {/* Decorative × bottom-right */}
         <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            borderTop: "1px solid rgba(255,255,255,0.12)",
-            paddingTop: 20,
-          }}
-        >
-          {/* Contact photo */}
-          {data.contactPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.contactPhoto}
-              alt={data.contactName}
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                objectFit: "cover",
-                border: "2px solid rgba(230,51,41,0.6)",
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                background: "#E63329",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 800,
-                fontSize: 26,
-                color: "#FFFFFF",
-                flexShrink: 0,
-                border: "2px solid rgba(230,51,41,0.6)",
-              }}
-            >
-              {data.contactName.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <span
-              style={{
-                fontWeight: 700,
-                fontSize: 16,
-                color: "#FFFFFF",
-                display: "flex",
-                lineHeight: 1.2,
-              }}
-            >
-              {data.contactName}
-            </span>
-            {data.contactTitle && (
-              <span
-                style={{
-                  fontWeight: 400,
-                  fontSize: 12,
-                  color: "rgba(255,255,255,0.55)",
-                  marginTop: 3,
-                  display: "flex",
-                }}
-              >
-                {data.contactTitle}
-              </span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Top-left: diagonal red accent stripe ── */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: 8,
-          height: "100%",
-          background: "#E63329",
-          display: "flex",
-          zIndex: 20,
-        }}
-      />
-    </div>
-  );
-}
-
-// ─── ZOOM ROOM (fully remote contacts) ────────────────────────────────────────
-// Layout: same panel concept but navy/teal color scheme
-
-function ZoomRoomPostcard({ data }: { data: PostcardData }) {
-  const roles = (data.openRoles ?? []).slice(0, 4);
-  const PANEL_LEFT = 62;
-
-  return (
-    <div
-      style={{
-        display: "flex",
-        position: "relative",
-        width: W,
-        height: H,
-        overflow: "hidden",
-        fontFamily: "'Helvetica Neue', Arial, sans-serif",
-        background: "#0D1B2A",
-      }}
-    >
-      {/* Left: background photo */}
-      {data.backgroundUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={data.backgroundUrl}
-          alt=""
           style={{
             position: "absolute",
-            top: 0,
-            left: 0,
-            width: `${PANEL_LEFT + 4}%`,
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
-          }}
-        />
-      )}
-
-      {/* Gradient fade */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: `${PANEL_LEFT - 8}%`,
-          width: "12%",
-          height: "100%",
-          background: "linear-gradient(to right, transparent, #0D1B2A)",
-          display: "flex",
-          zIndex: 5,
-        }}
-      />
-
-      {/* Right panel — navy */}
-      <div
-        style={{
-          position: "absolute",
-          top: 0,
-          left: `${PANEL_LEFT}%`,
-          right: 0,
-          bottom: 0,
-          background: "#0D1B2A",
-          display: "flex",
-          flexDirection: "column",
-          padding: "40px 44px",
-          zIndex: 10,
-        }}
-      >
-        {data.companyLogo ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.companyLogo}
-            alt="Logo"
-            style={{
-              maxHeight: 44,
-              maxWidth: 180,
-              objectFit: "contain",
-              objectPosition: "left center",
-              marginBottom: 28,
-              filter: "brightness(0) invert(1)",
-              opacity: 0.9,
-            }}
-          />
-        ) : (
-          <div style={{ height: 44, marginBottom: 28, display: "flex" }} />
-        )}
-
-        <div
-          style={{
+            bottom: 100,
+            right: 56,
+            fontSize: 32,
             fontWeight: 900,
-            fontSize: 52,
-            lineHeight: 1.05,
-            color: "#FFFFFF",
-            letterSpacing: "-0.02em",
-            marginBottom: 8,
+            color: accent,
+            opacity: 0.25,
             display: "flex",
-            flexDirection: "column",
+            lineHeight: 1,
           }}
         >
-          <span>LET&apos;S</span>
-          <span style={{ color: "#2DD4BF" }}>CONNECT.</span>
+          ×
         </div>
 
-        <div
-          style={{
-            width: 48,
-            height: 3,
-            background: "#2DD4BF",
-            marginBottom: 24,
-            display: "flex",
-          }}
-        />
-
-        {data.companyMission && (
-          <div
-            style={{
-              fontSize: 13,
-              color: "rgba(255,255,255,0.65)",
-              lineHeight: 1.55,
-              marginBottom: 20,
-              display: "flex",
-              fontStyle: "italic",
-            }}
-          >
-            &ldquo;{data.companyMission}&rdquo;
-          </div>
-        )}
-
-        {roles.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", marginBottom: 24 }}>
-            <span
-              style={{
-                fontSize: 10,
-                fontWeight: 700,
-                color: "#2DD4BF",
-                letterSpacing: "0.14em",
-                textTransform: "uppercase",
-                marginBottom: 10,
-                display: "flex",
-              }}
-            >
-              Open Roles
-            </span>
-            {roles.map((role, i) => (
-              <div
-                key={i}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  borderLeft: "2px solid rgba(45,212,191,0.35)",
-                  paddingLeft: 12,
-                  marginBottom: i < roles.length - 1 ? 10 : 0,
-                }}
-              >
-                <span style={{ fontWeight: 700, fontSize: 14, color: "#FFFFFF", display: "flex" }}>
-                  {role.title}
-                </span>
-                {role.location && (
-                  <span style={{ fontWeight: 400, fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 2, display: "flex" }}>
-                    {role.location}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div style={{ flex: 1, display: "flex" }} />
-
-        {/* Contact card */}
+        {/* Bottom: contact + CTA */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 16,
-            borderTop: "1px solid rgba(255,255,255,0.12)",
+            justifyContent: "space-between",
+            borderTop: `1.5px solid ${accent}22`,
             paddingTop: 20,
           }}
         >
-          {data.contactPhoto ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={data.contactPhoto}
-              alt={data.contactName}
+          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {data.contactPhoto ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={data.contactPhoto}
+                alt={data.contactName}
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  objectFit: "cover",
+                  border: `2px solid ${accent}44`,
+                  flexShrink: 0,
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  background: accent,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontWeight: 700,
+                  fontSize: 22,
+                  color: "#FFFFFF",
+                  flexShrink: 0,
+                }}
+              >
+                {data.contactName.charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span
+                style={{
+                  fontWeight: 700,
+                  fontSize: 16,
+                  color: "#111111",
+                  display: "flex",
+                  lineHeight: 1.2,
+                }}
+              >
+                {data.contactName}
+              </span>
+              {data.contactTitle && (
+                <span
+                  style={{
+                    fontSize: 13,
+                    color: "#888888",
+                    marginTop: 3,
+                    display: "flex",
+                  }}
+                >
+                  {data.contactTitle}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* CTA pill */}
+          <div
+            style={{
+              background: accent,
+              borderRadius: 999,
+              padding: "13px 30px",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            <span
               style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                objectFit: "cover",
-                border: "2px solid rgba(45,212,191,0.6)",
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: "50%",
-                background: "#2DD4BF",
+                color: "#FFFFFF",
+                fontWeight: 700,
+                fontSize: 15,
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 800,
-                fontSize: 26,
-                color: "#0D1B2A",
-                flexShrink: 0,
-                border: "2px solid rgba(45,212,191,0.6)",
+                letterSpacing: "0.01em",
               }}
             >
-              {data.contactName.charAt(0).toUpperCase()}
-            </div>
-          )}
-          <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-            <span style={{ fontWeight: 700, fontSize: 16, color: "#FFFFFF", display: "flex", lineHeight: 1.2 }}>
-              {data.contactName}
+              Let&apos;s talk →
             </span>
-            {data.contactTitle && (
-              <span style={{ fontWeight: 400, fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 3, display: "flex" }}>
-                {data.contactTitle}
-              </span>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Left accent stripe — teal */}
+      {/* Thin accent stripe — left edge */}
       <div
         style={{
           position: "absolute",
           top: 0,
           left: 0,
-          width: 8,
+          width: 7,
           height: "100%",
-          background: "#2DD4BF",
+          background: accent,
           display: "flex",
           zIndex: 20,
         }}
@@ -547,6 +390,8 @@ export async function GET(
     return new Response("Postcard not found", { status: 404 });
   }
 
+  const p = postcard as Record<string, unknown>;
+
   const data: PostcardData = {
     id: postcard.id,
     template: postcard.template,
@@ -558,15 +403,14 @@ export async function GET(
     contactName: postcard.contactName,
     contactTitle: postcard.contactTitle,
     contactPhoto: postcard.contactPhoto,
-    backMessage: (postcard as Record<string, unknown>).backMessage as string | null ?? null,
+    backMessage: p.backMessage as string | null ?? null,
+    postcardHeadline: p.postcardHeadline as string | null ?? null,
+    postcardDescription: p.postcardDescription as string | null ?? null,
+    accentColor: p.accentColor as string | null ?? null,
   };
 
   return new ImageResponse(
-    data.template === "zoom" ? (
-      <ZoomRoomPostcard data={data} />
-    ) : (
-      <WarRoomPostcard data={data} />
-    ),
+    <PostcardTemplate data={data} />,
     { width: W, height: H }
   );
 }

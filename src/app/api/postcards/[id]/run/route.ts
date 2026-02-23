@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
 import { generateBackground } from "@/lib/postcard/background-generator";
 import { screenshotPostcard } from "@/lib/postcard/screenshot";
+import { generatePostcardCopy } from "@/lib/postcard/copy-generator";
+import { extractAccentColor } from "@/lib/postcard/color-extractor";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
 
 export const maxDuration = 300;
@@ -75,15 +77,74 @@ export async function POST(
     });
 
     try {
-      // Reuse existing backgroundPrompt on retries to avoid re-billing image generation
-      const existingPrompt = (await prisma.postcard.findUnique({
+      // Reuse existing backgroundPrompt/copy on retries to avoid re-billing
+      const existing = await prisma.postcard.findUnique({
         where: { id },
-        select: { backgroundPrompt: true, template: true },
-      }));
+        select: {
+          backgroundPrompt: true,
+          template: true,
+          postcardHeadline: true,
+          postcardDescription: true,
+          companyMission: true,
+          companyValues: true,
+          openRoles: true,
+          officeLocations: true,
+          contactName: true,
+          companyLogo: true,
+        },
+      });
 
+      // Generate copy from enrichment data on first attempt only
+      let headline = existing?.postcardHeadline ?? null;
+      let description = existing?.postcardDescription ?? null;
+      let imagePrompt = existing?.backgroundPrompt ?? null;
+      let accentColor = (existing as Record<string, unknown>)?.accentColor as string | null ?? null;
+
+      if (!headline || !description || !imagePrompt) {
+        // Extract company name from logo URL hostname or fall back to contact name
+        const companyName = (() => {
+          try {
+            if (existing?.companyLogo) {
+              const host = new URL(existing.companyLogo).hostname.replace(/^www\./, "");
+              return host.split(".")[0];
+            }
+          } catch { /* ignore */ }
+          return existing?.contactName ?? "the company";
+        })();
+
+        // Run copy generation and color extraction in parallel
+        const [copy, extractedColor] = await Promise.all([
+          generatePostcardCopy({
+            companyName,
+            companyMission: existing?.companyMission,
+            companyValues: existing?.companyValues as string[] | null,
+            openRoles: existing?.openRoles as Array<{ title: string; location: string; level: string }> | null,
+            officeLocations: existing?.officeLocations as string[] | null,
+          }),
+          extractAccentColor(existing?.companyLogo),
+        ]);
+
+        headline = copy.headline;
+        description = copy.description;
+        imagePrompt = copy.imagePrompt;
+        accentColor = extractedColor;
+
+        // Persist so retries don't regenerate
+        await prisma.postcard.update({
+          where: { id },
+          data: {
+            postcardHeadline: headline,
+            postcardDescription: description,
+            backgroundPrompt: imagePrompt,
+            accentColor,
+          },
+        });
+      }
+
+      // Fall back to static prompts if copy generation produced nothing
       const prompt =
-        existingPrompt?.backgroundPrompt ??
-        (existingPrompt?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
+        imagePrompt ??
+        (existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
 
       const bgBase64 = await generateBackground(prompt);
       const backgroundUrl = `data:image/png;base64,${bgBase64}`;
