@@ -18,8 +18,8 @@ export default function Home() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-white/70 backdrop-blur-xl border-b border-border/50">
         <div className="max-w-6xl mx-auto px-4 md:px-6 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo.png" alt="WDISTT" className="w-8 h-auto" />
-            <span className="text-lg font-bold text-foreground">WDISTT</span>
+            <img src="/logo.png" alt="WDISTT" className="w-10 h-auto" />
+            <span className="text-lg font-bold text-foreground">Where Do I Send This Thing?</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-8">
@@ -163,9 +163,9 @@ export default function Home() {
           </div>
           <div className="border-t border-border pt-8 flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <img src="/logo.png" alt="WDISTT" className="w-6 h-auto" />
+              <img src="/logo.png" alt="WDISTT" className="w-8 h-auto" />
               <span className="text-sm font-semibold text-foreground">
-                WDISTT
+                Where Do I Send This Thing?
               </span>
             </div>
             <p className="text-sm text-muted-foreground">

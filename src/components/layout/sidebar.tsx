@@ -10,6 +10,7 @@ interface SidebarProps {
 }
 
 const navItems = [
+  { href: "/dashboard", label: "Dashboard", icon: "grid", exact: true },
   { href: "/dashboard/batches", label: "Campaigns", icon: "pipeline", exact: false },
   { href: "/dashboard/contacts", label: "Contacts", icon: "users", exact: false },
   { href: "/dashboard/postcards", label: "Postcards", icon: "postcard", exact: false },
@@ -85,11 +86,10 @@ export default function Sidebar({ isOpen, onClose, user }: SidebarProps) {
     >
       {/* Logo */}
       <div className="flex items-center justify-between px-4 py-5 border-b border-sidebar-border">
-        <Link href="/" className="flex items-center gap-2 overflow-hidden">
-          <img src="/logo.png" alt="WDISTT" className="w-9 h-auto shrink-0" />
+        <Link href="/" className="flex items-center gap-2.5 overflow-hidden">
+          <img src="/logo.png" alt="WDISTT" className="w-10 h-auto shrink-0" />
           <div className="lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-200 whitespace-nowrap overflow-hidden">
-            <span className="text-base font-bold text-foreground">WDISTT</span>
-            <p className="text-[10px] text-muted-foreground leading-tight">Where Do I Send This Thing?</p>
+            <span className="text-sm font-bold text-foreground leading-tight">Where Do I Send<br/>This Thing?</span>
           </div>
         </Link>
         <button
