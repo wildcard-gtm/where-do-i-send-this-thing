@@ -28,6 +28,10 @@ interface Postcard {
   contactPhoto: string | null;
   deliveryAddress: string | null;
   createdAt: string;
+  postcardHeadline: string | null;
+  postcardDescription: string | null;
+  accentColor: string | null;
+  backMessage: string | null;
 }
 
 const statusColors: Record<string, string> = {
@@ -46,6 +50,11 @@ export default function PostcardDetailPage() {
   const [postcard, setPostcard] = useState<Postcard | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
+  const [editHeadline, setEditHeadline] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAccentColor, setEditAccentColor] = useState("");
+  const [editBackMessage, setEditBackMessage] = useState("");
 
   const loadPostcard = () => {
     fetch(`/api/postcards/${postcardId}`)
@@ -60,6 +69,17 @@ export default function PostcardDetailPage() {
     loadPostcard();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postcardId]);
+
+  // Seed edit fields when postcard first loads
+  useEffect(() => {
+    if (postcard) {
+      setEditHeadline(postcard.postcardHeadline ?? "");
+      setEditDescription(postcard.postcardDescription ?? "");
+      setEditAccentColor(postcard.accentColor ?? "");
+      setEditBackMessage(postcard.backMessage ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postcard?.id]);
 
   // Poll while generating
   useEffect(() => {
@@ -97,6 +117,27 @@ export default function PostcardDetailPage() {
       router.push(`/dashboard/postcards/${data.postcardId}`);
       fetch(`/api/postcards/${data.postcardId}/run`, { method: "POST" }).catch(() => {});
     }
+    setActionLoading(false);
+  };
+
+  const handleSaveAndRegenerate = async () => {
+    setActionLoading(true);
+    setShowEdit(false);
+    const body: Record<string, string> = {};
+    if (editHeadline.trim())     body.postcardHeadline    = editHeadline.trim();
+    if (editDescription.trim())  body.postcardDescription = editDescription.trim();
+    if (editAccentColor.trim())  body.accentColor         = editAccentColor.trim();
+    if (editBackMessage.trim())  body.backMessage         = editBackMessage.trim();
+
+    // PATCH resets imageUrl/backgroundUrl/status to pending automatically
+    await fetch(`/api/postcards/${postcardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    // Kick off generation
+    await fetch(`/api/postcards/${postcardId}/run`, { method: "POST" });
+    loadPostcard();
     setActionLoading(false);
   };
 
@@ -208,6 +249,16 @@ export default function PostcardDetailPage() {
               ) : null}
               Regenerate
             </button>
+            <button
+              onClick={() => setShowEdit((v) => !v)}
+              disabled={actionLoading || postcard.status === "pending" || postcard.status === "generating"}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition text-sm font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit
+            </button>
             {postcard.imageUrl && (
               <a
                 href={postcard.imageUrl}
@@ -224,6 +275,86 @@ export default function PostcardDetailPage() {
               Delete
             </button>
           </div>
+
+          {/* Edit panel */}
+          {showEdit && (
+            <div className="mt-4 glass-card rounded-2xl p-5 space-y-4">
+              <h3 className="text-sm font-semibold text-foreground">Edit Card Copy</h3>
+              <p className="text-xs text-muted-foreground -mt-2">
+                Override the AI-generated content. Leave a field blank to keep AI-generated text. Hit &ldquo;Save &amp; Regenerate&rdquo; to rebuild the image.
+              </p>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Headline</label>
+                <input
+                  type="text"
+                  value={editHeadline}
+                  onChange={(e) => setEditHeadline(e.target.value)}
+                  placeholder="AI will generate if left blank"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  placeholder="AI will generate if left blank"
+                  rows={3}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Accent Color</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="color"
+                    value={editAccentColor || "#4f46e5"}
+                    onChange={(e) => setEditAccentColor(e.target.value)}
+                    className="w-9 h-9 rounded-lg border border-border cursor-pointer bg-background"
+                  />
+                  <input
+                    type="text"
+                    value={editAccentColor}
+                    onChange={(e) => setEditAccentColor(e.target.value)}
+                    placeholder="#4f46e5 (AI picks if blank)"
+                    className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Back of Card Message</label>
+                <textarea
+                  value={editBackMessage}
+                  onChange={(e) => setEditBackMessage(e.target.value)}
+                  placeholder="Message printed on the back of the postcard"
+                  rows={5}
+                  className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
+                <button
+                  onClick={() => setShowEdit(false)}
+                  className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-muted-foreground transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveAndRegenerate}
+                  className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Save &amp; Regenerate
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Data panel */}

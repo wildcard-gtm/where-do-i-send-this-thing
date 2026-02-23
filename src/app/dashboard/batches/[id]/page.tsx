@@ -4,19 +4,6 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
-// ─── Template type ────────────────────────────────────────────────────────────
-
-interface PostcardTemplate {
-  id: string;
-  name: string;
-  description: string | null;
-  headline: string | null;
-  bodyText: string | null;
-  accentColor: string | null;
-  backMessage: string | null;
-  isDefault: boolean;
-}
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface CampaignContact {
@@ -274,16 +261,14 @@ const DEFAULT_BACK_MESSAGE =
 
 function BackMessageModal({
   count,
-  initialMessage,
   onConfirm,
   onCancel,
 }: {
   count: number;
-  initialMessage?: string;
   onConfirm: (message: string) => void;
   onCancel: () => void;
 }) {
-  const [message, setMessage] = useState(initialMessage ?? DEFAULT_BACK_MESSAGE);
+  const [message, setMessage] = useState(DEFAULT_BACK_MESSAGE);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col">
@@ -335,177 +320,6 @@ function BackMessageModal({
   );
 }
 
-// ─── Template picker modal ────────────────────────────────────────────────────
-
-interface TemplateOverrides {
-  headline: string | null;
-  description: string | null;
-  accentColor: string | null;
-  backMessage: string | null;
-}
-
-function TemplatePickerModal({
-  count,
-  onSelect,
-  onCancel,
-}: {
-  count: number;
-  onSelect: (overrides: TemplateOverrides | null) => void;
-  onCancel: () => void;
-}) {
-  const [templates, setTemplates] = useState<PostcardTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<string | null>(null); // template id or "none"
-
-  useEffect(() => {
-    fetch("/api/team/templates")
-      .then((r) => r.ok ? r.json() : { templates: [] })
-      .then((d) => {
-        setTemplates(d.templates ?? []);
-        // Auto-select default template if one exists
-        const def = (d.templates as PostcardTemplate[])?.find((t) => t.isDefault);
-        if (def) setSelected(def.id);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, []);
-
-  function handleContinue() {
-    if (selected === "none" || !selected) {
-      onSelect(null);
-      return;
-    }
-    const tpl = templates.find((t) => t.id === selected);
-    if (!tpl) { onSelect(null); return; }
-    onSelect({
-      headline: tpl.headline,
-      description: tpl.bodyText,
-      accentColor: tpl.accentColor,
-      backMessage: tpl.backMessage,
-    });
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-        <div className="flex items-start justify-between p-6 pb-4 border-b border-border/50">
-          <div>
-            <h2 className="text-lg font-bold text-foreground">Choose a Template</h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              Apply fixed copy &amp; branding to all {count} postcard{count !== 1 ? "s" : ""}, or skip to customise manually.
-            </p>
-          </div>
-          <button onClick={onCancel} className="text-muted-foreground hover:text-foreground transition ml-4 shrink-0">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="p-6 overflow-y-auto flex-1">
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {/* No template option */}
-              <label className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
-                selected === "none" || (!selected && templates.length === 0)
-                  ? "border-primary bg-primary/5"
-                  : "border-border hover:border-muted-foreground"
-              }`}>
-                <input
-                  type="radio"
-                  name="template"
-                  value="none"
-                  checked={selected === "none" || (!selected && templates.length === 0)}
-                  onChange={() => setSelected("none")}
-                  className="mt-0.5 accent-primary"
-                />
-                <div>
-                  <p className="text-sm font-semibold text-foreground">No template</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">AI generates headline, description &amp; accent colour per contact.</p>
-                </div>
-              </label>
-
-              {templates.map((tpl) => (
-                <label key={tpl.id} className={`flex items-start gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${
-                  selected === tpl.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border hover:border-muted-foreground"
-                }`}>
-                  <input
-                    type="radio"
-                    name="template"
-                    value={tpl.id}
-                    checked={selected === tpl.id}
-                    onChange={() => setSelected(tpl.id)}
-                    className="mt-0.5 accent-primary"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-foreground">{tpl.name}</p>
-                      {tpl.isDefault && (
-                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Default</span>
-                      )}
-                      {tpl.accentColor && (
-                        <span
-                          className="w-4 h-4 rounded-full border border-border shrink-0"
-                          style={{ backgroundColor: tpl.accentColor }}
-                          title={tpl.accentColor}
-                        />
-                      )}
-                    </div>
-                    {tpl.description && (
-                      <p className="text-xs text-muted-foreground mt-0.5">{tpl.description}</p>
-                    )}
-                    <div className="mt-2 flex flex-col gap-1">
-                      {tpl.headline && (
-                        <p className="text-xs text-foreground/70">
-                          <span className="font-medium text-muted-foreground">Headline:</span>{" "}
-                          <span className="font-mono">{tpl.headline}</span>
-                        </p>
-                      )}
-                      {tpl.bodyText && (
-                        <p className="text-xs text-foreground/70 line-clamp-2">
-                          <span className="font-medium text-muted-foreground">Body:</span>{" "}
-                          {tpl.bodyText}
-                        </p>
-                      )}
-                      {!tpl.headline && !tpl.bodyText && (
-                        <p className="text-xs text-muted-foreground italic">AI-generated copy (back message pre-filled)</p>
-                      )}
-                    </div>
-                  </div>
-                </label>
-              ))}
-
-              {templates.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No templates yet. <a href="/dashboard/settings" className="text-primary hover:underline">Create one in Settings →</a>
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-end gap-3 p-6 pt-2 border-t border-border/50">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-muted-foreground transition">
-            Cancel
-          </button>
-          <button
-            onClick={handleContinue}
-            className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm"
-          >
-            Continue →
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatLinkedinSlug(url: string): string {
@@ -537,10 +351,8 @@ export default function CampaignDetailPage() {
   const [loading, setLoading]       = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDispatching, setIsDispatching] = useState(false);
-  const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [showBackModal, setShowBackModal] = useState(false);
   const [pendingPostcardContactIds, setPendingPostcardContactIds] = useState<string[]>([]);
-  const [pendingTemplateOverrides, setPendingTemplateOverrides] = useState<TemplateOverrides | null>(null);
 
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
@@ -712,12 +524,6 @@ export default function CampaignDetailPage() {
     );
     if (eligible.length === 0) return;
     setPendingPostcardContactIds(eligible.map((c) => c.contactId!));
-    setShowTemplateModal(true);
-  }
-
-  function handleTemplateSelected(overrides: TemplateOverrides | null) {
-    setPendingTemplateOverrides(overrides);
-    setShowTemplateModal(false);
     setShowBackModal(true);
   }
 
@@ -732,15 +538,11 @@ export default function CampaignDetailPage() {
         contactIds: pendingPostcardContactIds,
         scanBatchId: batchId,
         backMessage,
-        ...(pendingTemplateOverrides?.headline    ? { templateHeadline:    pendingTemplateOverrides.headline }    : {}),
-        ...(pendingTemplateOverrides?.description ? { templateDescription: pendingTemplateOverrides.description } : {}),
-        ...(pendingTemplateOverrides?.accentColor ? { templateAccentColor: pendingTemplateOverrides.accentColor } : {}),
       }),
     });
     const json = await res.json();
     if (!res.ok) return;
 
-    setPendingTemplateOverrides(null);
     await fetchData();
     enqueueAndDispatch(
       (json.postcardIds as string[]).map((id) => ({ kind: "postcard", postcardId: id }))
@@ -817,19 +619,11 @@ export default function CampaignDetailPage() {
 
   return (
     <div>
-      {showTemplateModal && (
-        <TemplatePickerModal
-          count={pendingPostcardContactIds.length}
-          onSelect={handleTemplateSelected}
-          onCancel={() => { setShowTemplateModal(false); setPendingPostcardContactIds([]); }}
-        />
-      )}
       {showBackModal && (
         <BackMessageModal
           count={pendingPostcardContactIds.length}
-          initialMessage={pendingTemplateOverrides?.backMessage ?? undefined}
           onConfirm={handleConfirmPostcards}
-          onCancel={() => { setShowBackModal(false); setPendingTemplateOverrides(null); setPendingPostcardContactIds([]); }}
+          onCancel={() => { setShowBackModal(false); setPendingPostcardContactIds([]); }}
         />
       )}
 
