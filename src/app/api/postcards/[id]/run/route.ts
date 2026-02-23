@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
 import { generateBackground } from "@/lib/postcard/background-generator";
 import { screenshotPostcard } from "@/lib/postcard/screenshot";
@@ -25,12 +26,13 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
   const postcard = await prisma.postcard.findFirst({
     where: { id },
     include: { contact: { select: { userId: true } } },
   });
 
-  if (!postcard || postcard.contact.userId !== user.id) {
+  if (!postcard || !teamUserIds.includes(postcard.contact.userId)) {
     return NextResponse.json({ error: "Postcard not found" }, { status: 404 });
   }
 

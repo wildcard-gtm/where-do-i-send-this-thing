@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/campaigns/[id]
 // Returns a unified per-contact view of one campaign across all 3 stages:
@@ -15,9 +16,10 @@ export async function GET(
   }
 
   const { id } = await params;
+  const teamUserIds = await getTeamUserIds(user);
 
   const batch = await prisma.batch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       jobs: {
         orderBy: { createdAt: "asc" },

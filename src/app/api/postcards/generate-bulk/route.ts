@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
@@ -17,14 +18,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { contactIds, scanBatchId, backMessage } = await request.json();
+  const {
+    contactIds,
+    scanBatchId,
+    backMessage,
+    templateHeadline,
+    templateDescription,
+    templateAccentColor,
+  } = await request.json();
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
   }
 
+  const teamUserIds = await getTeamUserIds(user);
   const contacts = await prisma.contact.findMany({
-    where: { id: { in: contactIds }, userId: user.id },
+    where: { id: { in: contactIds }, userId: { in: teamUserIds } },
     include: { job: { select: { result: true } } },
   });
 
@@ -43,6 +52,7 @@ export async function POST(request: Request) {
   const postcardBatch = await prisma.postcardBatch.create({
     data: {
       userId: user.id,
+      teamId: user.teamId ?? null,
       name: batchName,
       status: "running",
       ...(scanBatchId ? { scanBatchId } : {}),
@@ -92,6 +102,10 @@ export async function POST(request: Request) {
         companyMission: enrichment?.companyMission ?? null,
         officeLocations: enrichment?.officeLocations ?? undefined,
         ...(backMessage ? { backMessage } : {}),
+        // Template overrides: pre-set copy so AI generation is skipped at run time
+        ...(templateHeadline    ? { postcardHeadline: templateHeadline }       : {}),
+        ...(templateDescription ? { postcardDescription: templateDescription } : {}),
+        ...(templateAccentColor ? { accentColor: templateAccentColor }         : {}),
       },
     });
 

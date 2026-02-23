@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/enrichment-batches/[id]
 // Returns a single enrichment batch with all its enrichment records and contact names
@@ -15,8 +16,10 @@ export async function GET(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batch = await prisma.enrichmentBatch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       enrichments: {
         orderBy: { createdAt: "asc" },

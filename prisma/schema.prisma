@@ -8,6 +8,44 @@ datasource db {
   directUrl = env("SUPABASE_DB_URL_DIRECT")
 }
 
+model Team {
+  id        String       @id @default(cuid())
+  name      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  members   TeamMember[]
+  templates PostcardTemplate[]
+  users     User[]
+}
+
+model TeamMember {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team     @relation(fields: [teamId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      String   @default("member") // "owner" | "member"
+  createdAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model PostcardTemplate {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team     @relation(fields: [teamId], references: [id])
+  name        String
+  description String?
+  // Stored template overrides — if set, copy generation is skipped at run time
+  headline    String?  // fixed headline (null = AI-generate)
+  bodyText    String?  // fixed description/body (null = AI-generate)
+  accentColor String?  // fixed accent hex (null = extract from logo)
+  backMessage String?  // default back-of-card message
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model User {
   id                String             @id @default(cuid())
   email             String             @unique
@@ -15,12 +53,15 @@ model User {
   name              String
   role              String             @default("user")
   autoProcess       Boolean            @default(false)
+  teamId            String?            // active team (null = solo)
+  team              Team?              @relation(fields: [teamId], references: [id])
   createdAt         DateTime           @default(now())
   batches           Batch[]
   contacts          Contact[]
   feedbacks         Feedback[]
   enrichmentBatches EnrichmentBatch[]
   postcardBatches   PostcardBatch[]
+  teamMemberships   TeamMember[]
 }
 
 model Batch {
@@ -28,6 +69,7 @@ model Batch {
   name             String?
   userId           String
   user             User              @relation(fields: [userId], references: [id])
+  teamId           String?
   status           String            @default("pending")
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -66,6 +108,7 @@ model Contact {
   id                  String               @id @default(cuid())
   userId              String
   user                User                 @relation(fields: [userId], references: [id])
+  teamId              String?
   name                String
   email               String?
   linkedinUrl         String
@@ -133,6 +176,7 @@ model PostcardBatch {
   name         String?
   userId       String
   user         User       @relation(fields: [userId], references: [id])
+  teamId       String?
   scanBatchId  String?
   scanBatch    Batch?     @relation(fields: [scanBatchId], references: [id])
   status       String     @default("running") // "running" | "complete" | "failed" | "cancelled"
@@ -147,6 +191,7 @@ model EnrichmentBatch {
   name        String?
   userId      String
   user        User                @relation(fields: [userId], references: [id])
+  teamId      String?
   scanBatchId String?
   scanBatch   Batch?              @relation(fields: [scanBatchId], references: [id])
   status      String              @default("running") // "running" | "complete" | "failed"

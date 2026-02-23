@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/postcard-batches/[id]
 export async function GET(
@@ -14,8 +15,10 @@ export async function GET(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batch = await prisma.postcardBatch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       postcards: {
         include: {

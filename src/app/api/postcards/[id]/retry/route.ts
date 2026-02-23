@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
 // POST /api/postcards/[id]/retry
-// Resets a failed postcard's retryCount to 0 and status to "pending".
+// Resets a failed postcard's retryCount to 0 and status to pending.
 // Returns the postcardId so the caller can dispatch POST /api/postcards/[id]/run.
 // (The postcard detail page calls /run itself after this resets the record.)
 export async function POST(
@@ -19,8 +20,10 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const postcard = await prisma.postcard.findFirst({
-    where: { id, contact: { userId: user.id } },
+    where: { id, contact: { userId: { in: teamUserIds } } },
     select: { id: true, status: true },
   });
 

@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
-// GET — all postcards for current user
+// GET - all postcards for current user
 export async function GET(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -13,8 +14,10 @@ export async function GET(request: Request) {
   const status = searchParams.get("status");
   const contactId = searchParams.get("contactId");
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const where: Record<string, unknown> = {
-    contact: { userId: user.id },
+    contact: { userId: { in: teamUserIds } },
   };
   if (status) where.status = status;
   if (contactId) where.contactId = contactId;

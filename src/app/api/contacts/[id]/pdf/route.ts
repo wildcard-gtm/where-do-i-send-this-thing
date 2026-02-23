@@ -1,4 +1,5 @@
 import { getSession } from "@/lib/auth";
+import { getTeamUserIds } from "@/lib/team";
 import { prisma } from "@/lib/db";
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 
@@ -13,8 +14,10 @@ export async function GET(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       job: {
         select: { result: true },

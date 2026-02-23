@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { runEnrichmentAgent } from "@/agent/enrichment-agent";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
@@ -17,7 +18,7 @@ export async function POST(
   const { id } = await params;
 
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: await getTeamUserIds(user) } },
   });
 
   if (!contact) {
@@ -116,7 +117,7 @@ export async function GET(
   const { id } = await params;
 
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: await getTeamUserIds(user) } },
     select: { id: true },
   });
 
@@ -146,7 +147,7 @@ export async function DELETE(
   const { enrichmentId } = await request.json();
 
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: await getTeamUserIds(user) } },
     select: { id: true },
   });
 

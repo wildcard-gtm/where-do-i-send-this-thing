@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // POST /api/enrichment-batches/[id]/retry
 // Resets all failed/cancelled enrichments to pending and returns their IDs.
@@ -16,8 +17,10 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batch = await prisma.enrichmentBatch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       enrichments: {
         where: { enrichmentStatus: { in: ["failed", "cancelled"] } },

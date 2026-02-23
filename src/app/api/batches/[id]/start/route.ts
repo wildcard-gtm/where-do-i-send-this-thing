@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export async function POST(
   _request: Request,
@@ -13,8 +14,10 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batch = await prisma.batch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: { jobs: { orderBy: { createdAt: "asc" }, select: { id: true, status: true } } },
   });
 

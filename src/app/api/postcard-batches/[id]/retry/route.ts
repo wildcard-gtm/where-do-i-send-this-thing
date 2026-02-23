@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // POST /api/postcard-batches/[id]/retry
 // Resets all failed/cancelled postcards to pending and returns their IDs.
@@ -16,8 +17,10 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batch = await prisma.postcardBatch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
     include: {
       postcards: {
         where: { status: { in: ["failed", "cancelled"] } },

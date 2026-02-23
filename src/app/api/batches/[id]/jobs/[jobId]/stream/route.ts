@@ -2,6 +2,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { runAgentStreaming } from "@/agent/agent-streaming";
 import type { AgentStreamEvent } from "@/agent/agent-streaming";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 600; // 10 minutes for thorough investigation
 
@@ -18,7 +19,7 @@ export async function GET(
 
   // Verify ownership
   const batch = await prisma.batch.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: await getTeamUserIds(user) } },
     select: { id: true, userId: true, status: true },
   });
 
@@ -171,7 +172,7 @@ export async function GET(
             const researchLog = buildResearchLog(events);
 
             const existingContact = await prisma.contact.findFirst({
-              where: { userId: user.id, linkedinUrl: job.linkedinUrl },
+              where: { userId: { in: await getTeamUserIds(user) }, linkedinUrl: job.linkedinUrl },
             });
 
             const contactData = {
@@ -236,6 +237,7 @@ export async function GET(
               await prisma.contact.create({
                 data: {
                   userId: user.id,
+                  teamId: user.teamId ?? null,
                   linkedinUrl: job.linkedinUrl,
                   ...contactData,
                 },

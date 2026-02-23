@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/campaigns
 // Returns scan batches with their linked enrichment + postcard batch summaries
@@ -10,8 +11,10 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batches = await prisma.batch.findMany({
-    where: { userId: user.id },
+    where: { userId: { in: teamUserIds } },
     orderBy: { createdAt: "desc" },
     include: {
       jobs: { select: { status: true } },
@@ -43,7 +46,7 @@ export async function GET() {
     const postcardTotal = pb ? pb.postcards.length : 0;
     const postcardReady = pb ? pb.postcards.filter((p) => p.status === "ready" || p.status === "approved").length : 0;
     const postcardFailed = pb ? pb.postcards.filter((p) => p.status === "failed").length : 0;
-    // Only count pending/generating as "running" when the batch itself is still running
+    // Only count pending/generating as running when the batch itself is still running
     const postcardRunning = (pb && pb.status === "running")
       ? pb.postcards.filter((p) => p.status === "pending" || p.status === "generating").length
       : 0;

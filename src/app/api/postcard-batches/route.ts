@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/postcard-batches
 export async function GET() {
@@ -9,8 +10,10 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batches = await prisma.postcardBatch.findMany({
-    where: { userId: user.id },
+    where: { userId: { in: teamUserIds } },
     orderBy: { createdAt: "desc" },
     include: {
       postcards: { select: { status: true } },

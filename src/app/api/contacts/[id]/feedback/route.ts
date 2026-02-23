@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export async function GET(
   _request: Request,
@@ -13,9 +14,11 @@ export async function GET(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   // Validate the contact belongs to the user
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
   });
 
   if (!contact) {
@@ -40,9 +43,11 @@ export async function POST(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   // Validate the contact belongs to the user
   const contact = await prisma.contact.findFirst({
-    where: { id, userId: user.id },
+    where: { id, userId: { in: teamUserIds } },
   });
 
   if (!contact) {

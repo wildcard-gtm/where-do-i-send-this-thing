@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { runEnrichmentAgent } from "@/agent/enrichment-agent";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
@@ -176,9 +177,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "contactIds array required" }, { status: 400 });
   }
 
-  // Verify all contacts belong to this user
+  // Verify all contacts belong to this user (or team)
+  const teamUserIds = await getTeamUserIds(user);
   const contacts = await prisma.contact.findMany({
-    where: { id: { in: contactIds }, userId: user.id },
+    where: { id: { in: contactIds }, userId: { in: teamUserIds } },
     select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true },
   });
 
@@ -200,6 +202,7 @@ export async function POST(request: Request) {
   const enrichmentBatch = await prisma.enrichmentBatch.create({
     data: {
       userId: user.id,
+      teamId: user.teamId ?? null,
       name: batchName,
       status: "running",
       ...(scanBatchId ? { scanBatchId } : {}),

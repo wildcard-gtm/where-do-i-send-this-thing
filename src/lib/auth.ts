@@ -12,6 +12,7 @@ export interface SessionUser {
   email: string;
   name: string;
   role: string;
+  teamId: string | null;
 }
 
 export async function signToken(user: SessionUser): Promise<string> {

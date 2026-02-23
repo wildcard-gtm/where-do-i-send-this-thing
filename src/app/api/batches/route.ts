@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export async function POST(request: Request) {
   const user = await getSession();
@@ -18,11 +19,13 @@ export async function POST(request: Request) {
       );
     }
 
+    const teamUserIds = await getTeamUserIds(user);
+
     // Check for existing contacts with these URLs
     if (!skipDuplicateCheck) {
       const existing = await prisma.contact.findMany({
         where: {
-          userId: user.id,
+          userId: { in: teamUserIds },
           linkedinUrl: { in: urls.map((u: string) => u.trim()) },
         },
         select: { linkedinUrl: true, name: true, recommendation: true, lastScannedAt: true },
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
     const batch = await prisma.batch.create({
       data: {
         userId: user.id,
+        teamId: user.teamId ?? null,
         name: name || null,
         jobs: {
           create: urls.map((url: string) => ({
@@ -79,8 +83,10 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batches = await prisma.batch.findMany({
-    where: { userId: user.id },
+    where: { userId: { in: teamUserIds } },
     include: {
       jobs: {
         select: {

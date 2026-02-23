@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 import fs from "fs/promises";
 import path from "path";
 
@@ -16,10 +17,12 @@ export async function GET(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const postcard = await prisma.postcard.findFirst({
     where: {
       id,
-      contact: { userId: user.id },
+      contact: { userId: { in: teamUserIds } },
     },
   });
 
@@ -43,8 +46,10 @@ export async function PATCH(
   const { id } = await params;
   const body = await request.json();
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const existing = await prisma.postcard.findFirst({
-    where: { id, contact: { userId: user.id } },
+    where: { id, contact: { userId: { in: teamUserIds } } },
   });
 
   if (!existing) {
@@ -74,8 +79,10 @@ export async function DELETE(
 
   const { id } = await params;
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const existing = await prisma.postcard.findFirst({
-    where: { id, contact: { userId: user.id } },
+    where: { id, contact: { userId: { in: teamUserIds } } },
   });
 
   if (!existing) {

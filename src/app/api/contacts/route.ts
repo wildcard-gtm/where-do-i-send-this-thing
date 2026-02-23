@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export async function GET(request: Request) {
   const user = await getSession();
@@ -17,8 +18,10 @@ export async function GET(request: Request) {
   const page = parseInt(url.searchParams.get("page") || "1");
   const limit = parseInt(url.searchParams.get("limit") || "20");
 
+  const teamUserIds = await getTeamUserIds(user);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const where: any = { userId: user.id };
+  const where: any = { userId: { in: teamUserIds } };
 
   if (search) {
     where.OR = [
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
     where.job = { batchId };
   }
 
-  // Also fetch user's batches for the filter dropdown
+  // Also fetch team's batches for the filter dropdown
   const [contacts, total, batches] = await Promise.all([
     prisma.contact.findMany({
       where,
@@ -62,7 +65,7 @@ export async function GET(request: Request) {
     }),
     prisma.contact.count({ where }),
     prisma.batch.findMany({
-      where: { userId: user.id },
+      where: { userId: { in: teamUserIds } },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, createdAt: true },
       take: 50,
@@ -92,6 +95,7 @@ export async function POST(request: Request) {
     const contact = await prisma.contact.create({
       data: {
         userId: user.id,
+        teamId: user.teamId ?? null,
         name,
         linkedinUrl,
         email: email || null,

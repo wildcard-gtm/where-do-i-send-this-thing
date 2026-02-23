@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
@@ -21,8 +22,9 @@ export async function POST(request: Request) {
   }
 
   // Verify contact belongs to user
+  const teamUserIds = await getTeamUserIds(user);
   const contact = await prisma.contact.findFirst({
-    where: { id: contactId, userId: user.id },
+    where: { id: contactId, userId: { in: teamUserIds } },
     include: {
       job: { select: { result: true } },
     },

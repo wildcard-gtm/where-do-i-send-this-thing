@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getTeamUserIds } from "@/lib/team";
 
 // GET /api/enrichment-batches
 // Returns all enrichment batches for the current user with per-batch counts
@@ -10,8 +11,10 @@ export async function GET() {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const teamUserIds = await getTeamUserIds(user);
+
   const batches = await prisma.enrichmentBatch.findMany({
-    where: { userId: user.id },
+    where: { userId: { in: teamUserIds } },
     orderBy: { createdAt: "desc" },
     include: {
       enrichments: {
