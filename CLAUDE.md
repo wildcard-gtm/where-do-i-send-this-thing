@@ -32,8 +32,8 @@
 
 ### Vercel filesystem is read-only
 - Do NOT write files to `public/` or anywhere else at runtime on Vercel
-- Previously: generate routes wrote PNGs to `public/postcards/` — this silently fails on Vercel
-- Fix: store images as `data:image/png;base64,...` strings directly in `Postcard.backgroundUrl` and `Postcard.imageUrl` DB fields
+- Postcard images are uploaded to Supabase Storage (bucket: `postcards`) and the public URL is stored in `Postcard.backgroundUrl` / `Postcard.imageUrl`
+- Upload helper: `src/lib/supabase-storage.ts` — requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` env vars
 
 ### No Playwright/Chromium on Vercel
 - `@sparticuz/chromium` (~170MB) exceeds Vercel's 50MB function size limit
@@ -52,7 +52,7 @@
 
 ### `gpt-image-1` may not be available (tier-gated)
 - `generateBackground()` tries `gpt-image-1` first, falls back to `dall-e-3` automatically
-- Both return base64 PNG — no filesystem writes needed
+- Both return base64 PNG — uploaded to Supabase Storage, public URL stored in DB
 - `gpt-image-1` produces ~3MB PNGs; `dall-e-3` produces smaller ones
 
 ### Real lead data: Frank Chang
@@ -106,9 +106,9 @@ Batch (Campaign)
 1. `POST /api/postcards/generate-bulk` — creates `PostcardBatch` (linked to `Batch.id` via `scanBatchId`), fire-and-forgets generation. Returns `postcardBatchId` → redirects to `/dashboard/postcards/batches/[id]`
 2. `POST /api/postcards/generate` — single postcard path
 3. Fire-and-forget per postcard:
-   - `generateBackground(prompt)` → base64 PNG → `Postcard.backgroundUrl`
+   - `generateBackground(prompt)` → base64 PNG → uploaded to Supabase Storage → public URL stored in `Postcard.backgroundUrl`
    - Status → `generating`
-   - `screenshotPostcard(postcardId)` → fetches `GET /api/postcards/[id]/image` → base64 PNG → `Postcard.imageUrl`
+   - `screenshotPostcard(postcardId)` → fetches `GET /api/postcards/[id]/image` → base64 PNG → uploaded to Supabase Storage → public URL stored in `Postcard.imageUrl`
    - Status → `ready`
 
 ### Image Rendering (`next/og`)
@@ -142,6 +142,7 @@ Batch (Campaign)
 | `src/lib/ai/config.ts` | `getAIClientForRole()` — DB-driven model routing with fallback |
 | `src/lib/postcard/background-generator.ts` | AI background image gen (gpt-image-1 → dall-e-3 fallback) |
 | `src/lib/postcard/screenshot.ts` | Fetches image route, returns base64 |
+| `src/lib/supabase-storage.ts` | Upload/delete postcard images in Supabase Storage |
 | `src/lib/postcard/prompt-generator.ts` | War room / zoom room prompts |
 | `src/app/api/postcards/[id]/image/route.tsx` | **MUST BE .tsx** — next/og ImageResponse |
 | `src/app/api/postcards/generate/route.ts` | Single postcard generation |
@@ -220,6 +221,10 @@ OPENAI_API_KEY
 SUPABASE_DB_URL
 SUPABASE_DB_URL_DIRECT
 
+# Supabase Storage (postcard images)
+SUPABASE_URL                  # e.g. https://xyz.supabase.co
+SUPABASE_SERVICE_ROLE_KEY     # service role JWT for server-side uploads
+
 # External data APIs
 BRIGHT_DATA_API_KEY       # LinkedIn scraping
 ENDATO_API_NAME
@@ -266,8 +271,7 @@ npm run test:pipeline
 
 ## Known Issues / TODO
 
-- `Postcard.imageUrl` stores base64 data URLs — fine for small scale but will bloat the DB. Future: migrate to Supabase Storage or Vercel Blob.
-- `gpt-image-1` images are ~3MB each as base64, which is ~4MB stored in DB. Keep an eye on DB size.
+- Postcard images now stored in Supabase Storage (bucket: `postcards`). Old postcards may still have base64 data URLs in `imageUrl`/`backgroundUrl` — these will be replaced on regeneration.
 - The `@sparticuz/chromium` package is still in `dependencies` but is no longer used — can be removed once confident in the `next/og` approach.
 - The postcard render page at `/postcard-render/[postcardId]` still exists but is now unused (was used by the old Playwright screenshot approach).
 - Notes folder: `notes/shane-convo-2026-02-20.md` has product decisions from Shane (postcard template choices, enrichment data requirements).

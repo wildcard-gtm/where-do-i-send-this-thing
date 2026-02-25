@@ -141,6 +141,18 @@ export default function PostcardDetailPage() {
     setActionLoading(false);
   };
 
+  const handleDownload = async () => {
+    if (!postcard?.imageUrl) return;
+    const res = await fetch(postcard.imageUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${postcard.contactName.replace(/[^a-z0-9]/gi, "_")}-postcard.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleDelete = async () => {
     if (!confirm("Delete this postcard?")) return;
     await fetch(`/api/postcards/${postcardId}`, { method: "DELETE" });
@@ -260,13 +272,12 @@ export default function PostcardDetailPage() {
               Edit
             </button>
             {postcard.imageUrl && (
-              <a
-                href={postcard.imageUrl}
-                download
+              <button
+                onClick={handleDownload}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
               >
                 Download PNG
-              </a>
+              </button>
             )}
             <button
               onClick={handleDelete}

@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
-import fs from "fs/promises";
-import path from "path";
+import { deletePostcardImage } from "@/lib/supabase-storage";
 
 // GET — fetch postcard status (for polling)
 export async function GET(
@@ -68,6 +67,11 @@ export async function PATCH(
     data.imageUrl = null;
     data.backgroundUrl = null;
     data.status = "pending";
+    // Clean up old images from storage
+    await Promise.all([
+      deletePostcardImage(`backgrounds/${id}.png`),
+      deletePostcardImage(`finals/${id}.png`),
+    ]);
   }
 
   const postcard = await prisma.postcard.update({ where: { id }, data });
@@ -97,13 +101,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Postcard not found" }, { status: 404 });
   }
 
-  // Delete image files
-  for (const urlField of [existing.imageUrl, existing.backgroundUrl]) {
-    if (urlField) {
-      const filePath = path.join(process.cwd(), "public", urlField);
-      await fs.unlink(filePath).catch(() => {}); // ignore if missing
-    }
-  }
+  // Delete images from Supabase Storage
+  await Promise.all([
+    deletePostcardImage(`backgrounds/${id}.png`),
+    deletePostcardImage(`finals/${id}.png`),
+  ]);
 
   await prisma.postcard.delete({ where: { id } });
 

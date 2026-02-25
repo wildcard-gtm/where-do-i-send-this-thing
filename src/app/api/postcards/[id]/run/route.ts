@@ -7,6 +7,7 @@ import { generateBackground } from "@/lib/postcard/background-generator";
 import { screenshotPostcard } from "@/lib/postcard/screenshot";
 import { generatePostcardCopy } from "@/lib/postcard/copy-generator";
 import { extractAccentColor } from "@/lib/postcard/color-extractor";
+import { uploadPostcardImage } from "@/lib/supabase-storage";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
 
 export const maxDuration = 300;
@@ -149,7 +150,10 @@ export async function POST(
         (existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
 
       const bgBase64 = await generateBackground(prompt);
-      const backgroundUrl = `data:image/png;base64,${bgBase64}`;
+      const backgroundUrl = await uploadPostcardImage(
+        bgBase64,
+        `backgrounds/${id}.png`
+      );
 
       // Check cancellation again after the slow image gen step
       const afterBg = await prisma.postcard.findUnique({
@@ -167,7 +171,10 @@ export async function POST(
       });
 
       const imageBase64 = await screenshotPostcard(id);
-      const imageUrl = `data:image/png;base64,${imageBase64}`;
+      const imageUrl = await uploadPostcardImage(
+        imageBase64,
+        `finals/${id}.png`
+      );
 
       await prisma.postcard.update({
         where: { id },

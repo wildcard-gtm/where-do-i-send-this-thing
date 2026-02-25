@@ -289,7 +289,7 @@ model Postcard {
   errorMessage     String?
   retryCount       Int      @default(0) // number of generation attempts made (max 5)
 
-  // Generated images (relative paths under /public/postcards/)
+  // Generated images (public URLs in Supabase Storage bucket "postcards")
   backgroundUrl    String?  // AI-generated background scene
   backgroundPrompt String?  // prompt used (for regeneration)
   imageUrl         String?  // final composited PNG

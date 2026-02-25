@@ -505,13 +505,21 @@ export default function ContactDetailPage() {
                     <span className="text-success text-sm font-medium">Approved</span>
                   )}
                   {postcard.imageUrl && (
-                    <a
-                      href={postcard.imageUrl}
-                      download
+                    <button
+                      onClick={async () => {
+                        const res = await fetch(postcard.imageUrl!);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = "postcard.png";
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
                       className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
                     >
                       Download
-                    </a>
+                    </button>
                   )}
                   <button
                     onClick={() => window.open(`/dashboard/postcards/${postcard.id}`, "_blank")}

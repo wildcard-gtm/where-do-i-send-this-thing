@@ -95,6 +95,18 @@ export default function PostcardsPage() {
     });
   };
 
+  const handleDownloadSingle = async (p: Postcard) => {
+    if (!p.imageUrl) return;
+    const res = await fetch(p.imageUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${p.contactName.replace(/[^a-z0-9]/gi, "_")}-postcard.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleRetry = async (id: string) => {
     const res = await fetch(`/api/postcards/${id}/retry`, { method: "POST" });
     if (res.ok) {
@@ -326,13 +338,12 @@ export default function PostcardsPage() {
                     </button>
                   )}
                   {postcard.imageUrl && (
-                    <a
-                      href={postcard.imageUrl}
-                      download
+                    <button
+                      onClick={() => handleDownloadSingle(postcard)}
                       className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition"
                     >
                       Download
-                    </a>
+                    </button>
                   )}
                   <button
                     onClick={() => handleDelete(postcard.id)}
