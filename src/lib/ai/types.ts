@@ -17,7 +17,7 @@ export interface AIClient {
   callModel(
     messages: Message[],
     tools: ToolDefinition[],
-    options?: { maxTokens?: number; temperature?: number }
+    options?: { maxTokens?: number; temperature?: number; system?: string }
   ): Promise<ClaudeResponse>;
 
   chat(

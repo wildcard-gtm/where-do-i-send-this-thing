@@ -8,17 +8,20 @@ export function createBedrockAIClient(modelId: string): AIClient {
 
   return {
     async callModel(messages: Message[], tools: ToolDefinition[], options?) {
+      const body: Record<string, unknown> = {
+        anthropic_version: 'bedrock-2023-05-31',
+        max_tokens: options?.maxTokens ?? 16384,
+        temperature: options?.temperature ?? 0.3,
+        messages,
+        tools,
+      };
+      if (options?.system) body.system = options.system;
+
       const command = new InvokeModelCommand({
         modelId,
         contentType: 'application/json',
         accept: 'application/json',
-        body: JSON.stringify({
-          anthropic_version: 'bedrock-2023-05-31',
-          max_tokens: options?.maxTokens ?? 16384,
-          temperature: options?.temperature ?? 0.3,
-          messages,
-          tools,
-        }),
+        body: JSON.stringify(body),
       });
       const response = await client.send(command);
       return JSON.parse(new TextDecoder().decode(response.body)) as ClaudeResponse;

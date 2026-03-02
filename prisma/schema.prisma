@@ -315,9 +315,23 @@ model Postcard {
   teamPhotos       Json?    // [{ name?: string, photoUrl: string, title?: string }] — snapshotted from enrichment
   deliveryAddress  String?
 
+  references       PostcardReference[]
+
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   @@index([contactId])
   @@index([status])
+}
+
+model PostcardReference {
+  id          String   @id @default(cuid())
+  postcardId  String
+  postcard    Postcard @relation(fields: [postcardId], references: [id], onDelete: Cascade)
+  label       String   // "prospect_photo" | "team_photo" | "company_logo" | "reference"
+  imageUrl    String   // Supabase Storage public URL
+  storagePath String   // path in bucket for cleanup
+  createdAt   DateTime @default(now())
+
+  @@index([postcardId])
 }

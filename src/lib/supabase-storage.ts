@@ -79,6 +79,41 @@ export async function deletePostcardImage(filePath: string): Promise<void> {
 }
 
 /**
+ * Uploads a raw Buffer to Supabase Storage (for multipart file uploads).
+ * @param buffer - raw file buffer
+ * @param filePath - path within the bucket, e.g. "references/abc123/xyz.png"
+ * @param contentType - MIME type, e.g. "image/png"
+ * @returns public URL of the uploaded file
+ */
+export async function uploadReferenceImage(
+  buffer: Buffer,
+  filePath: string,
+  contentType: string = "image/png"
+): Promise<string> {
+  const { supabaseUrl, serviceKey } = getStorageConfig();
+
+  const uploadUrl = `${supabaseUrl}/storage/v1/object/${BUCKET}/${filePath}`;
+
+  const res = await fetch(uploadUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      "Content-Type": contentType,
+      "x-upsert": "true",
+      "cache-control": "no-store",
+    },
+    body: buffer,
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Supabase Storage upload failed (${res.status}): ${text}`);
+  }
+
+  return `${supabaseUrl}/storage/v1/object/public/${BUCKET}/${filePath}?v=${Date.now()}`;
+}
+
+/**
  * Extracts the storage file path from a public URL.
  * e.g. "https://xyz.supabase.co/storage/v1/object/public/postcards/backgrounds/abc.png"
  * → "backgrounds/abc.png"

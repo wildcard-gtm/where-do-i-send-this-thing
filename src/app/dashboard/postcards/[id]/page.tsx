@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import CorrectionModal from "@/components/corrections/correction-modal";
 
 interface OpenRole {
   title: string;
@@ -34,6 +35,19 @@ interface Postcard {
   backMessage: string | null;
 }
 
+interface ReferenceImage {
+  id: string;
+  label: string;
+  imageUrl: string;
+}
+
+const labelOptions = [
+  { value: "prospect_photo", label: "Prospect Photo" },
+  { value: "team_photo", label: "Team Photo" },
+  { value: "company_logo", label: "Company Logo" },
+  { value: "reference", label: "Reference" },
+];
+
 const statusColors: Record<string, string> = {
   pending: "text-warning bg-warning/10",
   generating: "text-primary bg-primary/10",
@@ -55,6 +69,11 @@ export default function PostcardDetailPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editAccentColor, setEditAccentColor] = useState("");
   const [editBackMessage, setEditBackMessage] = useState("");
+  const [showCorrection, setShowCorrection] = useState(false);
+  const [references, setReferences] = useState<ReferenceImage[]>([]);
+  const [uploadLabel, setUploadLabel] = useState("reference");
+  const [uploading, setUploading] = useState(false);
+  const refFileInput = useRef<HTMLInputElement>(null);
 
   const loadPostcard = () => {
     fetch(`/api/postcards/${postcardId}`)
@@ -65,8 +84,15 @@ export default function PostcardDetailPage() {
       });
   };
 
+  const loadReferences = () => {
+    fetch(`/api/postcards/${postcardId}/references`)
+      .then((res) => (res.ok ? res.json() : { references: [] }))
+      .then((data) => setReferences(data.references || []));
+  };
+
   useEffect(() => {
     loadPostcard();
+    loadReferences();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postcardId]);
 
@@ -157,6 +183,30 @@ export default function PostcardDetailPage() {
     if (!confirm("Delete this postcard?")) return;
     await fetch(`/api/postcards/${postcardId}`, { method: "DELETE" });
     router.push("/dashboard/postcards");
+  };
+
+  const handleUploadReference = async (file: File) => {
+    setUploading(true);
+    const formData = new FormData();
+    formData.append("postcardId", postcardId);
+    formData.append("file", file);
+    formData.append("label", uploadLabel);
+    const res = await fetch("/api/corrections/upload", { method: "POST", body: formData });
+    if (res.ok) {
+      const data = await res.json();
+      setReferences((prev) => [...prev, data]);
+    }
+    setUploading(false);
+    if (refFileInput.current) refFileInput.current.value = "";
+  };
+
+  const handleDeleteReference = async (refId: string) => {
+    await fetch("/api/corrections/upload", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ referenceId: refId }),
+    });
+    setReferences((prev) => prev.filter((r) => r.id !== refId));
   };
 
   if (loading) {
@@ -279,6 +329,16 @@ export default function PostcardDetailPage() {
                 Download PNG
               </button>
             )}
+            <button
+              onClick={() => setShowCorrection(true)}
+              disabled={postcard.status === "pending" || postcard.status === "generating"}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-warning/50 text-warning hover:bg-warning/10 disabled:opacity-50 transition text-sm font-medium"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Correct with AI
+            </button>
             <button
               onClick={handleDelete}
               className="px-4 py-2.5 rounded-lg border border-border text-danger hover:bg-danger/10 transition text-sm font-medium"
@@ -436,8 +496,92 @@ export default function PostcardDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Reference Images */}
+          <div className="glass-card rounded-2xl p-5">
+            <h3 className="text-sm font-medium text-foreground mb-3">Reference Images</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Upload photos for the AI to use when correcting or regenerating this postcard.
+            </p>
+
+            {references.length > 0 && (
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                {references.map((ref) => (
+                  <div key={ref.id} className="relative group">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={ref.imageUrl}
+                      alt={ref.label}
+                      className="w-full h-20 object-cover rounded-lg border border-border"
+                    />
+                    <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-black/60 text-white px-1.5 py-0.5 rounded capitalize">
+                      {ref.label.replace(/_/g, " ")}
+                    </span>
+                    <button
+                      onClick={() => handleDeleteReference(ref.id)}
+                      className="absolute top-1 right-1 w-5 h-5 bg-danger text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <select
+                value={uploadLabel}
+                onChange={(e) => setUploadLabel(e.target.value)}
+                className="text-xs bg-background border border-border rounded-lg px-2 py-1.5 text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                {labelOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <input
+                ref={refFileInput}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleUploadReference(file);
+                }}
+                className="hidden"
+              />
+              <button
+                onClick={() => refFileInput.current?.click()}
+                disabled={uploading}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-border text-xs text-muted-foreground hover:text-foreground hover:border-primary transition disabled:opacity-50"
+              >
+                {uploading ? (
+                  <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                )}
+                Upload
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+
+      {/* Correction Modal */}
+      {showCorrection && (
+        <CorrectionModal
+          isOpen={true}
+          onClose={() => setShowCorrection(false)}
+          contactId={postcard.contactId}
+          contactName={postcard.contactName}
+          stage="postcard"
+          postcardId={postcard.id}
+          onApplied={() => {
+            loadPostcard();
+            loadReferences();
+          }}
+        />
+      )}
     </div>
   );
 }

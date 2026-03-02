@@ -21,6 +21,9 @@ export function createOpenAIClient(modelId: string): AIClient {
   return {
     async callModel(messages: Message[], tools: ToolDefinition[], options?) {
       const openaiMessages = translateMessagesToOpenAI(messages);
+      if (options?.system) {
+        openaiMessages.unshift({ role: 'system', content: options.system });
+      }
       const openaiTools: OpenAI.ChatCompletionTool[] = tools.map((t) => ({
         type: 'function',
         function: {

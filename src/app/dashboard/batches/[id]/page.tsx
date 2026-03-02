@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import CorrectionModal from "@/components/corrections/correction-modal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,7 +125,29 @@ function RefreshBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
   );
 }
 
-function ScanPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
+function CorrectBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Correct"
+      className="p-0.5 rounded text-muted-foreground/50 hover:text-warning hover:bg-warning/10 transition opacity-0 group-hover/row:opacity-100"
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>
+    </button>
+  );
+}
+
+type CorrectionTarget = {
+  contactId: string;
+  contactName: string;
+  stage: "scan" | "enrich" | "postcard";
+  availableStages: Array<"scan" | "enrich" | "postcard">;
+  postcardId?: string;
+} | null;
+
+function ScanPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
   const { currentKey, currentLabel, pct } = getJobProgress(c.stages, c.jobStatus);
 
   if (c.jobStatus === "pending") {
@@ -156,6 +179,7 @@ function ScanPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void
             c.confidence >= 85 ? "text-success" : c.confidence >= 75 ? "text-primary" : "text-warning"
           }`}>{c.confidence}%</span>
         )}
+        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -174,7 +198,7 @@ function ScanPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void
   );
 }
 
-function EnrichPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
+function EnrichPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
   const locked = !c.enrichmentId && c.jobStatus !== "complete";
 
   if (locked) {
@@ -212,6 +236,7 @@ function EnrichPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => vo
           </svg>
           Done
         </span>
+        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -222,7 +247,7 @@ function EnrichPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => vo
   return <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{c.enrichmentStatus}</span>;
 }
 
-function PostcardPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
+function PostcardPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
   const locked = c.enrichmentStatus !== "completed" && !c.postcardId;
 
   if (locked) {
@@ -262,6 +287,7 @@ function PostcardPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => 
           </svg>
           View
         </Link>
+        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -306,6 +332,7 @@ export default function CampaignDetailPage() {
   const [loading, setLoading]       = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDispatching, setIsDispatching] = useState(false);
+  const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(null);
 
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
@@ -546,6 +573,24 @@ export default function CampaignDetailPage() {
     enqueueAndDispatch(
       (json.postcardIds as string[]).map((id) => ({ kind: "postcard", postcardId: id }))
     );
+  }
+
+  // ── Correction handler ──────────────────────────────────────────────────────
+
+  function openCorrection(c: CampaignContact, stage: "scan" | "enrich" | "postcard") {
+    if (!c.contactId) return;
+    const displayName = c.contactName || c.personName || formatLinkedinSlug(c.linkedinUrl);
+    const available: Array<"scan" | "enrich" | "postcard"> = [];
+    if (c.jobStatus === "complete" && c.contactId) available.push("scan");
+    if (c.enrichmentStatus === "completed" && c.contactId) available.push("enrich");
+    if ((c.postcardStatus === "ready" || c.postcardStatus === "approved") && c.contactId) available.push("postcard");
+    setCorrectionTarget({
+      contactId: c.contactId,
+      contactName: displayName,
+      stage,
+      availableStages: available,
+      postcardId: c.postcardId ?? undefined,
+    });
   }
 
   // ── Derived state ──────────────────────────────────────────────────────────
@@ -860,13 +905,13 @@ export default function CampaignDetailPage() {
               </div>
 
               {/* Scan */}
-              <div><ScanPill c={c} onRefresh={c.jobStatus === "complete" ? () => refreshScan(c) : undefined} /></div>
+              <div><ScanPill c={c} onRefresh={c.jobStatus === "complete" ? () => refreshScan(c) : undefined} onCorrect={c.jobStatus === "complete" && c.contactId ? () => openCorrection(c, "scan") : undefined} /></div>
 
               {/* Enrich */}
-              <div><EnrichPill c={c} onRefresh={c.enrichmentStatus === "completed" ? () => refreshEnrich(c) : undefined} /></div>
+              <div><EnrichPill c={c} onRefresh={c.enrichmentStatus === "completed" ? () => refreshEnrich(c) : undefined} onCorrect={c.enrichmentStatus === "completed" && c.contactId ? () => openCorrection(c, "enrich") : undefined} /></div>
 
               {/* Postcard */}
-              <div><PostcardPill c={c} onRefresh={c.postcardStatus === "ready" || c.postcardStatus === "approved" ? () => refreshPostcard(c) : undefined} /></div>
+              <div><PostcardPill c={c} onRefresh={c.postcardStatus === "ready" || c.postcardStatus === "approved" ? () => refreshPostcard(c) : undefined} onCorrect={(c.postcardStatus === "ready" || c.postcardStatus === "approved") && c.contactId ? () => openCorrection(c, "postcard") : undefined} /></div>
             </div>
           );
         })}
@@ -877,6 +922,20 @@ export default function CampaignDetailPage() {
           </div>
         )}
       </div>
+
+      {/* Correction modal */}
+      {correctionTarget && (
+        <CorrectionModal
+          isOpen={true}
+          onClose={() => setCorrectionTarget(null)}
+          contactId={correctionTarget.contactId}
+          contactName={correctionTarget.contactName}
+          stage={correctionTarget.stage}
+          availableStages={correctionTarget.availableStages}
+          postcardId={correctionTarget.postcardId}
+          onApplied={fetchData}
+        />
+      )}
     </div>
   );
 }

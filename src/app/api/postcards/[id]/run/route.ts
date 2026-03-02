@@ -90,15 +90,27 @@ export async function POST(
         },
       });
 
+      // Check for user-uploaded reference images that override defaults
+      const refs = await prisma.postcardReference.findMany({
+        where: { postcardId: id },
+        select: { label: true, imageUrl: true },
+      });
+      const refByLabel = (label: string) => refs.find((r) => r.label === label)?.imageUrl;
+
       // Generate the scene — Nano Banana 2 (Gemini) compositing
       let bgBase64: string;
       const teamPhotos = (existing?.teamPhotos as Array<{ photoUrl: string }> | null) ?? [];
       const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
+      // Reference images override: prospect_photo, company_logo, team_photo
+      const refTeamPhotos = refs.filter((r) => r.label === "team_photo").map((r) => r.imageUrl);
+
       const nanaBananaInput = {
-        prospectPhotoUrl: existing?.contactPhoto ?? undefined,
-        companyLogoUrl: existing?.companyLogo ?? null,
-        teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
+        prospectPhotoUrl: refByLabel("prospect_photo") ?? existing?.contactPhoto ?? undefined,
+        companyLogoUrl: refByLabel("company_logo") ?? existing?.companyLogo ?? null,
+        teamPhotoUrls: refTeamPhotos.length > 0
+          ? refTeamPhotos
+          : teamPhotos.map((p) => p.photoUrl).filter(Boolean),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
         prospectName: existing?.contactName ?? undefined,
       };
