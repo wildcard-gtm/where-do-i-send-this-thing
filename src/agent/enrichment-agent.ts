@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, searchExaAI, fetchBrightDataLinkedIn } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, fetchBrightDataLinkedIn } from './services';
 import axios, { type AxiosError } from 'axios';
 
 // ─── Types ───────────────────────────────────────────────
@@ -208,8 +208,13 @@ async function executeEnrichmentTool(
       if (brandRes.success) {
         return { result: { success: true, data: brandRes.data, summary: brandRes.summary, source: 'brandfetch' } };
       }
-      // Both failed
-      return { result: { success: false, summary: `Logo not found via Hunter.io (${hunterRes.summary}) or Brandfetch (${brandRes.summary}). Try fetching the company website directly.` } };
+      // 3. Logo.dev — tertiary fallback (simple image URL)
+      const logoDevRes = await fetchLogoDev(domain);
+      if (logoDevRes.success) {
+        return { result: { success: true, data: logoDevRes.data, summary: logoDevRes.summary, source: 'logodev' } };
+      }
+      // All failed
+      return { result: { success: false, summary: `Logo not found via Hunter.io (${hunterRes.summary}), Brandfetch (${brandRes.summary}), or Logo.dev (${logoDevRes.summary}). Try fetching the company website directly.` } };
     }
 
     case 'search_web': {

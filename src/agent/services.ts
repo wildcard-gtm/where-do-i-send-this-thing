@@ -778,3 +778,27 @@ export async function fetchBrandfetch(domain: string): Promise<ToolResult> {
     return { success: false, summary: `Brandfetch fetch failed: ${(err as Error).message}` };
   }
 }
+
+// ─── Logo.dev API (tertiary logo fallback) ───────────────
+
+export async function fetchLogoDev(domain: string): Promise<ToolResult> {
+  const token = process.env.LOGO_DEV_TOKEN;
+  if (!token) return { success: false, summary: 'LOGO_DEV_TOKEN not configured' };
+
+  try {
+    const url = `https://img.logo.dev/${domain}?token=${token}&size=200&format=png`;
+    const res = await axios.head(url, { timeout: 10_000, validateStatus: (status) => status < 500 });
+
+    if (res.status === 404 || res.status === 400) {
+      return { success: false, summary: `Logo.dev: no logo found for ${domain}` };
+    }
+
+    return {
+      success: true,
+      data: { logoUrl: url },
+      summary: `Logo found via Logo.dev: ${url}`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Logo.dev fetch failed: ${(err as Error).message}` };
+  }
+}
