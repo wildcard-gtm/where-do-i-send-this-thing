@@ -99,7 +99,9 @@ async function generateImage(prompt: string, images: ImageData[]): Promise<strin
 
   const result = await callGemini(IMAGE_MODEL, {
     contents: [{ role: 'user', parts }],
-    generationConfig: { responseModalities: ['IMAGE'] },
+    generationConfig: {
+      responseModalities: ['TEXT', 'IMAGE'],
+    },
   });
 
   if (!result.image) throw new Error('No image in Gemini response');
@@ -195,6 +197,72 @@ function parseIssues(analysis: string): { pass: boolean; issues: string[] } {
   return { pass, issues };
 }
 
+// ─── Title Normalization ─────────────────────────────────────────────────────
+
+/** Normalize a job title to be short, clean, and easy for AI to render without spelling errors */
+export function normalizeJobTitle(title: string): string {
+  let t = title.trim();
+
+  // Strip location/level suffixes after commas, dashes, pipes, parens
+  // Order matters: "City, ST" must run before bare trailing state codes
+  t = t.replace(/\s*[,|–—]\s*(Remote|Hybrid|On-?site|Onsite).*$/i, '');
+  t = t.replace(/\s*[,|–—]\s*([\w\s]+,\s*[A-Z]{2})$/i, ''); // "City, ST" suffix
+  t = t.replace(/\s*[,|–—]\s*[A-Z]{2}\s*$/i, ''); // trailing state codes
+  t = t.replace(/\s*\(.*?\)\s*/g, ''); // parenthetical info
+
+  // Abbreviate common terms
+  const abbrevs: [RegExp, string][] = [
+    [/\bSenior\b/gi, 'Sr.'],
+    [/\bJunior\b/gi, 'Jr.'],
+    [/\bVice President\b/gi, 'VP'],
+    [/\bSenior Vice President\b/gi, 'SVP'],
+    [/\bExecutive Vice President\b/gi, 'EVP'],
+    [/\bManaging Director\b/gi, 'MD'],
+    [/\bChief Technology Officer\b/gi, 'CTO'],
+    [/\bChief Executive Officer\b/gi, 'CEO'],
+    [/\bChief Financial Officer\b/gi, 'CFO'],
+    [/\bChief Operating Officer\b/gi, 'COO'],
+    [/\bChief Marketing Officer\b/gi, 'CMO'],
+    [/\bChief Product Officer\b/gi, 'CPO'],
+    [/\bChief Revenue Officer\b/gi, 'CRO'],
+    [/\bChief Information Officer\b/gi, 'CIO'],
+    [/\bSoftware Engineer\b/gi, 'SW Engineer'],
+    [/\bSoftware Development Engineer\b/gi, 'SDE'],
+    [/\bMachine Learning\b/gi, 'ML'],
+    [/\bArtificial Intelligence\b/gi, 'AI'],
+    [/\bEngineering Manager\b/gi, 'Eng Manager'],
+    [/\bProduct Manager\b/gi, 'Product Manager'],
+    [/\bPrincipal\b/gi, 'Principal'],
+    [/\bDistinguished\b/gi, 'Dist.'],
+    [/\bDepartment\b/gi, 'Dept.'],
+    [/\bAssociate\b/gi, 'Assoc.'],
+    [/\bAssistant\b/gi, 'Asst.'],
+    [/\bAdministrat(or|ion)\b/gi, 'Admin'],
+    [/\bDevelopment\b/gi, 'Dev'],
+    [/\bEngineering\b/gi, 'Eng'],
+    [/\bManagement\b/gi, 'Mgmt'],
+    [/\bOperations\b/gi, 'Ops'],
+    [/\bInfrastructure\b/gi, 'Infra'],
+    [/\bArchitecture\b/gi, 'Architecture'],
+    [/\bTechnolog(y|ies)\b/gi, 'Tech'],
+    [/\bInformation\b/gi, 'Info'],
+  ];
+
+  for (const [pattern, replacement] of abbrevs) {
+    t = t.replace(pattern, replacement);
+  }
+
+  // Clean up double spaces
+  t = t.replace(/\s+/g, ' ').trim();
+
+  // Hard cap at 25 chars
+  if (t.length > 25) {
+    t = t.slice(0, 23) + '...';
+  }
+
+  return t;
+}
+
 // ─── Data Loading ───────────────────────────────────────────────────────────
 
 interface PreparedData {
@@ -224,11 +292,8 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
   }
 
   const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map(r => {
-        const title = r.title.length > 25 ? r.title.slice(0, 23) + '...' : r.title;
-        return `  \u2022 ${title}`;
-      }).join('\n')
-    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+    ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
+    : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
   return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
 }
@@ -251,11 +316,8 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
   }
 
   const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map(r => {
-        const title = r.title.length > 25 ? r.title.slice(0, 23) + '...' : r.title;
-        return `  \u2022 ${title}`;
-      }).join('\n')
-    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+    ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
+    : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
   return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
 }
@@ -383,13 +445,22 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `EVALUATE Image 2:`,
     ``,
     `1. LAYOUT: Room layout preserved from Image 1? (furniture, windows, "IT'S GO TIME" banner, pendant lights)`,
-    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds?`,
+    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check.`,
     data.logoImage
       ? `3. LOGO: EXACTLY ONE company logo matching the provided logo? Not duplicated on walls or surfaces?`
       : `3. LOGO: N/A`,
     `4. SCREENS: Wall TV and laptop show dashboard-like content?`,
     data.prospectImage
-      ? `5. FACE (STANDING): Does the standing person resemble the prospect photo's features? (They should NOT look like Image 1's original — that was replaced.) Skin tone consistent on face, neck, hands, arms? Face rendered in the same flat-color illustration style as the scene (not photorealistic)?`
+      ? [
+          `5. FACE (STANDING) — CRITICAL CHECK:`,
+          `   A prospect photo was provided. The standing person's face MUST be REPLACED to match the prospect.`,
+          `   Compare the standing person in Image 2 against:`,
+          `   - The PROSPECT PHOTO (the face they SHOULD have) — look at hair color, hair style, skin tone, gender, facial hair, glasses`,
+          `   - Image 1's original standing person (the face they should NO LONGER have)`,
+          `   FAIL this check if the standing person still looks like Image 1's original person.`,
+          `   FAIL this check if hair color, skin tone, or gender don't match the prospect photo.`,
+          `   This is the MOST IMPORTANT check — the whole point is to personalize the postcard for this specific prospect.`,
+        ].join('\n')
       : `5. FACE (STANDING): N/A`,
     data.teamImages.length > 0
       ? `6. FACES (SEATED): Were ${data.teamImages.length} seated person(s) replaced with team photo features? Other seated people UNCHANGED — same face, skin tone, diversity? ALL faces in illustration style (not photorealistic)?`
@@ -408,6 +479,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `BAD: "Replace the standing person with Image 4"`,
     `GOOD: "The standing person should be a [gender, skin tone, hair color/style, glasses, facial hair, distinguishing features]. Currently it still looks like [describe problem]."`,
     `Also describe style fixes concretely: "The standing person's face appears photorealistic with smooth gradients — redraw it with flat colors and clean outlines matching the illustration style."`,
+    `For spelling: "The whiteboard says '[wrong]' but should say '[correct]'."`,
     ``,
     `The standing person's face SHOULD differ from Image 1 — that's intentional.`,
   ].filter(Boolean).join('\n');
@@ -515,10 +587,21 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     ``,
     `EVALUATE Image 2:`,
     `1. ZOOM UI: Toolbar, "Leave" button, tiles on right preserved?`,
-    `2. WHITEBOARD: "Top Roles Hiring:" with ${expectedRoles}? Legible, within bounds?`,
+    `2. WHITEBOARD: "Top Roles Hiring:" with ${expectedRoles}? Legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check.`,
     data.logoImage ? `3. LOGO: Exactly ONE company logo matching the provided logo in top-center?` : `3. LOGO: N/A`,
     `4. MONITOR: Dashboard content on desk screen?`,
-    data.prospectImage ? `5. CENTER PERSON: Resembles prospect photo features? Should NOT match Image 1's center person. Skin tone consistent? Face in flat-color illustration style (not photorealistic)?` : `5. CENTER: N/A`,
+    data.prospectImage
+      ? [
+          `5. CENTER PERSON — CRITICAL CHECK:`,
+          `   A prospect photo was provided. The center person's face MUST be REPLACED to match the prospect.`,
+          `   Compare the center person in Image 2 against:`,
+          `   - The PROSPECT PHOTO (the face they SHOULD have) — look at hair color, hair style, skin tone, gender, facial hair, glasses`,
+          `   - Image 1's original center person (the face they should NO LONGER have)`,
+          `   FAIL this check if the center person still looks like Image 1's original person.`,
+          `   FAIL this check if hair color, skin tone, or gender don't match the prospect photo.`,
+          `   This is the MOST IMPORTANT check — the whole point is to personalize the postcard for this prospect.`,
+        ].join('\n')
+      : `5. CENTER: N/A`,
     data.teamImages.length > 0 ? `6. VIDEO TILES: ${data.teamImages.length} tile(s) replaced with team photo features? Others unchanged and diverse? All faces in illustration style?` : `6. TILES: N/A`,
     `7. STYLE: Consistent flat-color illustration style? ALL faces (including replaced) must have clean outlines, flat colors — no photorealistic faces on illustrated bodies. STRICT.`,
     `8. FORMAT: Correct aspect ratio?`,
@@ -533,6 +616,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `BAD: "Replace center person with Image 4"`,
     `GOOD: "The center person should be a [gender, skin tone, hair color/style, glasses, distinguishing features]. Currently it looks like [problem]."`,
     `For style: "The center person's face is photorealistic with smooth gradients — redraw with flat colors and clean outlines."`,
+    `For spelling: "The whiteboard says '[wrong]' but should say '[correct]'."`,
     ``,
     `The center person SHOULD differ from Image 1 — that's intentional.`,
   ].filter(Boolean).join('\n');
