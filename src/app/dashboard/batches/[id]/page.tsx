@@ -110,7 +110,21 @@ function StageIcon({ stageKey }: { stageKey: string }) {
 
 // ─── Per-contact stage pills ──────────────────────────────────────────────────
 
-function ScanPill({ c }: { c: CampaignContact }) {
+function RefreshBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Re-run"
+      className="p-0.5 rounded text-muted-foreground/50 hover:text-primary hover:bg-primary/10 transition opacity-0 group-hover/row:opacity-100"
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+    </button>
+  );
+}
+
+function ScanPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
   const { currentKey, currentLabel, pct } = getJobProgress(c.stages, c.jobStatus);
 
   if (c.jobStatus === "pending") {
@@ -142,6 +156,7 @@ function ScanPill({ c }: { c: CampaignContact }) {
             c.confidence >= 85 ? "text-success" : c.confidence >= 75 ? "text-primary" : "text-warning"
           }`}>{c.confidence}%</span>
         )}
+        {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
   }
@@ -159,7 +174,7 @@ function ScanPill({ c }: { c: CampaignContact }) {
   );
 }
 
-function EnrichPill({ c }: { c: CampaignContact }) {
+function EnrichPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
   const locked = !c.enrichmentId && c.jobStatus !== "complete";
 
   if (locked) {
@@ -190,12 +205,15 @@ function EnrichPill({ c }: { c: CampaignContact }) {
   }
   if (c.enrichmentStatus === "completed") {
     return (
-      <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success">
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-        Done
-      </span>
+      <div className="flex items-center gap-1.5">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          Done
+        </span>
+        {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
+      </div>
     );
   }
   if (c.enrichmentStatus === "failed") {
@@ -204,7 +222,7 @@ function EnrichPill({ c }: { c: CampaignContact }) {
   return <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{c.enrichmentStatus}</span>;
 }
 
-function PostcardPill({ c }: { c: CampaignContact }) {
+function PostcardPill({ c, onRefresh }: { c: CampaignContact; onRefresh?: () => void }) {
   const locked = c.enrichmentStatus !== "completed" && !c.postcardId;
 
   if (locked) {
@@ -233,16 +251,19 @@ function PostcardPill({ c }: { c: CampaignContact }) {
   }
   if (c.postcardStatus === "ready" || c.postcardStatus === "approved") {
     return (
-      <Link
-        href={`/dashboard/postcards/${c.postcardId}`}
-        onClick={(e) => e.stopPropagation()}
-        className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success hover:bg-success/20 transition"
-      >
-        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-        View
-      </Link>
+      <div className="flex items-center gap-1.5">
+        <Link
+          href={`/dashboard/postcards/${c.postcardId}`}
+          onClick={(e) => e.stopPropagation()}
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success hover:bg-success/20 transition"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          View
+        </Link>
+        {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
+      </div>
     );
   }
   if (c.postcardStatus === "failed") {
@@ -307,14 +328,16 @@ export default function CampaignDetailPage() {
   // Poll every 3s while any operation is in progress
   useEffect(() => {
     if (!data) return;
-    const anyActive = data.contacts.some(
-      (c) =>
-        c.jobStatus === "running" ||
-        c.enrichmentStatus === "enriching" ||
-        c.enrichmentStatus === "pending" ||
-        c.postcardStatus === "generating" ||
-        c.postcardStatus === "pending"
-    );
+    const anyActive =
+      data.batch.status === "processing" ||
+      data.contacts.some(
+        (c) =>
+          c.jobStatus === "running" ||
+          c.enrichmentStatus === "enriching" ||
+          c.enrichmentStatus === "pending" ||
+          c.postcardStatus === "generating" ||
+          c.postcardStatus === "pending"
+      );
     if (!anyActive) return;
     const t = setInterval(fetchData, 3000);
     return () => clearInterval(t);
@@ -484,6 +507,45 @@ export default function CampaignDetailPage() {
   async function dispatchWithLock(fn: () => Promise<void>) {
     setIsDispatching(true);
     try { await fn(); } finally { setIsDispatching(false); }
+  }
+
+  // ── Single-contact refresh handlers ────────────────────────────────────────
+
+  async function refreshScan(c: CampaignContact) {
+    const res = await fetch(`/api/batches/${batchId}/jobs/${c.jobId}/retry`, { method: "POST" });
+    if (!res.ok) return;
+    await fetchData();
+    enqueueAndDispatch([{ kind: "scan", jobId: c.jobId }]);
+  }
+
+  async function refreshEnrich(c: CampaignContact) {
+    if (!c.contactId) return;
+    const res = await fetch("/api/contacts/enrich-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactIds: [c.contactId], scanBatchId: batchId }),
+    });
+    const json = await res.json();
+    if (!res.ok) return;
+    await fetchData();
+    enqueueAndDispatch(
+      (json.enrichmentIds as string[]).map((id) => ({ kind: "enrich", enrichmentId: id }))
+    );
+  }
+
+  async function refreshPostcard(c: CampaignContact) {
+    if (!c.contactId) return;
+    const res = await fetch("/api/postcards/generate-bulk", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contactIds: [c.contactId], scanBatchId: batchId }),
+    });
+    const json = await res.json();
+    if (!res.ok) return;
+    await fetchData();
+    enqueueAndDispatch(
+      (json.postcardIds as string[]).map((id) => ({ kind: "postcard", postcardId: id }))
+    );
   }
 
   // ── Derived state ──────────────────────────────────────────────────────────
@@ -757,7 +819,7 @@ export default function CampaignDetailPage() {
           const initial = displayName[0]?.toUpperCase() || "?";
 
           return (
-            <div key={c.jobId} className="grid grid-cols-[2rem_1fr_1fr_1fr_1fr] gap-3 items-center px-4 py-3 hover:bg-card-hover/50 transition">
+            <div key={c.jobId} className="group/row grid grid-cols-[2rem_1fr_1fr_1fr_1fr] gap-3 items-center px-4 py-3 hover:bg-card-hover/50 transition">
               {/* Checkbox */}
               <input
                 type="checkbox"
@@ -798,13 +860,13 @@ export default function CampaignDetailPage() {
               </div>
 
               {/* Scan */}
-              <div><ScanPill c={c} /></div>
+              <div><ScanPill c={c} onRefresh={c.jobStatus === "complete" ? () => refreshScan(c) : undefined} /></div>
 
               {/* Enrich */}
-              <div><EnrichPill c={c} /></div>
+              <div><EnrichPill c={c} onRefresh={c.enrichmentStatus === "completed" ? () => refreshEnrich(c) : undefined} /></div>
 
               {/* Postcard */}
-              <div><PostcardPill c={c} /></div>
+              <div><PostcardPill c={c} onRefresh={c.postcardStatus === "ready" || c.postcardStatus === "approved" ? () => refreshPostcard(c) : undefined} /></div>
             </div>
           );
         })}
