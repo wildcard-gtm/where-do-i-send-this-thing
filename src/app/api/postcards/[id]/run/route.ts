@@ -3,11 +3,8 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
-import { generateBackground } from "@/lib/postcard/background-generator";
+import { generateBackground, generateWarRoomOpenAI, generateZoomRoomOpenAI } from "@/lib/postcard/background-generator";
 import { generateNanaBananaWarRoom, generateNanaBananaZoomRoom } from "@/lib/postcard/nano-banana-generator";
-import { screenshotPostcard } from "@/lib/postcard/screenshot";
-import { generatePostcardCopy } from "@/lib/postcard/copy-generator";
-import { extractAccentColor } from "@/lib/postcard/color-extractor";
 import { uploadPostcardImage } from "@/lib/supabase-storage";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
 
@@ -81,18 +78,11 @@ export async function POST(
     });
 
     try {
-      // Reuse existing backgroundPrompt/copy on retries to avoid re-billing
       const existing = await prisma.postcard.findUnique({
         where: { id },
         select: {
-          backgroundPrompt: true,
           template: true,
-          postcardHeadline: true,
-          postcardDescription: true,
-          companyMission: true,
-          companyValues: true,
           openRoles: true,
-          officeLocations: true,
           contactName: true,
           companyLogo: true,
           contactPhoto: true,
@@ -100,84 +90,45 @@ export async function POST(
         },
       });
 
-      // Generate copy from enrichment data on first attempt only
-      let headline = existing?.postcardHeadline ?? null;
-      let description = existing?.postcardDescription ?? null;
-      let imagePrompt = existing?.backgroundPrompt ?? null;
-      let accentColor = (existing as Record<string, unknown>)?.accentColor as string | null ?? null;
-
-      if (!headline || !description || !imagePrompt) {
-        // Extract company name from logo URL hostname or fall back to contact name
-        const companyName = (() => {
-          try {
-            if (existing?.companyLogo) {
-              const host = new URL(existing.companyLogo).hostname.replace(/^www\./, "");
-              return host.split(".")[0];
-            }
-          } catch { /* ignore */ }
-          return existing?.contactName ?? "the company";
-        })();
-
-        // Run copy generation and color extraction in parallel
-        const [copy, extractedColor] = await Promise.all([
-          generatePostcardCopy({
-            companyName,
-            companyMission: existing?.companyMission,
-            companyValues: existing?.companyValues as string[] | null,
-            openRoles: existing?.openRoles as Array<{ title: string; location: string; level: string }> | null,
-            officeLocations: existing?.officeLocations as string[] | null,
-          }),
-          extractAccentColor(existing?.companyLogo),
-        ]);
-
-        headline = copy.headline;
-        description = copy.description;
-        imagePrompt = copy.imagePrompt;
-        accentColor = extractedColor;
-
-        // Persist so retries don't regenerate
-        await prisma.postcard.update({
-          where: { id },
-          data: {
-            postcardHeadline: headline,
-            postcardDescription: description,
-            backgroundPrompt: imagePrompt,
-            accentColor,
-          },
-        });
-      }
-
-      // Generate background — War Room + Zoom Room use Nano Banana 2 compositing
+      // Generate the scene — Nano Banana 2 (Gemini) compositing
       let bgBase64: string;
       const teamPhotos = (existing?.teamPhotos as Array<{ photoUrl: string }> | null) ?? [];
       const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
-      if (existing?.template === "warroom" && existing?.contactPhoto) {
-        bgBase64 = await generateNanaBananaWarRoom({
-          prospectPhotoUrl: existing.contactPhoto,
-          companyLogoUrl: existing.companyLogo ?? null,
-          teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
-          openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
-          prospectName: existing.contactName,
-        });
-      } else if (existing?.template === "zoom" && existing?.contactPhoto) {
-        bgBase64 = await generateNanaBananaZoomRoom({
-          prospectPhotoUrl: existing.contactPhoto,
-          companyLogoUrl: existing.companyLogo ?? null,
-          teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
-          openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
-          prospectName: existing.contactName,
-        });
-      } else {
-        // No prospect photo — fall back to OpenAI text-to-image
-        const prompt =
-          imagePrompt ??
-          (existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
-        bgBase64 = await generateBackground(prompt);
+      const nanaBananaInput = {
+        prospectPhotoUrl: existing?.contactPhoto ?? undefined,
+        companyLogoUrl: existing?.companyLogo ?? null,
+        teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
+        openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
+        prospectName: existing?.contactName ?? undefined,
+      };
+
+      try {
+        if (existing?.template === "warroom") {
+          bgBase64 = await generateNanaBananaWarRoom(nanaBananaInput);
+        } else if (existing?.template === "zoom") {
+          bgBase64 = await generateNanaBananaZoomRoom(nanaBananaInput);
+        } else {
+          throw new Error("unknown template");
+        }
+      } catch (nanaBananaErr) {
+        // Nano Banana failed (Gemini API error, quota, key issue) — fall back to OpenAI compositing
+        console.error("Nano Banana failed, falling back to OpenAI:", (nanaBananaErr as Error).message);
+        try {
+          if (existing?.template === "warroom") {
+            bgBase64 = await generateWarRoomOpenAI(nanaBananaInput);
+          } else {
+            bgBase64 = await generateZoomRoomOpenAI(nanaBananaInput);
+          }
+        } catch {
+          // Both Gemini and OpenAI compositing failed — last resort: text-to-image prompt
+          const prompt = existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt();
+          bgBase64 = await generateBackground(prompt);
+        }
       }
       const backgroundUrl = await uploadPostcardImage(
         bgBase64,
-        `backgrounds/${id}.png`
+        `backgrounds/${id}-${Date.now()}.png`
       );
 
       // Check cancellation again after the slow image gen step
@@ -190,20 +141,10 @@ export async function POST(
         return NextResponse.json({ status: "cancelled" });
       }
 
+      // The Nano Banana scene IS the final postcard — no separate screenshot step needed
       await prisma.postcard.update({
         where: { id },
-        data: { status: "generating", backgroundUrl },
-      });
-
-      const imageBase64 = await screenshotPostcard(id);
-      const imageUrl = await uploadPostcardImage(
-        imageBase64,
-        `finals/${id}.png`
-      );
-
-      await prisma.postcard.update({
-        where: { id },
-        data: { status: "ready", imageUrl },
+        data: { status: "ready", backgroundUrl, imageUrl: backgroundUrl },
       });
 
       succeeded = true;

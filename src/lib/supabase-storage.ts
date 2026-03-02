@@ -44,8 +44,8 @@ export async function uploadPostcardImage(
     headers: {
       Authorization: `Bearer ${serviceKey}`,
       "Content-Type": "image/png",
-      // Upsert: overwrite if exists
       "x-upsert": "true",
+      "cache-control": "no-store",
     },
     body: buffer,
   });
@@ -55,8 +55,8 @@ export async function uploadPostcardImage(
     throw new Error(`Supabase Storage upload failed (${res.status}): ${text}`);
   }
 
-  // Return the public URL
-  return `${supabaseUrl}/storage/v1/object/public/${BUCKET}/${filePath}`;
+  // Append timestamp so browsers/CDN always fetch the latest version
+  return `${supabaseUrl}/storage/v1/object/public/${BUCKET}/${filePath}?v=${Date.now()}`;
 }
 
 /**

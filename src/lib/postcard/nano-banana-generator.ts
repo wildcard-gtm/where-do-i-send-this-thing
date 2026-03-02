@@ -3,8 +3,8 @@ import path from 'path';
 import https from 'https';
 
 export interface NanoBananaInput {
-  /** Prospect's profile photo URL (the standing person to restyle) */
-  prospectPhotoUrl: string;
+  /** Prospect's profile photo URL (the standing person to restyle) — optional, keeps reference scene person if omitted */
+  prospectPhotoUrl?: string | null;
   /** Company logo URL — placed on the wall */
   companyLogoUrl?: string | null;
   /** Up to 4 team member photo URLs — replace seated people */
@@ -136,8 +136,8 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
 
   if (!referenceImage) throw new Error('reference-pose.png not found in public/templates/');
 
-  // Fetch prospect photo
-  const prospectImage = await fetchImageAsBase64(input.prospectPhotoUrl);
+  // Fetch prospect photo (optional — if missing, reference scene person is kept as-is)
+  const prospectImage = input.prospectPhotoUrl ? await fetchImageAsBase64(input.prospectPhotoUrl) : null;
 
   // Fetch team photos (up to 4, skip any that fail)
   const teamImages: Array<{ data: string; mimeType: string }> = [];
