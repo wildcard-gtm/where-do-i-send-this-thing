@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { urls, name, autoProcess, skipDuplicateCheck } = await request.json();
+    const { urls, name, autoProcess } = await request.json();
 
     if (!Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
@@ -20,25 +20,6 @@ export async function POST(request: Request) {
     }
 
     const teamUserIds = await getTeamUserIds(user);
-
-    // Check for existing contacts with these URLs
-    if (!skipDuplicateCheck) {
-      const existing = await prisma.contact.findMany({
-        where: {
-          userId: { in: teamUserIds },
-          linkedinUrl: { in: urls.map((u: string) => u.trim()) },
-        },
-        select: { linkedinUrl: true, name: true, recommendation: true, lastScannedAt: true },
-      });
-
-      if (existing.length > 0) {
-        return NextResponse.json({
-          duplicates: existing,
-          totalUrls: urls.length,
-          newUrls: urls.length - existing.length,
-        }, { status: 409 });
-      }
-    }
 
     const batch = await prisma.batch.create({
       data: {

@@ -171,78 +171,24 @@ export async function GET(
             });
             const researchLog = buildResearchLog(events);
 
-            const existingContact = await prisma.contact.findFirst({
-              where: { userId: { in: await getTeamUserIds(user) }, linkedinUrl: job.linkedinUrl },
+            // Each job always creates a fresh Contact — campaigns are fully isolated
+            await prisma.contact.create({
+              data: {
+                userId: user.id,
+                teamId: user.teamId ?? null,
+                linkedinUrl: job.linkedinUrl,
+                name: personName || "Unknown",
+                recommendation: decision.recommendation,
+                confidence: decision.confidence,
+                homeAddress: decision.home_address?.address || null,
+                officeAddress: decision.office_address?.address || null,
+                profileImageUrl: decision.profile_image_url || null,
+                careerSummary: decision.career_summary || null,
+                lastScannedAt: new Date(),
+                jobId,
+                notes: researchLog,
+              },
             });
-
-            const contactData = {
-              name: personName || "Unknown",
-              recommendation: decision.recommendation,
-              confidence: decision.confidence,
-              homeAddress: decision.home_address?.address || null,
-              officeAddress: decision.office_address?.address || null,
-              profileImageUrl: decision.profile_image_url || null,
-              careerSummary: decision.career_summary || null,
-              lastScannedAt: new Date(),
-              jobId,
-              notes: researchLog,
-            };
-
-            if (existingContact) {
-              // Save a revision snapshot of the current state before overwriting
-              const latestRevision = await prisma.contactRevision.findFirst({
-                where: { contactId: existingContact.id },
-                orderBy: { revisionNumber: "desc" },
-                select: { revisionNumber: true },
-              });
-              const nextRevision = (latestRevision?.revisionNumber ?? 0) + 1;
-
-              await prisma.contactRevision.updateMany({
-                where: { contactId: existingContact.id, isLatest: true },
-                data: { isLatest: false },
-              });
-
-              await prisma.contactRevision.create({
-                data: {
-                  contactId: existingContact.id,
-                  revisionNumber: nextRevision,
-                  isLatest: true,
-                  name: existingContact.name,
-                  email: existingContact.email,
-                  linkedinUrl: existingContact.linkedinUrl,
-                  company: existingContact.company,
-                  title: existingContact.title,
-                  profileImageUrl: existingContact.profileImageUrl,
-                  careerSummary: existingContact.careerSummary,
-                  homeAddress: existingContact.homeAddress,
-                  officeAddress: existingContact.officeAddress,
-                  recommendation: existingContact.recommendation,
-                  confidence: existingContact.confidence,
-                  jobResult: JSON.stringify(result),
-                },
-              });
-
-              await prisma.contact.update({
-                where: { id: existingContact.id },
-                data: {
-                  ...contactData,
-                  name: personName || existingContact.name,
-                  homeAddress: contactData.homeAddress || existingContact.homeAddress,
-                  officeAddress: contactData.officeAddress || existingContact.officeAddress,
-                  profileImageUrl: contactData.profileImageUrl || existingContact.profileImageUrl,
-                  careerSummary: contactData.careerSummary || existingContact.careerSummary,
-                },
-              });
-            } else {
-              await prisma.contact.create({
-                data: {
-                  userId: user.id,
-                  teamId: user.teamId ?? null,
-                  linkedinUrl: job.linkedinUrl,
-                  ...contactData,
-                },
-              });
-            }
           }
         } catch (contactErr) {
           console.error(`Failed to create contact for job ${jobId}:`, contactErr);
