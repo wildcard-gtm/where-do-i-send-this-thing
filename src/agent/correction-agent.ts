@@ -110,13 +110,11 @@ function buildContextBlock(stage: CorrectionStage, ctx: CorrectionContext): stri
     lines.push('### Postcard Data');
     lines.push(`- **Template:** ${p.template}`);
     lines.push(`- **Status:** ${p.status}`);
-    lines.push(`- **Headline:** ${p.postcardHeadline ?? 'None'}`);
-    lines.push(`- **Description:** ${p.postcardDescription ?? 'None'}`);
-    lines.push(`- **Accent Color:** ${p.accentColor ?? 'None'}`);
-    lines.push(`- **Back Message:** ${p.backMessage ?? 'None'}`);
     lines.push(`- **Contact Name:** ${p.contactName}`);
     lines.push(`- **Delivery Address:** ${p.deliveryAddress ?? 'None'}`);
+    lines.push(`- **Back Message:** ${p.backMessage ?? 'None'}`);
     if (p.companyLogo) lines.push(`- **Company Logo:** ${p.companyLogo}`);
+    if (p.contactPhoto) lines.push(`- **Contact Photo:** ${p.contactPhoto}`);
     if (p.imageUrl) lines.push(`- **Current Postcard Image:** ${p.imageUrl}`);
     if (ctx.referenceImages?.length) {
       lines.push('');

@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
-import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
-import { generateBackground, generateWarRoomOpenAI, generateZoomRoomOpenAI } from "@/lib/postcard/background-generator";
 import { generateNanaBananaWarRoom, generateNanaBananaZoomRoom } from "@/lib/postcard/nano-banana-generator";
 import { uploadPostcardImage } from "@/lib/supabase-storage";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
@@ -97,8 +95,7 @@ export async function POST(
       });
       const refByLabel = (label: string) => refs.find((r) => r.label === label)?.imageUrl;
 
-      // Generate the scene — Nano Banana 2 (Gemini) compositing
-      let bgBase64: string;
+      // Generate the postcard scene — Nano Banana (Gemini) agentic generation
       const teamPhotos = (existing?.teamPhotos as Array<{ photoUrl: string }> | null) ?? [];
       const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
@@ -115,28 +112,13 @@ export async function POST(
         prospectName: existing?.contactName ?? undefined,
       };
 
-      try {
-        if (existing?.template === "warroom") {
-          bgBase64 = await generateNanaBananaWarRoom(nanaBananaInput);
-        } else if (existing?.template === "zoom") {
-          bgBase64 = await generateNanaBananaZoomRoom(nanaBananaInput);
-        } else {
-          throw new Error("unknown template");
-        }
-      } catch (nanaBananaErr) {
-        // Nano Banana failed (Gemini API error, quota, key issue) — fall back to OpenAI compositing
-        console.error("Nano Banana failed, falling back to OpenAI:", (nanaBananaErr as Error).message);
-        try {
-          if (existing?.template === "warroom") {
-            bgBase64 = await generateWarRoomOpenAI(nanaBananaInput);
-          } else {
-            bgBase64 = await generateZoomRoomOpenAI(nanaBananaInput);
-          }
-        } catch {
-          // Both Gemini and OpenAI compositing failed — last resort: text-to-image prompt
-          const prompt = existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt();
-          bgBase64 = await generateBackground(prompt);
-        }
+      let bgBase64: string;
+      if (existing?.template === "warroom") {
+        bgBase64 = await generateNanaBananaWarRoom(nanaBananaInput);
+      } else if (existing?.template === "zoom") {
+        bgBase64 = await generateNanaBananaZoomRoom(nanaBananaInput);
+      } else {
+        throw new Error("Unknown template: " + existing?.template);
       }
       const backgroundUrl = await uploadPostcardImage(
         bgBase64,

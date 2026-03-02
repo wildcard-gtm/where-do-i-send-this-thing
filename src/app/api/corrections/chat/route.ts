@@ -146,11 +146,7 @@ export async function POST(request: Request) {
       id: string;
       template: string;
       status: string;
-      postcardHeadline: string | null;
-      postcardDescription: string | null;
-      accentColor: string | null;
       backMessage: string | null;
-      backgroundPrompt: string | null;
       companyLogo: string | null;
       openRoles: unknown;
       companyValues: unknown;
@@ -161,7 +157,6 @@ export async function POST(request: Request) {
       teamPhotos: unknown;
       deliveryAddress: string | null;
       imageUrl: string | null;
-      backgroundUrl: string | null;
       references: Array<{ id: string; label: string; imageUrl: string }>;
     }>)?.[0];
     if (postcard) {
@@ -170,11 +165,7 @@ export async function POST(request: Request) {
         id: postcard.id,
         template: postcard.template,
         status: postcard.status,
-        postcardHeadline: postcard.postcardHeadline,
-        postcardDescription: postcard.postcardDescription,
-        accentColor: postcard.accentColor,
         backMessage: postcard.backMessage,
-        backgroundPrompt: postcard.backgroundPrompt,
         companyLogo: postcard.companyLogo,
         openRoles: postcard.openRoles,
         companyValues: postcard.companyValues,
@@ -185,7 +176,6 @@ export async function POST(request: Request) {
         teamPhotos: postcard.teamPhotos,
         deliveryAddress: postcard.deliveryAddress,
         imageUrl: postcard.imageUrl,
-        backgroundUrl: postcard.backgroundUrl,
       };
       context.referenceImages = postcard.references?.map((r) => ({
         id: r.id,

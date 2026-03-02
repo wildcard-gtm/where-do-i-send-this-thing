@@ -22,9 +22,6 @@ export async function POST(request: Request) {
     contactIds,
     scanBatchId,
     backMessage,
-    templateHeadline,
-    templateDescription,
-    templateAccentColor,
   } = await request.json();
 
   if (!Array.isArray(contactIds) || contactIds.length === 0) {
@@ -103,10 +100,6 @@ export async function POST(request: Request) {
         officeLocations: enrichment?.officeLocations ?? undefined,
         teamPhotos: enrichment?.teamPhotos ?? undefined,
         ...(backMessage ? { backMessage } : {}),
-        // Template overrides: pre-set copy so AI generation is skipped at run time
-        ...(templateHeadline    ? { postcardHeadline: templateHeadline }       : {}),
-        ...(templateDescription ? { postcardDescription: templateDescription } : {}),
-        ...(templateAccentColor ? { accentColor: templateAccentColor }         : {}),
       },
     });
 

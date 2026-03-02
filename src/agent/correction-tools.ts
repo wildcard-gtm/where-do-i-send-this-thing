@@ -61,11 +61,7 @@ export interface CorrectionContext {
     id: string;
     template: string;
     status: string;
-    postcardHeadline: string | null;
-    postcardDescription: string | null;
-    accentColor: string | null;
     backMessage: string | null;
-    backgroundPrompt: string | null;
     companyLogo: string | null;
     openRoles: unknown;
     companyValues: unknown;
@@ -76,7 +72,6 @@ export interface CorrectionContext {
     teamPhotos: unknown;
     deliveryAddress: string | null;
     imageUrl: string | null;
-    backgroundUrl: string | null;
   } | null;
   // Reference images (postcard stage)
   referenceImages?: Array<{ id: string; label: string; imageUrl: string }>;
@@ -428,15 +423,13 @@ function viewCurrentRecord(ctx: CorrectionContext, stage: CorrectionStage): Tool
       data: {
         template: ctx.postcard.template,
         status: ctx.postcard.status,
-        postcardHeadline: ctx.postcard.postcardHeadline,
-        postcardDescription: ctx.postcard.postcardDescription,
-        accentColor: ctx.postcard.accentColor,
         backMessage: ctx.postcard.backMessage,
         contactName: ctx.postcard.contactName,
         contactTitle: ctx.postcard.contactTitle,
         deliveryAddress: ctx.postcard.deliveryAddress,
         companyLogo: ctx.postcard.companyLogo,
         openRoles: ctx.postcard.openRoles,
+        contactPhoto: ctx.postcard.contactPhoto,
         teamPhotos: ctx.postcard.teamPhotos,
         imageUrl: ctx.postcard.imageUrl,
         referenceImages: ctx.referenceImages ?? [],
@@ -605,7 +598,8 @@ async function applyEnrichChanges(ctx: CorrectionContext, changes: Record<string
 async function applyPostcardChanges(ctx: CorrectionContext, changes: Record<string, unknown>) {
   if (!ctx.postcardId) throw new Error('No postcard record to update');
 
-  const visualFields = ['postcardHeadline', 'postcardDescription', 'accentColor', 'backgroundPrompt', 'contactPhoto', 'teamPhotos', 'companyLogo'];
+  // Fields that affect the generated postcard image — changing these triggers regeneration
+  const visualFields = ['contactPhoto', 'teamPhotos', 'companyLogo', 'openRoles'];
   const visualChanged = visualFields.some((f) => f in changes);
 
   const data: Record<string, unknown> = { ...changes };
@@ -646,9 +640,6 @@ function getCurrentData(ctx: CorrectionContext, stage: CorrectionStage): Record<
   if (stage === 'postcard' && ctx.postcard) {
     return {
       template: ctx.postcard.template,
-      postcardHeadline: ctx.postcard.postcardHeadline,
-      postcardDescription: ctx.postcard.postcardDescription,
-      accentColor: ctx.postcard.accentColor,
       backMessage: ctx.postcard.backMessage,
       contactName: ctx.postcard.contactName,
       contactTitle: ctx.postcard.contactTitle,
@@ -656,6 +647,7 @@ function getCurrentData(ctx: CorrectionContext, stage: CorrectionStage): Record<
       companyLogo: ctx.postcard.companyLogo,
       contactPhoto: ctx.postcard.contactPhoto,
       teamPhotos: ctx.postcard.teamPhotos,
+      openRoles: ctx.postcard.openRoles,
     };
   }
   return {};

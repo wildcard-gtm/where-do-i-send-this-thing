@@ -55,23 +55,10 @@ export async function PATCH(
     return NextResponse.json({ error: "Postcard not found" }, { status: 404 });
   }
 
-  const allowed = ["status", "postcardHeadline", "postcardDescription", "accentColor", "backMessage", "backgroundPrompt"];
+  const allowed = ["status", "backMessage"];
   const data: Record<string, unknown> = {};
   for (const field of allowed) {
     if (field in body) data[field] = body[field];
-  }
-
-  // If copy fields are being updated, reset image so regeneration picks them up
-  const copyFields = ["postcardHeadline", "postcardDescription", "accentColor", "backgroundPrompt"];
-  if (copyFields.some((f) => f in body)) {
-    data.imageUrl = null;
-    data.backgroundUrl = null;
-    data.status = "pending";
-    // Clean up old images from storage
-    await Promise.all([
-      deletePostcardImage(`backgrounds/${id}.png`),
-      deletePostcardImage(`finals/${id}.png`),
-    ]);
   }
 
   const postcard = await prisma.postcard.update({ where: { id }, data });

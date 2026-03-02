@@ -290,15 +290,10 @@ model Postcard {
   errorMessage     String?
   retryCount       Int      @default(0) // number of generation attempts made (max 5)
 
-  // Generated images (public URLs in Supabase Storage bucket "postcards")
-  backgroundUrl    String?  // AI-generated background scene
-  backgroundPrompt String?  // prompt used (for regeneration)
-  imageUrl         String?  // final composited PNG
-
-  // AI-generated postcard copy (from enrichment data via gpt-5.2)
-  postcardHeadline    String?  // punchy 5-9 word headline
-  postcardDescription String?  // 2-sentence hook
-  accentColor         String?  // hex color extracted from company logo, e.g. "#2563EB"
+  // Generated postcard image (public URL in Supabase Storage bucket "postcards")
+  // Nano Banana (Gemini) generates the full scene in one pass — this IS the final postcard
+  imageUrl         String?  // final postcard PNG (Supabase Storage URL)
+  backgroundUrl    String?  // legacy alias — same as imageUrl, kept for image route redirect
 
   // Back-of-card message (personalised outreach copy)
   backMessage      String?  // e.g. "Hi [Name], we'd love to connect..."
