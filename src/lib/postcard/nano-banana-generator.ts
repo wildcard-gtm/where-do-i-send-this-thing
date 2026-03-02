@@ -364,6 +364,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `   - Header: "TOP ROLES" in bold`,
     `   - Below, list these roles in clean handwritten style:`,
     data.rolesText,
+    `   - Write ONLY the roles listed above. Do NOT add filler text like "no additional roles found" or "more roles coming soon." If fewer than 3 roles are listed, leave the remaining whiteboard space blank.`,
     `   - Text must be fully legible, within whiteboard bounds, not overflowing`,
     ``,
     data.logoImage
@@ -387,7 +388,10 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
                 `     (hair color, hair style, skin tone, facial structure, glasses if any, facial hair if any)`,
                 `     but render in the same flat-color illustration style as the rest of the scene.`,
                 `     Match skin tone consistently on face, neck, hands, arms.`,
-                `     Restyle only the face; keep their pose, clothing, and body position untouched.`,
+                `     Adapt the person's body build, clothing, and footwear to match the prospect's apparent gender from their photo.`,
+                `     If the prospect appears male, give the person a masculine build, male clothing, and flat shoes (no heels).`,
+                `     If the prospect appears female, give the person a feminine build, female clothing, and appropriate footwear.`,
+                `     Keep their pose and body position untouched.`,
               ].join('\n')
             : `   - STANDING PERSON: Keep exactly as-is — do not change their appearance.`,
           data.teamImages.length > 0
@@ -445,23 +449,26 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `EVALUATE Image 2:`,
     ``,
     `1. LAYOUT: Room layout preserved from Image 1? (furniture, windows, "IT'S GO TIME" banner, pendant lights)`,
-    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check.`,
+    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check. Also FAIL if any filler text appears (e.g. "no additional roles found", "more roles coming soon", "no other roles", or similar placeholder text). The whiteboard should show ONLY the listed roles and nothing else.`,
     data.logoImage
       ? `3. LOGO: EXACTLY ONE company logo matching the provided logo? Not duplicated on walls or surfaces?`
       : `3. LOGO: N/A`,
     `4. SCREENS: Wall TV and laptop show dashboard-like content?`,
     data.prospectImage
       ? [
-          `5. FACE (STANDING) — CRITICAL CHECK:`,
+          `5. FACE & BODY (STANDING) — CRITICAL CHECK:`,
           `   A prospect photo was provided. The standing person's face MUST be REPLACED to match the prospect.`,
           `   Compare the standing person in Image 2 against:`,
           `   - The PROSPECT PHOTO (the face they SHOULD have) — look at hair color, hair style, skin tone, gender, facial hair, glasses`,
           `   - Image 1's original standing person (the face they should NO LONGER have)`,
           `   FAIL this check if the standing person still looks like Image 1's original person.`,
           `   FAIL this check if hair color, skin tone, or gender don't match the prospect photo.`,
+          `   BODY & CLOTHING CHECK: The person's body build, clothing, and footwear must match the prospect's apparent gender.`,
+          `   FAIL if a male prospect has a feminine body, heels, a skirt, or other female clothing.`,
+          `   FAIL if a female prospect has an overly masculine body or clothing that clearly doesn't match.`,
           `   This is the MOST IMPORTANT check — the whole point is to personalize the postcard for this specific prospect.`,
         ].join('\n')
-      : `5. FACE (STANDING): N/A`,
+      : `5. FACE & BODY (STANDING): N/A`,
     data.teamImages.length > 0
       ? `6. FACES (SEATED): Were ${data.teamImages.length} seated person(s) replaced with team photo features? Other seated people UNCHANGED — same face, skin tone, diversity? ALL faces in illustration style (not photorealistic)?`
       : `6. FACES (SEATED): N/A`,
@@ -518,6 +525,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `   Restyle only the text; keep the panel itself untouched.`,
     `   Header: "Top Roles Hiring:" with these roles:`,
     data.rolesText,
+    `   Write ONLY the roles listed above. Do NOT add filler text like "no additional roles found" or "more roles coming soon." If fewer than 3 roles are listed, leave the remaining panel space blank.`,
     `   Text must be fully legible, within panel bounds, not overflowing.`,
     ``,
     data.logoImage
@@ -536,7 +544,11 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
           `4. CENTER PERSON: Preserve the face from the prospect photo.`,
           `   Maintain their facial features (hair, skin tone, facial structure, glasses if any)`,
           `   but render in the same flat-color illustration style as the rest of the scene.`,
-          `   Match skin tone on face, neck, hands. Restyle only the face; keep seated-at-desk pose untouched.`,
+          `   Match skin tone on face, neck, hands.`,
+          `   Adapt the person's body build, clothing, and footwear to match the prospect's apparent gender from their photo.`,
+          `   If the prospect appears male, give the person a masculine build, male clothing, and flat shoes (no heels).`,
+          `   If the prospect appears female, give the person a feminine build, female clothing, and appropriate footwear.`,
+          `   Keep their seated-at-desk pose untouched.`,
         ].join('\n')
       : `4. CENTER PERSON: Keep as-is — do not change their appearance.`,
     ``,
@@ -587,7 +599,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     ``,
     `EVALUATE Image 2:`,
     `1. ZOOM UI: Toolbar, "Leave" button, tiles on right preserved?`,
-    `2. WHITEBOARD: "Top Roles Hiring:" with ${expectedRoles}? Legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check.`,
+    `2. WHITEBOARD: "Top Roles Hiring:" with ${expectedRoles}? Legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check. Also FAIL if any filler text appears (e.g. "no additional roles found", "more roles coming soon", "no other roles", or similar placeholder text). The whiteboard should show ONLY the listed roles and nothing else.`,
     data.logoImage ? `3. LOGO: Exactly ONE company logo matching the provided logo in top-center?` : `3. LOGO: N/A`,
     `4. MONITOR: Dashboard content on desk screen?`,
     data.prospectImage
@@ -599,6 +611,9 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
           `   - Image 1's original center person (the face they should NO LONGER have)`,
           `   FAIL this check if the center person still looks like Image 1's original person.`,
           `   FAIL this check if hair color, skin tone, or gender don't match the prospect photo.`,
+          `   BODY & CLOTHING CHECK: The person's body build, clothing, and footwear must match the prospect's apparent gender.`,
+          `   FAIL if a male prospect has a feminine body, heels, a skirt, or other female clothing.`,
+          `   FAIL if a female prospect has an overly masculine body or clothing that clearly doesn't match.`,
           `   This is the MOST IMPORTANT check — the whole point is to personalize the postcard for this prospect.`,
         ].join('\n')
       : `5. CENTER: N/A`,
