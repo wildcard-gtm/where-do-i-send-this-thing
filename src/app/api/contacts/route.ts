@@ -52,7 +52,7 @@ export async function GET(request: Request) {
       take: limit,
       include: {
         job: {
-          select: { status: true, batchId: true },
+          select: { status: true, batchId: true, result: true, recommendation: true },
         },
         companyEnrichments: {
           where: { isLatest: true },
@@ -61,7 +61,7 @@ export async function GET(request: Request) {
         },
         postcards: {
           orderBy: { createdAt: "desc" },
-          select: { status: true },
+          select: { status: true, template: true },
           take: 1,
         },
       },
@@ -75,7 +75,31 @@ export async function GET(request: Request) {
     }),
   ]);
 
-  return NextResponse.json({ contacts, total, page, batches });
+  // Compute isRemote for each contact: postcard template > job flags > recommendation+officeAddress
+  const enrichedContacts = contacts.map((c) => {
+    const postcard = c.postcards[0];
+    const job = c.job;
+    let isRemote: boolean | null = null;
+    if (postcard?.template) {
+      isRemote = postcard.template === "zoom";
+    } else if (job?.status === "complete") {
+      try {
+        const jobResult = job.result ? JSON.parse(job.result as string) : null;
+        const flags: string[] = jobResult?.decision?.flags ?? [];
+        isRemote =
+          flags.some((f: string) =>
+            f.toLowerCase().includes("fully_remote") ||
+            f.toLowerCase().includes("no_local_office")
+          ) ||
+          (job.recommendation === "HOME" && !c.officeAddress);
+      } catch {
+        isRemote = null;
+      }
+    }
+    return { ...c, isRemote };
+  });
+
+  return NextResponse.json({ contacts: enrichedContacts, total, page, batches });
 }
 
 export async function POST(request: Request) {

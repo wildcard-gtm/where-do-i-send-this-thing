@@ -26,6 +26,7 @@ interface ContactRow {
   recommendation: string | null;
   confidence: number | null;
   createdAt: string;
+  isRemote: boolean | null;
   job: { status: string; batchId: string } | null;
   companyEnrichments: { enrichmentStatus: string }[];
   postcards: { status: string }[];
@@ -681,18 +682,19 @@ function ContactsView({ batchId }: { batchId: string }) {
   const fetchContacts = useCallback(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
-    if (filter === "remote") params.set("recommendation", "HOME");
     if (batchFilter !== "all") params.set("batchId", batchFilter);
     params.set("limit", "50");
     fetch(`/api/contacts?${params}`)
       .then((r) => (r.ok ? r.json() : { contacts: [], total: 0, batches: [] }))
       .then((data) => {
         let fetched: ContactRow[] = data.contacts ?? [];
-        if (filter === "office") {
-          fetched = fetched.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH");
+        if (filter === "remote") {
+          fetched = fetched.filter((c) => c.isRemote === true);
+        } else if (filter === "office") {
+          fetched = fetched.filter((c) => c.isRemote === false);
         }
         setContacts(fetched);
-        setTotal(filter === "office" ? fetched.length : (data.total ?? 0));
+        setTotal(filter !== "all" ? fetched.length : (data.total ?? 0));
         if (data.batches) setBatches(data.batches);
         setLoading(false);
       });

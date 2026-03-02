@@ -28,6 +28,7 @@ interface CampaignContact {
   postcardStatus: string | null;
   postcardBatchId: string | null;
   postcardTemplate: string | null;
+  isRemote: boolean | null;
 }
 
 interface CampaignDetail {
@@ -681,8 +682,8 @@ export default function CampaignDetailPage() {
   const filteredContacts = locationType === "all"
     ? contacts
     : locationType === "remote"
-      ? contacts.filter((c) => c.recommendation === "HOME")
-      : contacts.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH");
+      ? contacts.filter((c) => c.isRemote === true)
+      : contacts.filter((c) => c.isRemote === false);
   const sortedContacts = [...filteredContacts].sort((a, b) => contactSortKey(a) - contactSortKey(b));
 
   // Overall active indicator
@@ -945,8 +946,8 @@ export default function CampaignDetailPage() {
             {key !== "all" && (
               <span className="ml-1.5 text-xs opacity-60">
                 {key === "remote"
-                  ? contacts.filter((c) => c.recommendation === "HOME").length
-                  : contacts.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH").length}
+                  ? contacts.filter((c) => c.isRemote === true).length
+                  : contacts.filter((c) => c.isRemote === false).length}
               </span>
             )}
           </button>

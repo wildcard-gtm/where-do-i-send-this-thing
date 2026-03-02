@@ -38,6 +38,7 @@ export async function GET(
               id: true,
               name: true,
               title: true,
+              officeAddress: true,
               companyEnrichments: {
                 where: { isLatest: true },
                 take: 1,
@@ -98,6 +99,26 @@ export async function GET(
       })(),
     }));
 
+    // Compute isRemote: use postcard template if available, otherwise derive
+    // from job flags + recommendation (same logic as postcard generation)
+    let isRemote: boolean | null = null;
+    if (postcard?.template) {
+      isRemote = postcard.template === "zoom";
+    } else if (job.status === "complete") {
+      try {
+        const jobResult = job.result ? JSON.parse(job.result) : null;
+        const flags: string[] = jobResult?.decision?.flags ?? [];
+        isRemote =
+          flags.some((f: string) =>
+            f.toLowerCase().includes("fully_remote") ||
+            f.toLowerCase().includes("no_local_office")
+          ) ||
+          (job.recommendation === "HOME" && !contact?.officeAddress);
+      } catch {
+        isRemote = null;
+      }
+    }
+
     return {
       jobId: job.id,
       jobStatus: job.status,
@@ -119,6 +140,7 @@ export async function GET(
       postcardStatus: postcard?.status ?? null,
       postcardBatchId: postcard?.postcardBatchId ?? null,
       postcardTemplate: postcard?.template ?? null,
+      isRemote,
     };
   });
 
