@@ -20,6 +20,12 @@ interface Postcard {
   };
 }
 
+interface Campaign {
+  id: string;
+  name: string | null;
+  createdAt: string;
+}
+
 const statusColors: Record<string, string> = {
   pending: "text-warning bg-warning/10",
   generating: "text-primary bg-primary/10",
@@ -32,14 +38,23 @@ const filterTabs = ["all", "pending", "generating", "ready", "approved", "failed
 
 export default function PostcardsPage() {
   const [postcards, setPostcards] = useState<Postcard[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [campaignId, setCampaignId] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/campaigns")
+      .then((res) => (res.ok ? res.json() : { campaigns: [] }))
+      .then((data) => setCampaigns(data.campaigns || []));
+  }, []);
 
   const loadPostcards = () => {
     const params = new URLSearchParams();
     if (filter !== "all") params.set("status", filter);
+    if (campaignId !== "all") params.set("campaignId", campaignId);
     fetch(`/api/postcards?${params}`)
       .then((res) => (res.ok ? res.json() : { postcards: [] }))
       .then((data) => {
@@ -52,7 +67,7 @@ export default function PostcardsPage() {
     setLoading(true);
     loadPostcards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, campaignId]);
 
   // Poll for status changes while any postcard is in-progress
   useEffect(() => {
@@ -220,21 +235,38 @@ export default function PostcardsPage() {
         </div>
       )}
 
-      {/* Filter tabs */}
-      <div className="flex gap-1 mb-6 overflow-x-auto">
-        {filterTabs.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setFilter(tab)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap capitalize ${
-              filter === tab
-                ? "bg-primary/15 text-primary"
-                : "text-muted-foreground hover:text-foreground hover:bg-card"
-            }`}
-          >
-            {tab === "all" ? "All" : tab}
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-6 overflow-x-auto">
+        <div className="flex gap-1">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setFilter(tab)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap capitalize ${
+                filter === tab
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {tab === "all" ? "All" : tab}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-5 w-px bg-border shrink-0" />
+
+        <select
+          value={campaignId}
+          onChange={(e) => setCampaignId(e.target.value)}
+          className="text-sm bg-transparent border border-border rounded-lg px-3 py-2 text-muted-foreground hover:border-muted-foreground cursor-pointer transition focus:outline-none focus:ring-2 focus:ring-primary/40"
+        >
+          <option value="all">All campaigns</option>
+          {campaigns.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name || `Campaign ${new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+            </option>
+          ))}
+        </select>
       </div>
 
       {postcards.length === 0 ? (

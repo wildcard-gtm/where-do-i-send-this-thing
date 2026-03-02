@@ -13,6 +13,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status");
   const contactId = searchParams.get("contactId");
+  const campaignId = searchParams.get("campaignId");
 
   const teamUserIds = await getTeamUserIds(user);
 
@@ -21,6 +22,7 @@ export async function GET(request: Request) {
   };
   if (status) where.status = status;
   if (contactId) where.contactId = contactId;
+  if (campaignId) where.postcardBatch = { scanBatchId: campaignId };
 
   const postcards = await prisma.postcard.findMany({
     where,
