@@ -133,6 +133,28 @@ async function runStage(currentImageBase64: string, prompt: string, extraImages:
   return callGeminiImageAPI(payload);
 }
 
+// ─── Quality Enhancement Prompt ──────────────────────────────────────────────
+// After multiple generative passes, images lose sharpness. This final pass
+// restores crispness without altering content. The model re-renders at full
+// fidelity since it only needs to preserve (not transform) the scene.
+
+const QUALITY_ENHANCE_PROMPT = [
+  `Enhance the quality of this image. Output the EXACT same image with these improvements:`,
+  ``,
+  `1. SHARPEN all edges — especially facial features, eyes, hairlines, text, and logos`,
+  `2. RESTORE fine detail — skin texture, clothing folds, furniture grain, screen content`,
+  `3. INCREASE contrast slightly — make colors more vibrant and blacks deeper`,
+  `4. CLEAN UP any blurry or smudged areas — every element should look crisp and intentional`,
+  ``,
+  `CRITICAL RULES:`,
+  `- Do NOT change any content, layout, composition, colors, or style`,
+  `- Do NOT move, resize, add, or remove any element`,
+  `- Do NOT alter faces, expressions, poses, or body positions`,
+  `- Do NOT change any text — preserve every word exactly as-is`,
+  `- The output must be pixel-for-pixel identical in CONTENT, just sharper and cleaner`,
+  `- Think of this as a "remaster" — same image, higher fidelity`,
+].join('\n');
+
 // ─────────────────────────────────────────────────────────────────────────────
 // WAR ROOM
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,10 +162,11 @@ async function runStage(currentImageBase64: string, prompt: string, extraImages:
 /**
  * Generates a War Room postcard background using staged Gemini compositing.
  *
- * Stage 1 (if photos): Replace faces — standing person → prospect, seated → team
- * Stage 2: Replace whiteboard text with real open roles
- * Stage 3 (if logo): Replace the round "HERE" wall medallion with company logo
- * Stage 4: Replace wall screen + laptop screen content with dashboard image
+ * Stage 1: Replace whiteboard text with real open roles
+ * Stage 2 (if logo): Replace the round "HERE" wall medallion with company logo
+ * Stage 3: Replace wall screen + laptop screen content with dashboard image
+ * Stage 4 (if photos): Replace faces — standing person → prospect, seated → team (LAST to preserve quality)
+ * Stage 5: Quality enhancement — sharpen and restore detail lost from multiple model passes
  *
  * Each stage receives the output of the previous as its input image.
  * If a stage fails, the pipeline continues with the previous stage's output.
@@ -184,35 +207,7 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
   // Start with the reference image
   let current = referenceImage.data;
 
-  // ── Stage 1: Faces (only if we have at least one photo) ──────────────────
-  const hasPhotos = prospectImage || teamImages.length > 0;
-  if (hasPhotos) {
-    const faceExtras: Array<{ data: string; mimeType: string }> = [];
-    if (prospectImage) faceExtras.push(prospectImage);
-    for (const img of teamImages) faceExtras.push(img);
-
-    const facePrompt = [
-      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace faces of people — do NOT change anything else in the image (no furniture, no text, no backgrounds, no colors, no layout).`,
-      ``,
-      prospectImage
-        ? `STANDING PERSON: The ONE person standing near the head of the table — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features precisely. Keep the same standing pose. Render in the same cartoonish style as the rest of the image.`
-        : `STANDING PERSON: Keep exactly as-is.`,
-      ``,
-      teamImages.length > 0
-        ? `SEATED PEOPLE: Replace the faces of the ${teamImages.length} seated person(s) around the table using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`} as references, one photo per person. Match each person's exact skin tone, hair, and facial features. Keep all seated positions exactly the same.`
-        : `SEATED PEOPLE: Keep all seated people exactly as-is.`,
-      ``,
-      `CRITICAL: Change ONLY the faces/appearances of people. Do not touch the whiteboard, text, screens, logo, banner, furniture, or background.`,
-    ].join('\n');
-
-    try {
-      current = await runStage(current, facePrompt, faceExtras);
-    } catch (e) {
-      console.error('War Room Stage 1 (faces) failed, continuing:', (e as Error).message);
-    }
-  }
-
-  // ── Stage 2: Whiteboard text ─────────────────────────────────────────────
+  // ── Stage 1: Whiteboard text ─────────────────────────────────────────────
   const boardPrompt = [
     `This is a cartoonish illustrated conference room scene. Your ONLY task is to update the whiteboard text — do NOT change anything else (no people, no furniture, no screens, no logo, no banner).`,
     ``,
@@ -229,10 +224,10 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
   try {
     current = await runStage(current, boardPrompt);
   } catch (e) {
-    console.error('War Room Stage 2 (whiteboard) failed, continuing:', (e as Error).message);
+    console.error('War Room Stage 1 (whiteboard) failed, continuing:', (e as Error).message);
   }
 
-  // ── Stage 3: Logo (only if we have one) ──────────────────────────────────
+  // ── Stage 2: Logo (only if we have one) ──────────────────────────────────
   if (logoImage) {
     const logoPrompt = [
       `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the round circular wall medallion/clock on the back wall with the company logo shown in Image 2 — do NOT change anything else.`,
@@ -245,11 +240,11 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     try {
       current = await runStage(current, logoPrompt, [logoImage]);
     } catch (e) {
-      console.error('War Room Stage 3 (logo) failed, continuing:', (e as Error).message);
+      console.error('War Room Stage 2 (logo) failed, continuing:', (e as Error).message);
     }
   }
 
-  // ── Stage 4: Screen content ───────────────────────────────────────────────
+  // ── Stage 3: Screen content ───────────────────────────────────────────────
   if (screenImage) {
     const screenPrompt = [
       `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the content shown on the screens — do NOT change anything else (no people, no whiteboard, no logo, no furniture).`,
@@ -265,8 +260,47 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     try {
       current = await runStage(current, screenPrompt, [screenImage]);
     } catch (e) {
-      console.error('War Room Stage 4 (screens) failed, continuing:', (e as Error).message);
+      console.error('War Room Stage 3 (screens) failed, continuing:', (e as Error).message);
     }
+  }
+
+  // ── Stage 4: Faces LAST (only if we have at least one photo) ─────────────
+  // Faces go last so they pass through the fewest model iterations, preserving
+  // maximum fidelity on the most important visual element.
+  const hasPhotos = prospectImage || teamImages.length > 0;
+  if (hasPhotos) {
+    const faceExtras: Array<{ data: string; mimeType: string }> = [];
+    if (prospectImage) faceExtras.push(prospectImage);
+    for (const img of teamImages) faceExtras.push(img);
+
+    const facePrompt = [
+      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the faces and appearance of people — do NOT change anything else in the image (no furniture, no text, no backgrounds, no colors, no layout).`,
+      ``,
+      prospectImage
+        ? `STANDING PERSON: The ONE person standing near the head of the table — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features precisely. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match the reference photo — the entire person should look consistent, not just the face. Keep the same standing pose. Render in the same cartoonish style as the rest of the image.`
+        : `STANDING PERSON: Keep exactly as-is.`,
+      ``,
+      teamImages.length > 0
+        ? `SEATED PEOPLE: Replace the faces of the ${teamImages.length} seated person(s) around the table using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`} as references, one photo per person. Match each person's exact skin tone, hair, and facial features. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match each reference photo. Keep all seated positions exactly the same.`
+        : `SEATED PEOPLE: Keep all seated people exactly as-is.`,
+      ``,
+      `CRITICAL: Change ONLY the faces/appearances of people and their visible skin. Do not touch the whiteboard, text, screens, logo, banner, furniture, or background.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, facePrompt, faceExtras);
+    } catch (e) {
+      console.error('War Room Stage 4 (faces) failed, continuing:', (e as Error).message);
+    }
+  }
+
+  // ── Stage 5: Quality enhancement ─────────────────────────────────────────
+  // After multiple model passes, the image loses sharpness. This final pass
+  // restores clarity without altering any content.
+  try {
+    current = await runStage(current, QUALITY_ENHANCE_PROMPT);
+  } catch (e) {
+    console.error('War Room Stage 5 (quality) failed, using previous output:', (e as Error).message);
   }
 
   return current;
@@ -279,10 +313,11 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
 /**
  * Generates a Zoom Room postcard background using staged Gemini compositing.
  *
- * Stage 1 (if photos): Replace center person face → prospect, tile faces → team
- * Stage 2: Replace left whiteboard roles text
- * Stage 3 (if logo): Replace round "HERE" circle with company logo
- * Stage 4: Replace monitor screen content with dashboard image
+ * Stage 1: Replace left whiteboard roles text
+ * Stage 2 (if logo): Replace round "HERE" circle with company logo
+ * Stage 3: Replace monitor screen content with dashboard image
+ * Stage 4 (if photos): Replace center person face → prospect, tile faces → team (LAST to preserve quality)
+ * Stage 5: Quality enhancement — sharpen and restore detail
  *
  * Returns base64-encoded PNG (no data: prefix).
  */
@@ -314,35 +349,7 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
 
   let current = referenceImage.data;
 
-  // ── Stage 1: Faces ────────────────────────────────────────────────────────
-  const hasPhotos = prospectImage || teamImages.length > 0;
-  if (hasPhotos) {
-    const faceExtras: Array<{ data: string; mimeType: string }> = [];
-    if (prospectImage) faceExtras.push(prospectImage);
-    for (const img of teamImages) faceExtras.push(img);
-
-    const facePrompt = [
-      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace faces — do NOT change anything else (no text, no layout, no UI, no backgrounds).`,
-      ``,
-      prospectImage
-        ? `CENTER PERSON: The person sitting at the desk in the center of the screen — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features. Keep the same seated-at-desk pose. Render in the same cartoonish style.`
-        : `CENTER PERSON: Keep exactly as-is.`,
-      ``,
-      teamImages.length > 0
-        ? `VIDEO TILES: Replace the participant faces in the ${teamImages.length} right-side video call tile(s) using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`}. Match each person's skin tone, hair, and facial features. Keep the tile grid layout exactly as-is.`
-        : `VIDEO TILES: Keep all participant tiles exactly as-is.`,
-      ``,
-      `CRITICAL: Change ONLY faces. Do not touch the whiteboard panel, logo circle, monitor screen, Zoom UI toolbar, or any text.`,
-    ].join('\n');
-
-    try {
-      current = await runStage(current, facePrompt, faceExtras);
-    } catch (e) {
-      console.error('Zoom Room Stage 1 (faces) failed, continuing:', (e as Error).message);
-    }
-  }
-
-  // ── Stage 2: Whiteboard roles ─────────────────────────────────────────────
+  // ── Stage 1: Whiteboard roles ─────────────────────────────────────────────
   const boardPrompt = [
     `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to update the text on the left-side whiteboard/panel — do NOT change anything else.`,
     ``,
@@ -359,10 +366,10 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
   try {
     current = await runStage(current, boardPrompt);
   } catch (e) {
-    console.error('Zoom Room Stage 2 (whiteboard) failed, continuing:', (e as Error).message);
+    console.error('Zoom Room Stage 1 (whiteboard) failed, continuing:', (e as Error).message);
   }
 
-  // ── Stage 3: Logo ─────────────────────────────────────────────────────────
+  // ── Stage 2: Logo ─────────────────────────────────────────────────────────
   if (logoImage) {
     const logoPrompt = [
       `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the round circle at the top-center of the screen with the company logo shown in Image 2 — do NOT change anything else.`,
@@ -375,11 +382,11 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     try {
       current = await runStage(current, logoPrompt, [logoImage]);
     } catch (e) {
-      console.error('Zoom Room Stage 3 (logo) failed, continuing:', (e as Error).message);
+      console.error('Zoom Room Stage 2 (logo) failed, continuing:', (e as Error).message);
     }
   }
 
-  // ── Stage 4: Monitor screen ───────────────────────────────────────────────
+  // ── Stage 3: Monitor screen ───────────────────────────────────────────────
   if (screenImage) {
     const screenPrompt = [
       `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the content shown on the monitor/laptop screen on the desk — do NOT change anything else.`,
@@ -392,8 +399,43 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     try {
       current = await runStage(current, screenPrompt, [screenImage]);
     } catch (e) {
-      console.error('Zoom Room Stage 4 (screen) failed, continuing:', (e as Error).message);
+      console.error('Zoom Room Stage 3 (screen) failed, continuing:', (e as Error).message);
     }
+  }
+
+  // ── Stage 4: Faces LAST (only if we have at least one photo) ─────────────
+  const hasPhotos = prospectImage || teamImages.length > 0;
+  if (hasPhotos) {
+    const faceExtras: Array<{ data: string; mimeType: string }> = [];
+    if (prospectImage) faceExtras.push(prospectImage);
+    for (const img of teamImages) faceExtras.push(img);
+
+    const facePrompt = [
+      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the faces and appearance of people — do NOT change anything else (no text, no layout, no UI, no backgrounds).`,
+      ``,
+      prospectImage
+        ? `CENTER PERSON: The person sitting at the desk in the center of the screen — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match the reference photo — the entire person should look consistent, not just the face. Keep the same seated-at-desk pose. Render in the same cartoonish style.`
+        : `CENTER PERSON: Keep exactly as-is.`,
+      ``,
+      teamImages.length > 0
+        ? `VIDEO TILES: Replace the participant faces in the ${teamImages.length} right-side video call tile(s) using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`}. Match each person's skin tone, hair, and facial features. IMPORTANT: Also update visible skin tone on neck/hands to match each reference photo. Keep the tile grid layout exactly as-is.`
+        : `VIDEO TILES: Keep all participant tiles exactly as-is.`,
+      ``,
+      `CRITICAL: Change ONLY faces/appearances of people and their visible skin. Do not touch the whiteboard panel, logo circle, monitor screen, Zoom UI toolbar, or any text.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, facePrompt, faceExtras);
+    } catch (e) {
+      console.error('Zoom Room Stage 4 (faces) failed, continuing:', (e as Error).message);
+    }
+  }
+
+  // ── Stage 5: Quality enhancement ─────────────────────────────────────────
+  try {
+    current = await runStage(current, QUALITY_ENHANCE_PROMPT);
+  } catch (e) {
+    console.error('Zoom Room Stage 5 (quality) failed, using previous output:', (e as Error).message);
   }
 
   return current;
