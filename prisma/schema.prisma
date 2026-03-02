@@ -71,6 +71,7 @@ model Batch {
   user             User              @relation(fields: [userId], references: [id])
   teamId           String?
   status           String            @default("pending")
+  archivedAt       DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   jobs             Job[]

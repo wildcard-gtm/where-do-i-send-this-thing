@@ -38,6 +38,9 @@ export async function GET(request: Request) {
 
   if (batchId) {
     where.job = { batchId };
+  } else {
+    // Exclude contacts from archived campaigns
+    where.job = { batch: { archivedAt: null } };
   }
 
   // Also fetch team's batches for the filter dropdown
@@ -65,7 +68,7 @@ export async function GET(request: Request) {
     }),
     prisma.contact.count({ where }),
     prisma.batch.findMany({
-      where: { userId: { in: teamUserIds } },
+      where: { userId: { in: teamUserIds }, archivedAt: null },
       orderBy: { createdAt: "desc" },
       select: { id: true, name: true, createdAt: true },
       take: 50,

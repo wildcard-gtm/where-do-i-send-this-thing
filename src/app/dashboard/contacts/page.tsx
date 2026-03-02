@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import ReactMarkdown from "react-markdown";
@@ -478,11 +478,95 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
   );
 }
 
+// ─── Campaign picker (shown when no batchId in URL) ──────────────────────────
+
+function CampaignPicker() {
+  const router = useRouter();
+  const [campaigns, setCampaigns] = useState<BatchOption[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/campaigns")
+      .then((r) => (r.ok ? r.json() : { campaigns: [] }))
+      .then((data) => {
+        setCampaigns(data.campaigns ?? []);
+        setLoading(false);
+      });
+  }, []);
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground">Contacts</h1>
+        <p className="text-sm text-muted-foreground mt-1">Select a campaign to view its contacts</p>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center h-40">
+          <div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {!loading && campaigns.length === 0 && (
+        <div className="glass-card rounded-2xl p-12 text-center">
+          <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-foreground mb-2">No campaigns yet</h2>
+          <p className="text-sm text-muted-foreground mb-6">Create a campaign first to scan contacts.</p>
+          <Link href="/dashboard/upload" className="bg-primary hover:bg-primary-hover text-white px-6 py-2.5 rounded-lg font-medium transition inline-block text-sm">
+            New Campaign
+          </Link>
+        </div>
+      )}
+
+      {!loading && campaigns.length > 0 && (
+        <div className="space-y-2">
+          {campaigns.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => router.push(`/dashboard/contacts?batchId=${c.id}`)}
+              className="w-full glass-card glass-card-hover rounded-xl px-5 py-4 text-left flex items-center justify-between gap-4 group"
+            >
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {c.name || `Campaign ${new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {new Date(c.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              </div>
+              <svg className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main contacts page ───────────────────────────────────────────────────────
 
 const filterTabs = ["all", "HOME", "OFFICE", "BOTH"] as const;
 
 export default function ContactsPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const batchIdFromUrl = searchParams.get("batchId");
+
+  // If no batchId in URL, show campaign picker
+  if (!batchIdFromUrl) {
+    return <CampaignPicker />;
+  }
+
+  return <ContactsView batchId={batchIdFromUrl} />;
+}
+
+function ContactsView({ batchId }: { batchId: string }) {
   const router = useRouter();
   const [contacts, setContacts] = useState<ContactRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -490,7 +574,7 @@ export default function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
-  const [batchFilter, setBatchFilter] = useState("all");
+  const [batchFilter, setBatchFilter] = useState(batchId);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
@@ -569,9 +653,20 @@ export default function ContactsPage() {
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-4">
         <div>
+          <div className="flex items-center gap-2 mb-1">
+            <button
+              onClick={() => router.push("/dashboard/contacts")}
+              className="text-xs text-muted-foreground hover:text-foreground transition flex items-center gap-1"
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Campaigns
+            </button>
+          </div>
           <h1 className="text-2xl font-bold text-foreground">Contacts</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {total} contact{total !== 1 ? "s" : ""} in your database
+            {total} contact{total !== 1 ? "s" : ""} in this campaign
           </p>
         </div>
         {contacts.length > 0 && (

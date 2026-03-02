@@ -3,18 +3,25 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 
-// GET /api/campaigns
-// Returns scan batches with their linked enrichment + postcard batch summaries
-export async function GET() {
+// GET /api/campaigns?archived=true
+// Returns scan batches with their linked enrichment + postcard batch summaries.
+// Pass ?archived=true to get archived campaigns; default returns active (non-archived) only.
+export async function GET(request: Request) {
   const user = await getSession();
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const archived = searchParams.get("archived") === "true";
+
   const teamUserIds = await getTeamUserIds(user);
 
   const batches = await prisma.batch.findMany({
-    where: { userId: { in: teamUserIds } },
+    where: {
+      userId: { in: teamUserIds },
+      archivedAt: archived ? { not: null } : null,
+    },
     orderBy: { createdAt: "desc" },
     include: {
       jobs: { select: { status: true } },
@@ -56,6 +63,7 @@ export async function GET() {
       name: batch.name,
       status: batch.status,
       createdAt: batch.createdAt,
+      archivedAt: batch.archivedAt,
       totalJobs,
       completedJobs,
       failedJobs,
