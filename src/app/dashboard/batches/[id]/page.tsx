@@ -334,6 +334,7 @@ export default function CampaignDetailPage() {
   const [isDispatching, setIsDispatching] = useState(false);
   const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(null);
   const [isProcessingStuck, setIsProcessingStuck] = useState(false);
+  const [force, setForce] = useState(false);
 
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
@@ -419,7 +420,8 @@ export default function CampaignDetailPage() {
     if (!data) return;
     const selected = data.contacts.filter((c) => selectedIds.has(c.jobId));
     const retryable = selected.filter(
-      (c) => c.jobStatus === "failed" || c.jobStatus === "cancelled"
+      (c) => c.jobStatus === "failed" || c.jobStatus === "cancelled" ||
+             (force && c.jobStatus === "complete")
     );
 
     // Start batch if still pending
@@ -475,7 +477,8 @@ export default function CampaignDetailPage() {
         c.jobStatus === "complete" &&
         (!c.enrichmentId ||
           c.enrichmentStatus === "failed" ||
-          c.enrichmentStatus === "cancelled")
+          c.enrichmentStatus === "cancelled" ||
+          (force && c.enrichmentStatus === "completed"))
     );
     if (eligible.length === 0) return;
 
@@ -503,7 +506,8 @@ export default function CampaignDetailPage() {
         c.enrichmentStatus === "completed" &&
         (!c.postcardId ||
           c.postcardStatus === "failed" ||
-          c.postcardStatus === "cancelled")
+          c.postcardStatus === "cancelled" ||
+          (force && (c.postcardStatus === "ready" || c.postcardStatus === "approved")))
     );
     if (eligible.length === 0) return;
 
@@ -643,7 +647,8 @@ export default function CampaignDetailPage() {
 
   const sel = contacts.filter((c) => selectedIds.has(c.jobId));
   const canScan = sel.some((c) =>
-    c.jobStatus === "pending" || c.jobStatus === "failed" || c.jobStatus === "cancelled"
+    c.jobStatus === "pending" || c.jobStatus === "failed" || c.jobStatus === "cancelled" ||
+    (force && c.jobStatus === "complete")
   );
   const canEnrich = sel.some(
     (c) =>
@@ -651,14 +656,16 @@ export default function CampaignDetailPage() {
       c.jobStatus === "complete" &&
       (!c.enrichmentId ||
         c.enrichmentStatus === "failed" ||
-        c.enrichmentStatus === "cancelled")
+        c.enrichmentStatus === "cancelled" ||
+        (force && c.enrichmentStatus === "completed"))
   );
   const canPostcard = sel.some(
     (c) =>
       c.enrichmentStatus === "completed" &&
       (!c.postcardId ||
         c.postcardStatus === "failed" ||
-        c.postcardStatus === "cancelled")
+        c.postcardStatus === "cancelled" ||
+        (force && (c.postcardStatus === "ready" || c.postcardStatus === "approved")))
   );
   const canRunAll = canScan || canEnrich || canPostcard;
 
@@ -809,6 +816,18 @@ export default function CampaignDetailPage() {
           <option value="needs_postcard">Needs postcard</option>
           <option value="complete">Fully complete</option>
         </select>
+
+        <div className="h-4 w-px bg-border mx-1" />
+
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={force}
+            onChange={() => setForce(!force)}
+            className="w-4 h-4 rounded border-border accent-warning cursor-pointer"
+          />
+          <span className="text-sm font-medium text-warning select-none">Force</span>
+        </label>
 
         <div className="h-4 w-px bg-border mx-1" />
 
