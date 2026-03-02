@@ -69,9 +69,9 @@ function readLocalImageAsBase64(filePath: string): { data: string; mimeType: str
   }
 }
 
-/** Call Gemini image generation API */
+/** Call Gemini image generation API with a base64 input image as context */
 async function callGeminiImageAPI(payload: object): Promise<string> {
-  if (!GEMINI_API_KEY) throw new Error('GOOGLE_SEARCH_API_KEY not configured');
+  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const body = JSON.stringify(payload);
   const urlPath = `/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
@@ -117,11 +117,36 @@ async function callGeminiImageAPI(payload: object): Promise<string> {
   });
 }
 
+/** Run a single Gemini compositing stage. currentImage is the base64 scene to edit. */
+async function runStage(currentImageBase64: string, prompt: string, extraImages: Array<{ data: string; mimeType: string }> = []): Promise<string> {
+  const parts: object[] = [
+    { text: prompt },
+    { inline_data: { mime_type: 'image/png', data: currentImageBase64 } },
+    ...extraImages.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
+  ];
+
+  const payload = {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseModalities: ['IMAGE'] },
+  };
+
+  return callGeminiImageAPI(payload);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WAR ROOM
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Generates a War Room postcard background using Gemini Nano Banana 2.
+ * Generates a War Room postcard background using staged Gemini compositing.
  *
- * Sends the reference scene image + prospect headshot + team photos + screen.png
- * and asks the model to composite them into a single styled illustration.
+ * Stage 1 (if photos): Replace faces — standing person → prospect, seated → team
+ * Stage 2: Replace whiteboard text with real open roles
+ * Stage 3 (if logo): Replace the round "HERE" wall medallion with company logo
+ * Stage 4: Replace wall screen + laptop screen content with dashboard image
+ *
+ * Each stage receives the output of the previous as its input image.
+ * If a stage fails, the pipeline continues with the previous stage's output.
  *
  * Returns base64-encoded PNG (no data: prefix).
  */
@@ -129,127 +154,135 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
   if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
-
-  // Load required local images
   const referenceImage = readLocalImageAsBase64(path.join(templatesDir, 'reference-pose.png'));
   const screenImage = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
 
   if (!referenceImage) throw new Error('reference-pose.png not found in public/templates/');
 
-  // Fetch prospect photo (optional — if missing, reference scene person is kept as-is)
+  // Fetch prospect photo
   const prospectImage = input.prospectPhotoUrl ? await fetchImageAsBase64(input.prospectPhotoUrl) : null;
 
-  // Fetch team photos (up to 4, skip any that fail)
+  // Fetch team photos (up to 4)
   const teamImages: Array<{ data: string; mimeType: string }> = [];
   if (input.teamPhotoUrls?.length) {
-    const fetched = await Promise.all(
-      input.teamPhotoUrls.slice(0, 4).map((url) => fetchImageAsBase64(url))
-    );
-    for (const img of fetched) {
-      if (img) teamImages.push(img);
+    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
+    for (const img of fetched) { if (img) teamImages.push(img); }
+  }
+
+  // Fetch company logo
+  const logoImage = input.companyLogoUrl ? await fetchImageAsBase64(input.companyLogoUrl) : null;
+
+  // Build role list — short titles only, max 3
+  const rolesText = input.openRoles?.length
+    ? input.openRoles.slice(0, 3).map(r => {
+        // Truncate long titles to keep whiteboard readable
+        const title = r.title.length > 35 ? r.title.slice(0, 33) + '…' : r.title;
+        return `• ${title}`;
+      }).join('\n')
+    : '• Software Engineer\n• Product Manager\n• Data Analyst';
+
+  // Start with the reference image
+  let current = referenceImage.data;
+
+  // ── Stage 1: Faces (only if we have at least one photo) ──────────────────
+  const hasPhotos = prospectImage || teamImages.length > 0;
+  if (hasPhotos) {
+    const faceExtras: Array<{ data: string; mimeType: string }> = [];
+    if (prospectImage) faceExtras.push(prospectImage);
+    for (const img of teamImages) faceExtras.push(img);
+
+    const facePrompt = [
+      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace faces of people — do NOT change anything else in the image (no furniture, no text, no backgrounds, no colors, no layout).`,
+      ``,
+      prospectImage
+        ? `STANDING PERSON: The ONE person standing near the head of the table — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features precisely. Keep the same standing pose. Render in the same cartoonish style as the rest of the image.`
+        : `STANDING PERSON: Keep exactly as-is.`,
+      ``,
+      teamImages.length > 0
+        ? `SEATED PEOPLE: Replace the faces of the ${teamImages.length} seated person(s) around the table using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`} as references, one photo per person. Match each person's exact skin tone, hair, and facial features. Keep all seated positions exactly the same.`
+        : `SEATED PEOPLE: Keep all seated people exactly as-is.`,
+      ``,
+      `CRITICAL: Change ONLY the faces/appearances of people. Do not touch the whiteboard, text, screens, logo, banner, furniture, or background.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, facePrompt, faceExtras);
+    } catch (e) {
+      console.error('War Room Stage 1 (faces) failed, continuing:', (e as Error).message);
     }
   }
 
-  // Fetch company logo (optional)
-  const logoImage = input.companyLogoUrl ? await fetchImageAsBase64(input.companyLogoUrl) : null;
-
-  // Build role list for whiteboard text
-  const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map((r) => `• ${r.title} — ${r.location}`).join('\n')
-    : '• Senior Engineer — Remote\n• Product Manager — NYC\n• Designer — SF';
-
-  // Build the compositing prompt
-  const promptLines = [
-    `You are an expert digital illustrator. Recreate the reference scene (Image 1) EXACTLY — same layout, same positions, same furniture, same lighting — but with the specific face/character replacements described below.`,
+  // ── Stage 2: Whiteboard text ─────────────────────────────────────────────
+  const boardPrompt = [
+    `This is a cartoonish illustrated conference room scene. Your ONLY task is to update the whiteboard text — do NOT change anything else (no people, no furniture, no screens, no logo, no banner).`,
     ``,
-    `LAYOUT TO REPRODUCE EXACTLY (do not move anything):`,
-    `- Far left: a tall whiteboard on wheels with text on it`,
-    `- Center-left: a wooden conference table with people seated around it`,
-    `- Center-back: ONE person standing upright near the head of the table, facing the others, holding a tablet`,
-    `- Back wall right: a large wall-mounted screen/TV showing a dashboard`,
-    `- Back wall right: a round wall clock / logo medallion`,
-    `- Top right: a horizontal banner reading "IT'S GO TIME"`,
-    `- Windows on the left wall showing a city skyline`,
-    `- Industrial pendant lights hanging from the ceiling`,
-    `- Keep EVERY element in EXACTLY the same position as Image 1`,
-    ``,
-    `FACE REPLACEMENTS ONLY (do not move anyone, just change their appearance):`,
-    ``,
-    `STANDING PERSON (Image 2): The ONE person standing near the head of the table — replace their face and appearance with the person in Image 2. You MUST accurately match their exact skin tone (light, medium, dark — whatever it is), hair color, hair texture, hair style, and facial features. This is critical — the skin color of the illustrated character must match the real person's skin color precisely. Keep the exact same standing pose and position. Render in the same cartoonish illustration style.`,
-    ``,
-    teamImages.length > 0
-      ? `SEATED PEOPLE (Images 3–${2 + teamImages.length}): Replace the faces of the seated people around the table using these ${teamImages.length} reference photo(s), one per person. For each person, you MUST accurately match their exact skin tone, hair color, hair texture, and facial features — skin color matching is critical. Keep everyone in their exact same seated position. Render in the cartoonish style. If fewer photos than seats, leave remaining seated people as-is.`
-      : `SEATED PEOPLE: Keep all seated people exactly as-is from the reference scene.`,
-    ``,
-    screenImage
-      ? `SCREENS: Replace the content on ALL visible screens with the dashboard image provided — this includes: (1) the large wall-mounted TV/screen on the back wall, and (2) the laptop/monitor screen visible behind the standing person. Both screens should display the same dashboard content. All screens stay in their same positions.`
-      : `SCREENS: Keep all screen content as-is from the reference scene.`,
-    ``,
-    logoImage
-      ? `COMPANY LOGO: The reference scene contains the word "HERE" in multiple places (a round wall medallion and possibly other spots). Replace EVERY instance of the word "HERE" with the company logo image provided — place the logo in each of those exact spots. Do not add the logo anywhere else. Do not keep any "HERE" text.`
-      : `COMPANY LOGO: Keep the "HERE" text/medallion areas exactly as-is from the reference scene.`,
-    ``,
-    `WHITEBOARD: The whiteboard on the far left must show the label "TOP ROLES" — written slightly larger and bolder than the items below it, just one size up, not a massive heading. Below it list these roles in handwritten style:`,
+    `WHITEBOARD (far left of the image, tall board on wheels):`,
+    `- The header must read exactly: "TOP ROLES" — bold, clear, fully visible, not cut off`,
+    `- Below the header, list these roles in clean handwritten style, each on its own line:`,
     rolesText,
+    `- The text must be clearly legible. Do not let any text run off the edges of the whiteboard.`,
+    `- Keep the same whiteboard position, size, and color as in the current image.`,
     ``,
-    `CRITICAL RULES:`,
-    `- Output a WIDE HORIZONTAL landscape image — 3:2 ratio, roughly 1500×1000 pixels`,
-    `- Do NOT move any objects, furniture, or people from their positions in Image 1`,
-    `- Only change: faces of people, whiteboard text, wall screen content, logo medallion`,
-    `- Keep the bold cartoonish illustration style throughout`,
-    `- Keep "IT'S GO TIME" banner exactly as-is`,
-    `- Do NOT add any extra text beyond what is specified`,
-  ];
+    `CRITICAL: Change ONLY the whiteboard text. Do not touch people, faces, screens, logo, banner, table, or any other element.`,
+  ].join('\n');
 
-  const textPrompt = promptLines.join('\n');
-
-  // Build content parts: text + images in order
-  const parts: object[] = [{ text: textPrompt }];
-
-  // Image 1: reference scene
-  parts.push({ inline_data: { mime_type: referenceImage.mimeType, data: referenceImage.data } });
-
-  // Image 2: prospect (standing person)
-  if (prospectImage) {
-    parts.push({ inline_data: { mime_type: prospectImage.mimeType, data: prospectImage.data } });
+  try {
+    current = await runStage(current, boardPrompt);
+  } catch (e) {
+    console.error('War Room Stage 2 (whiteboard) failed, continuing:', (e as Error).message);
   }
 
-  // Images 3–6: team members (seated)
-  for (const img of teamImages) {
-    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
-  }
-
-  // Screen image
-  if (screenImage) {
-    parts.push({ inline_data: { mime_type: screenImage.mimeType, data: screenImage.data } });
-  }
-
-  // Logo
+  // ── Stage 3: Logo (only if we have one) ──────────────────────────────────
   if (logoImage) {
-    parts.push({ inline_data: { mime_type: logoImage.mimeType, data: logoImage.data } });
+    const logoPrompt = [
+      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the round circular wall medallion/clock on the back wall with the company logo shown in Image 2 — do NOT change anything else.`,
+      ``,
+      `LOGO MEDALLION: On the back-right wall there is a round circular element (currently showing "HERE" text or a clock shape). Replace the entire content of that circle with the company logo from Image 2. Keep the circle in exactly the same position and same size on the wall. The logo should fill the circle cleanly.`,
+      ``,
+      `CRITICAL: Change ONLY the round wall medallion. Do not touch people, whiteboard, screens, banner, furniture, or any other element.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, logoPrompt, [logoImage]);
+    } catch (e) {
+      console.error('War Room Stage 3 (logo) failed, continuing:', (e as Error).message);
+    }
   }
 
-  const payload = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: {
-      responseModalities: ['IMAGE'],
-      image_size: '2K',
-    },
-  };
+  // ── Stage 4: Screen content ───────────────────────────────────────────────
+  if (screenImage) {
+    const screenPrompt = [
+      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the content shown on the screens — do NOT change anything else (no people, no whiteboard, no logo, no furniture).`,
+      ``,
+      `SCREENS: There are two screens visible in the scene:`,
+      `1. The large wall-mounted TV/monitor on the back-right wall`,
+      `2. The laptop or monitor screen visible on or near the table`,
+      `Replace the content displayed on BOTH screens with the dashboard image shown in Image 2. The screens stay in their exact same positions — only their displayed content changes.`,
+      ``,
+      `CRITICAL: Change ONLY what is shown on the screens. Do not touch people, whiteboard text, logo medallion, banner, or furniture.`,
+    ].join('\n');
 
-  const base64 = await callGeminiImageAPI(payload);
-  return base64;
+    try {
+      current = await runStage(current, screenPrompt, [screenImage]);
+    } catch (e) {
+      console.error('War Room Stage 4 (screens) failed, continuing:', (e as Error).message);
+    }
+  }
+
+  return current;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ZOOM ROOM
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * Generates a Zoom Room postcard background using Gemini Nano Banana 2.
+ * Generates a Zoom Room postcard background using staged Gemini compositing.
  *
- * Reference scene: a person on a Zoom call at their desk. Replaces:
- * - Center person face → prospect photo
- * - "HERE" logo circle → company logo
- * - Monitor screen content → screen.png
- * - Left whiteboard roles → real open roles
- * - Right-side video call grid tiles → team photos (up to 4)
+ * Stage 1 (if photos): Replace center person face → prospect, tile faces → team
+ * Stage 2: Replace left whiteboard roles text
+ * Stage 3 (if logo): Replace round "HERE" circle with company logo
+ * Stage 4: Replace monitor screen content with dashboard image
  *
  * Returns base64-encoded PNG (no data: prefix).
  */
@@ -257,7 +290,6 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
   if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
-
   const referenceImage = readLocalImageAsBase64(path.join(templatesDir, 'zoom-room-reference.png'));
   const screenImage = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
 
@@ -267,90 +299,102 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
 
   const teamImages: Array<{ data: string; mimeType: string }> = [];
   if (input.teamPhotoUrls?.length) {
-    const fetched = await Promise.all(
-      input.teamPhotoUrls.slice(0, 4).map((url) => fetchImageAsBase64(url))
-    );
-    for (const img of fetched) {
-      if (img) teamImages.push(img);
-    }
+    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
+    for (const img of fetched) { if (img) teamImages.push(img); }
   }
 
   const logoImage = input.companyLogoUrl ? await fetchImageAsBase64(input.companyLogoUrl) : null;
 
   const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map((r) => `• ${r.title} — ${r.location}`).join('\n')
-    : '• Senior Engineer — Remote\n• Product Manager — Remote\n• Designer — Remote';
+    ? input.openRoles.slice(0, 3).map(r => {
+        const title = r.title.length > 35 ? r.title.slice(0, 33) + '…' : r.title;
+        return `• ${title}`;
+      }).join('\n')
+    : '• Software Engineer\n• Product Manager\n• Data Analyst';
 
-  const promptLines = [
-    `You are an expert digital illustrator. Recreate the reference scene (Image 1) EXACTLY — same layout, same positions, same furniture, same lighting — but with only the specific changes described below.`,
+  let current = referenceImage.data;
+
+  // ── Stage 1: Faces ────────────────────────────────────────────────────────
+  const hasPhotos = prospectImage || teamImages.length > 0;
+  if (hasPhotos) {
+    const faceExtras: Array<{ data: string; mimeType: string }> = [];
+    if (prospectImage) faceExtras.push(prospectImage);
+    for (const img of teamImages) faceExtras.push(img);
+
+    const facePrompt = [
+      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace faces — do NOT change anything else (no text, no layout, no UI, no backgrounds).`,
+      ``,
+      prospectImage
+        ? `CENTER PERSON: The person sitting at the desk in the center of the screen — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features. Keep the same seated-at-desk pose. Render in the same cartoonish style.`
+        : `CENTER PERSON: Keep exactly as-is.`,
+      ``,
+      teamImages.length > 0
+        ? `VIDEO TILES: Replace the participant faces in the ${teamImages.length} right-side video call tile(s) using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`}. Match each person's skin tone, hair, and facial features. Keep the tile grid layout exactly as-is.`
+        : `VIDEO TILES: Keep all participant tiles exactly as-is.`,
+      ``,
+      `CRITICAL: Change ONLY faces. Do not touch the whiteboard panel, logo circle, monitor screen, Zoom UI toolbar, or any text.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, facePrompt, faceExtras);
+    } catch (e) {
+      console.error('Zoom Room Stage 1 (faces) failed, continuing:', (e as Error).message);
+    }
+  }
+
+  // ── Stage 2: Whiteboard roles ─────────────────────────────────────────────
+  const boardPrompt = [
+    `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to update the text on the left-side whiteboard/panel — do NOT change anything else.`,
     ``,
-    `LAYOUT TO REPRODUCE EXACTLY (do not move anything):`,
-    `- This is a Zoom video call screen — the entire image is a Zoom window`,
-    `- Center: one person sitting at a desk, facing the camera, with a bookshelf behind them`,
-    `- Top center: a round circle/logo that says "HERE"`,
-    `- Left side: a whiteboard/sign panel with "Top Roles Hiring:" header and role list`,
-    `- Right side: a vertical strip of 4 small video call participant tiles`,
-    `- Bottom: Zoom UI toolbar (microphone, camera, share screen buttons)`,
-    `- Top bar: Zoom window chrome with "Zoom" label and "Leave" button`,
-    `- Keep EVERY element in EXACTLY the same position as Image 1`,
-    ``,
-    `FACE REPLACEMENTS ONLY (do not move anyone, just change their appearance):`,
-    ``,
-    prospectImage
-      ? `CENTER PERSON (Image 2): Replace the face and appearance of the person sitting at the desk with the person in Image 2. You MUST accurately match their exact skin tone (light, medium, dark — whatever it is), hair color, hair texture, hair style, and facial features. Skin color matching is critical. Keep the same seated-at-desk pose. Render in the same cartoonish illustration style.`
-      : `CENTER PERSON: Keep the center person exactly as-is from the reference scene.`,
-    ``,
-    teamImages.length > 0
-      ? `VIDEO CALL TILES (Images ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}): Replace the ${teamImages.length} participant tile(s) on the right side of the screen with illustrated characters based on these reference photos. For each person, match their exact skin tone, hair color, and facial features. Keep the tile grid layout exactly as-is. If fewer photos than tiles, leave remaining tiles as-is.`
-      : `VIDEO CALL TILES: Keep all participant tiles exactly as-is from the reference scene.`,
-    ``,
-    screenImage
-      ? `MONITOR SCREEN: Replace the content on the monitor/laptop screen visible on the desk with the dashboard image provided (next image). The monitor stays in the same position.`
-      : `MONITOR SCREEN: Keep the monitor screen content as-is.`,
-    ``,
-    logoImage
-      ? `LOGO CIRCLE: Replace the "HERE" text in the round circle/logo (top center of the scene) with the company logo image provided. Same position, same size circle.`
-      : `LOGO CIRCLE: Keep the "HERE" circle as-is.`,
-    ``,
-    `WHITEBOARD: The left-side panel must show "Top Roles Hiring:" at the top — slightly larger and bolder than the items, just one size up. Below it list these roles:`,
+    `LEFT PANEL (whiteboard on the left side of the screen):`,
+    `- The header must read exactly: "Top Roles Hiring:" — bold, clear, fully visible`,
+    `- Below the header, list these roles in clean style, each on its own line:`,
     rolesText,
+    `- All text must be clearly legible and fully contained within the panel. Do not let text run off the edges.`,
+    `- Keep the panel in exactly the same position and size.`,
     ``,
-    `CRITICAL RULES:`,
-    `- Output a WIDE HORIZONTAL landscape image — 3:2 ratio, roughly 1500×1000 pixels`,
-    `- Do NOT move any objects, furniture, or people from their positions in Image 1`,
-    `- Only change: center person face, participant tiles, monitor content, logo circle, whiteboard roles`,
-    `- Keep the bold cartoonish illustration style throughout`,
-    `- Keep the Zoom UI chrome (toolbar, top bar, "Leave" button) exactly as-is`,
-    `- Do NOT add any extra text beyond what is specified`,
-  ];
+    `CRITICAL: Change ONLY the left panel text. Do not touch people, faces, logo circle, monitor screen, Zoom toolbar, or any other element.`,
+  ].join('\n');
 
-  const parts: object[] = [{ text: promptLines.join('\n') }];
-
-  parts.push({ inline_data: { mime_type: referenceImage.mimeType, data: referenceImage.data } });
-
-  if (prospectImage) {
-    parts.push({ inline_data: { mime_type: prospectImage.mimeType, data: prospectImage.data } });
+  try {
+    current = await runStage(current, boardPrompt);
+  } catch (e) {
+    console.error('Zoom Room Stage 2 (whiteboard) failed, continuing:', (e as Error).message);
   }
 
-  for (const img of teamImages) {
-    parts.push({ inline_data: { mime_type: img.mimeType, data: img.data } });
-  }
-
-  if (screenImage) {
-    parts.push({ inline_data: { mime_type: screenImage.mimeType, data: screenImage.data } });
-  }
-
+  // ── Stage 3: Logo ─────────────────────────────────────────────────────────
   if (logoImage) {
-    parts.push({ inline_data: { mime_type: logoImage.mimeType, data: logoImage.data } });
+    const logoPrompt = [
+      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the round circle at the top-center of the screen with the company logo shown in Image 2 — do NOT change anything else.`,
+      ``,
+      `LOGO CIRCLE: At the top-center of the Zoom screen there is a round circle currently showing "HERE" text. Replace the content inside that circle with the company logo from Image 2. Keep the circle in exactly the same position and size. The logo should fill the circle cleanly.`,
+      ``,
+      `CRITICAL: Change ONLY the top-center circle. Do not touch people, whiteboard panel, monitor screen, Zoom toolbar, or any other element.`,
+    ].join('\n');
+
+    try {
+      current = await runStage(current, logoPrompt, [logoImage]);
+    } catch (e) {
+      console.error('Zoom Room Stage 3 (logo) failed, continuing:', (e as Error).message);
+    }
   }
 
-  const payload = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: {
-      responseModalities: ['IMAGE'],
-      image_size: '2K',
-    },
-  };
+  // ── Stage 4: Monitor screen ───────────────────────────────────────────────
+  if (screenImage) {
+    const screenPrompt = [
+      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the content shown on the monitor/laptop screen on the desk — do NOT change anything else.`,
+      ``,
+      `MONITOR SCREEN: The person at the desk has a monitor/laptop screen visible. Replace what is displayed on that screen with the dashboard image shown in Image 2. The monitor stays in the exact same position — only its displayed content changes.`,
+      ``,
+      `CRITICAL: Change ONLY the monitor screen content. Do not touch people, whiteboard panel, logo circle, Zoom toolbar, video tiles, or any other element.`,
+    ].join('\n');
 
-  return await callGeminiImageAPI(payload);
+    try {
+      current = await runStage(current, screenPrompt, [screenImage]);
+    } catch (e) {
+      console.error('Zoom Room Stage 4 (screen) failed, continuing:', (e as Error).message);
+    }
+  }
+
+  return current;
 }
