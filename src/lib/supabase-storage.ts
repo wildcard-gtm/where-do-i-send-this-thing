@@ -102,7 +102,7 @@ export async function uploadReferenceImage(
       "x-upsert": "true",
       "cache-control": "no-store",
     },
-    body: buffer,
+    body: new Uint8Array(buffer),
   });
 
   if (!res.ok) {

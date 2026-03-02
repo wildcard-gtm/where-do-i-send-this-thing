@@ -102,12 +102,15 @@ export async function POST(request: Request) {
 
   // Stage-specific context
   if (stage === 'scan' && contact.job) {
-    context.jobId = contact.job.id;
-    context.jobResult = contact.job.result ? JSON.parse(contact.job.result) : null;
+    const job = contact.job as typeof contact.job & {
+      events?: Array<{ type: string; data: string; iteration: number | null }>;
+    };
+    context.jobId = job.id;
+    context.jobResult = job.result ? JSON.parse(job.result) : null;
 
     // Build research log from agent events
-    if (contact.job.events?.length) {
-      context.researchLog = buildResearchLogFromEvents(contact.job.events);
+    if (job.events?.length) {
+      context.researchLog = buildResearchLogFromEvents(job.events);
     }
   }
 
@@ -138,7 +141,8 @@ export async function POST(request: Request) {
   }
 
   if (stage === 'postcard') {
-    const postcard = (contact.postcards as Array<{
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const postcard = ((contact.postcards as any) as Array<{
       id: string;
       template: string;
       status: string;

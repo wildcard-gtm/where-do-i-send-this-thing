@@ -370,7 +370,10 @@ export async function executeCorrectionTool(
 
     case 'scrape_linkedin_profile': {
       const profileResult = await fetchBrightDataLinkedIn(args.linkedin_url as string);
-      return { result: profileResult };
+      if (!profileResult) {
+        return { result: { success: false, summary: "No LinkedIn profile data found" } };
+      }
+      return { result: { success: true, summary: `Found profile: ${profileResult.fullName ?? "Unknown"}`, data: profileResult } };
     }
 
     // ── Unknown ───────────────────────────────────────────

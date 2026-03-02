@@ -333,6 +333,7 @@ export default function CampaignDetailPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDispatching, setIsDispatching] = useState(false);
   const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(null);
+  const [isProcessingStuck, setIsProcessingStuck] = useState(false);
 
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
@@ -536,6 +537,29 @@ export default function CampaignDetailPage() {
     try { await fn(); } finally { setIsDispatching(false); }
   }
 
+  // ── Process stuck queued items ───────────────────────────────────────────
+
+  async function handleProcessStuck() {
+    setIsProcessingStuck(true);
+    try {
+      const res = await fetch(`/api/campaigns/${batchId}/process-stuck`, { method: "POST" });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.total === 0) return;
+
+      await fetchData();
+
+      const items: QueueItem[] = [
+        ...((json.jobIds as string[]) ?? []).map((jobId: string) => ({ kind: "scan" as const, jobId })),
+        ...((json.enrichmentIds as string[]) ?? []).map((id: string) => ({ kind: "enrich" as const, enrichmentId: id })),
+        ...((json.postcardIds as string[]) ?? []).map((id: string) => ({ kind: "postcard" as const, postcardId: id })),
+      ];
+      enqueueAndDispatch(items);
+    } finally {
+      setIsProcessingStuck(false);
+    }
+  }
+
   // ── Single-contact refresh handlers ────────────────────────────────────────
 
   async function refreshScan(c: CampaignContact) {
@@ -637,6 +661,13 @@ export default function CampaignDetailPage() {
         c.postcardStatus === "cancelled")
   );
   const canRunAll = canScan || canEnrich || canPostcard;
+
+  const stuckCount = contacts.filter(
+    (c) =>
+      c.jobStatus === "pending" ||
+      c.enrichmentStatus === "pending" ||
+      c.postcardStatus === "pending"
+  ).length;
 
   const sortedContacts = [...contacts].sort((a, b) => contactSortKey(a) - contactSortKey(b));
 
@@ -829,6 +860,27 @@ export default function CampaignDetailPage() {
           )}
           Run All
         </button>
+
+        {/* Process stuck queued items */}
+        {stuckCount > 0 && (
+          <>
+            <div className="h-4 w-px bg-border mx-1" />
+            <button
+              onClick={handleProcessStuck}
+              disabled={isProcessingStuck}
+              className="inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-warning/50 hover:border-warning text-warning hover:bg-warning/10 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            >
+              {isProcessingStuck ? (
+                <div className="w-3.5 h-3.5 border-2 border-warning border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              )}
+              Process Stuck ({stuckCount})
+            </button>
+          </>
+        )}
 
         {/* Export CSV — when any complete jobs */}
         {contacts.some((c) => c.jobStatus === "complete") && (

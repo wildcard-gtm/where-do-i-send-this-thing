@@ -43,6 +43,9 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
       const contentType: string = res.headers['content-type'] ?? 'image/jpeg';
       const mimeType = contentType.split(';')[0].trim();
 
+      // Gemini does not support SVG — skip placeholder avatars and SVG logos
+      if (mimeType === 'image/svg+xml') { res.resume(); resolve(null); return; }
+
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
