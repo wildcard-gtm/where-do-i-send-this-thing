@@ -87,7 +87,8 @@ async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 
 /** Build a File object from a Buffer for the OpenAI SDK */
 function bufferToFile(buf: Buffer, filename: string, mimeType = "image/png"): File {
-  return new File([buf], filename, { type: mimeType });
+  const arrayBuffer = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  return new File([arrayBuffer], filename, { type: mimeType });
 }
 
 /**
