@@ -101,6 +101,7 @@ export async function POST(request: Request) {
         companyValues: enrichment?.companyValues ?? undefined,
         companyMission: enrichment?.companyMission ?? null,
         officeLocations: enrichment?.officeLocations ?? undefined,
+        teamPhotos: enrichment?.teamPhotos ?? undefined,
         ...(backMessage ? { backMessage } : {}),
         // Template overrides: pre-set copy so AI generation is skipped at run time
         ...(templateHeadline    ? { postcardHeadline: templateHeadline }       : {}),

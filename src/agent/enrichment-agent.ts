@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, searchExaAI } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, searchExaAI, fetchBrightDataLinkedIn } from './services';
 import axios, { type AxiosError } from 'axios';
 
 // ─── Types ───────────────────────────────────────────────
@@ -102,6 +102,17 @@ const ENRICHMENT_TOOLS = [
     },
   },
   {
+    name: 'scrape_linkedin_profile',
+    description: 'Scrape a LinkedIn profile URL via Bright Data to get the person\'s real headshot (avatar), name, and title. Use this to get team member photos — it returns a reliable photo URL unlike scraping web pages. Call with individual LinkedIn profile URLs found via search_web.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/username' },
+      },
+      required: ['linkedin_url'],
+    },
+  },
+  {
     name: 'submit_enrichment',
     description: 'Submit the final enriched company data. Call this when you have gathered all available information.',
     input_schema: {
@@ -137,7 +148,7 @@ const ENRICHMENT_TOOLS = [
         },
         team_photos: {
           type: 'array',
-          description: 'Photo URLs of team members (from LinkedIn company page or website)',
+          description: 'Photo URLs of team members from the same company (aim for 4 people — from LinkedIn company page, team/about pages, or press coverage). Each must be a direct URL to a headshot or profile photo.',
           items: {
             type: 'object',
             properties: {
@@ -163,14 +174,16 @@ const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. 
 3. **Company values** — Find 3-6 core company values from their website or about page.
 4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
 5. **Office locations** — Find cities/regions where the company has offices.
-6. **Team photos** — Find 2-3 photos of team members from the company website or LinkedIn.
+6. **Team photos** — Find up to 4 photos of team members from the same company. Try: the company's team/about page, LinkedIn company page employee listings, press coverage, blog author headshots, or conference speaker pages. Each photo must be a direct URL to a headshot. Aim for 4 people — include whoever you can find with real photo URLs. If you find fewer than 4, submit what you have.
 
 WORKFLOW:
 1. First, determine the company domain from the company name (e.g. "Stripe" → "stripe.com")
 2. Call fetch_company_logo with that domain
 3. Use search_web to find: "[company] open jobs careers", "[company] company values mission", "[company] office locations"
 4. Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
-5. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
+5. Use search_web to find LinkedIn profile URLs of employees at [company] — search for "site:linkedin.com/in [company name] engineer OR manager OR designer" to get individual profile URLs
+6. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs.
+7. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
 
 Be efficient — you have a max of 15 tool calls. Don't repeat searches. Prioritize quality over quantity.
 If you can't find certain data, submit what you have with null for missing fields.
@@ -225,6 +238,30 @@ async function executeEnrichmentTool(
       }
     }
 
+    case 'scrape_linkedin_profile': {
+      const linkedinUrl = args.linkedin_url as string;
+      try {
+        const profile = await fetchBrightDataLinkedIn(linkedinUrl);
+        if (!profile) {
+          return { result: { success: false, summary: 'Could not scrape LinkedIn profile — timeout or not found' } };
+        }
+        const avatar = (profile as Record<string, unknown>).avatar as string | undefined;
+        return {
+          result: {
+            success: true,
+            name: profile.name,
+            title: profile.current_company_position ?? profile.headline,
+            photo_url: avatar ?? null,
+            summary: avatar
+              ? `Got photo for ${profile.name ?? 'person'}: ${avatar}`
+              : `Profile scraped but no photo found for ${profile.name ?? 'person'}`,
+          },
+        };
+      } catch (err) {
+        return { result: { success: false, summary: `LinkedIn scrape failed: ${(err as Error).message}` } };
+      }
+    }
+
     case 'submit_enrichment': {
       const data: EnrichmentResult = {
         companyName: args.company_name as string,
@@ -252,7 +289,7 @@ async function executeEnrichmentTool(
 
 // ─── Agent Runner ────────────────────────────────────────
 
-const MAX_ITERATIONS = 15;
+const MAX_ITERATIONS = 22; // extra room for up to 4 scrape_linkedin_profile calls
 
 export async function runEnrichmentAgent(
   input: EnrichmentInput,

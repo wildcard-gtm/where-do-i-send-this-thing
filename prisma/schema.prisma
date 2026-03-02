@@ -311,6 +311,7 @@ model Postcard {
   contactName      String
   contactTitle     String?
   contactPhoto     String?
+  teamPhotos       Json?    // [{ name?: string, photoUrl: string, title?: string }] — snapshotted from enrichment
   deliveryAddress  String?
 
   createdAt        DateTime @default(now())

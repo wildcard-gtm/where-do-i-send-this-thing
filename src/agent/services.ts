@@ -116,7 +116,7 @@ export async function searchExaPerson(
 
 const LINKEDIN_DATASET_ID = 'gd_l1viktl72bvl7bjuj0';
 
-async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProfile | null> {
+export async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProfile | null> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
   if (!apiKey) return null;
 

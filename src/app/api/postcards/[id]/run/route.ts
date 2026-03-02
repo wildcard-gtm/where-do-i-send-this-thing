@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 import { getWarRoomPrompt, getZoomRoomPrompt } from "@/lib/postcard/prompt-generator";
 import { generateBackground } from "@/lib/postcard/background-generator";
+import { generateNanaBananaWarRoom, generateNanaBananaZoomRoom } from "@/lib/postcard/nano-banana-generator";
 import { screenshotPostcard } from "@/lib/postcard/screenshot";
 import { generatePostcardCopy } from "@/lib/postcard/copy-generator";
 import { extractAccentColor } from "@/lib/postcard/color-extractor";
@@ -94,6 +95,8 @@ export async function POST(
           officeLocations: true,
           contactName: true,
           companyLogo: true,
+          contactPhoto: true,
+          teamPhotos: true,
         },
       });
 
@@ -144,12 +147,34 @@ export async function POST(
         });
       }
 
-      // Fall back to static prompts if copy generation produced nothing
-      const prompt =
-        imagePrompt ??
-        (existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
+      // Generate background — War Room + Zoom Room use Nano Banana 2 compositing
+      let bgBase64: string;
+      const teamPhotos = (existing?.teamPhotos as Array<{ photoUrl: string }> | null) ?? [];
+      const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
-      const bgBase64 = await generateBackground(prompt);
+      if (existing?.template === "warroom" && existing?.contactPhoto) {
+        bgBase64 = await generateNanaBananaWarRoom({
+          prospectPhotoUrl: existing.contactPhoto,
+          companyLogoUrl: existing.companyLogo ?? null,
+          teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
+          openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
+          prospectName: existing.contactName,
+        });
+      } else if (existing?.template === "zoom" && existing?.contactPhoto) {
+        bgBase64 = await generateNanaBananaZoomRoom({
+          prospectPhotoUrl: existing.contactPhoto,
+          companyLogoUrl: existing.companyLogo ?? null,
+          teamPhotoUrls: teamPhotos.map((p) => p.photoUrl).filter(Boolean),
+          openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
+          prospectName: existing.contactName,
+        });
+      } else {
+        // No prospect photo — fall back to OpenAI text-to-image
+        const prompt =
+          imagePrompt ??
+          (existing?.template === "zoom" ? getZoomRoomPrompt() : getWarRoomPrompt());
+        bgBase64 = await generateBackground(prompt);
+      }
       const backgroundUrl = await uploadPostcardImage(
         bgBase64,
         `backgrounds/${id}.png`
@@ -167,7 +192,7 @@ export async function POST(
 
       await prisma.postcard.update({
         where: { id },
-        data: { status: "generating", backgroundUrl, backgroundPrompt: prompt },
+        data: { status: "generating", backgroundUrl },
       });
 
       const imageBase64 = await screenshotPostcard(id);
