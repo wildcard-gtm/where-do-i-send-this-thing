@@ -33,9 +33,11 @@ export async function POST(request: Request) {
   }
 
   if (scope === "all" || scope === "contacts") {
-    // Delete chat messages, feedbacks, revisions, postcards first (cascade not guaranteed on all)
+    // Delete postcards + postcard batches, chat messages, feedbacks, revisions first
     const postcards = await prisma.postcard.deleteMany({});
     deleted.postcards = postcards.count;
+    const postcardBatches = await prisma.postcardBatch.deleteMany({});
+    deleted.postcardBatches = postcardBatches.count;
     const msgs = await prisma.chatMessage.deleteMany({});
     deleted.chatMessages = msgs.count;
     const feedbacks = await prisma.feedback.deleteMany({});
