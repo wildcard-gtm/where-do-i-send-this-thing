@@ -41,6 +41,7 @@ export default function PostcardsPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [templateFilter, setTemplateFilter] = useState<"all" | "warroom" | "zoom">("all");
   const [campaignId, setCampaignId] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -189,6 +190,10 @@ export default function PostcardsPage() {
     setActionMessage(`Downloaded ${targets.length} postcard(s).`);
   };
 
+  const filteredPostcards = templateFilter === "all"
+    ? postcards
+    : postcards.filter((p) => p.template === templateFilter);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -203,7 +208,8 @@ export default function PostcardsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Postcards</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {postcards.length} postcard{postcards.length !== 1 ? "s" : ""}
+            {filteredPostcards.length} postcard{filteredPostcards.length !== 1 ? "s" : ""}
+            {templateFilter !== "all" && ` (${postcards.length} total)`}
           </p>
         </div>
 
@@ -255,6 +261,28 @@ export default function PostcardsPage() {
 
         <div className="h-5 w-px bg-border shrink-0" />
 
+        <div className="flex gap-1">
+          {([
+            { key: "all", label: "All Types" },
+            { key: "warroom", label: "War Room" },
+            { key: "zoom", label: "Zoom Room" },
+          ] as const).map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setTemplateFilter(key)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                templateFilter === key
+                  ? "bg-primary/15 text-primary"
+                  : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-5 w-px bg-border shrink-0" />
+
         <select
           value={campaignId}
           onChange={(e) => setCampaignId(e.target.value)}
@@ -269,16 +297,18 @@ export default function PostcardsPage() {
         </select>
       </div>
 
-      {postcards.length === 0 ? (
+      {filteredPostcards.length === 0 ? (
         <div className="glass-card rounded-2xl p-12 text-center">
           <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
             <svg className="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <h2 className="text-lg font-semibold text-foreground mb-2">No postcards yet</h2>
+          <h2 className="text-lg font-semibold text-foreground mb-2">
+            {templateFilter !== "all" ? `No ${templateFilter === "warroom" ? "War Room" : "Zoom Room"} postcards` : "No postcards yet"}
+          </h2>
           <p className="text-muted-foreground text-sm mb-6">
-            Generate postcards from the contact detail page after running enrichment.
+            {templateFilter !== "all" ? "Try a different filter." : "Generate postcards from the contact detail page after running enrichment."}
           </p>
           <Link
             href="/dashboard/contacts"
@@ -290,7 +320,7 @@ export default function PostcardsPage() {
       ) : (
         <div className="glass-card rounded-2xl overflow-hidden">
           <div className="divide-y divide-border/50">
-            {postcards.map((postcard) => (
+            {filteredPostcards.map((postcard) => (
               <div
                 key={postcard.id}
                 className="flex items-center gap-4 px-5 py-4 hover:bg-card-hover transition"

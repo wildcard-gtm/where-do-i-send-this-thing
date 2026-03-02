@@ -57,6 +57,7 @@ export async function GET(
                   id: true,
                   postcardBatchId: true,
                   status: true,
+                  template: true,
                 },
               },
             },
@@ -117,6 +118,7 @@ export async function GET(
       postcardId: postcard?.id ?? null,
       postcardStatus: postcard?.status ?? null,
       postcardBatchId: postcard?.postcardBatchId ?? null,
+      postcardTemplate: postcard?.template ?? null,
     };
   });
 

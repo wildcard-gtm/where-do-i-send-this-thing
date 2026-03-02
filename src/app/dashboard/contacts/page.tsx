@@ -648,7 +648,8 @@ function CampaignPicker() {
 
 // ─── Main contacts page ───────────────────────────────────────────────────────
 
-const filterTabs = ["all", "HOME", "OFFICE", "BOTH"] as const;
+const filterTabs = ["all", "remote", "office"] as const;
+const filterLabels: Record<string, string> = { all: "All", remote: "Remote", office: "In-Office" };
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -680,14 +681,18 @@ function ContactsView({ batchId }: { batchId: string }) {
   const fetchContacts = useCallback(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
-    if (filter !== "all") params.set("recommendation", filter);
+    if (filter === "remote") params.set("recommendation", "HOME");
     if (batchFilter !== "all") params.set("batchId", batchFilter);
     params.set("limit", "50");
     fetch(`/api/contacts?${params}`)
       .then((r) => (r.ok ? r.json() : { contacts: [], total: 0, batches: [] }))
       .then((data) => {
-        setContacts(data.contacts ?? []);
-        setTotal(data.total ?? 0);
+        let fetched: ContactRow[] = data.contacts ?? [];
+        if (filter === "office") {
+          fetched = fetched.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH");
+        }
+        setContacts(fetched);
+        setTotal(filter === "office" ? fetched.length : (data.total ?? 0));
         if (data.batches) setBatches(data.batches);
         setLoading(false);
       });
@@ -817,7 +822,7 @@ function ContactsView({ batchId }: { batchId: string }) {
         )}
       </div>
 
-      {/* Recommendation filter tabs */}
+      {/* Location type filter tabs */}
       <div className="flex gap-1 mb-5 overflow-x-auto">
         {filterTabs.map((t) => (
           <button
@@ -827,7 +832,7 @@ function ContactsView({ batchId }: { batchId: string }) {
               filter === t ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-card"
             }`}
           >
-            {t === "all" ? "All" : t}
+            {filterLabels[t]}
           </button>
         ))}
       </div>

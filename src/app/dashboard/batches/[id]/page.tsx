@@ -27,6 +27,7 @@ interface CampaignContact {
   postcardId: string | null;
   postcardStatus: string | null;
   postcardBatchId: string | null;
+  postcardTemplate: string | null;
 }
 
 interface CampaignDetail {
@@ -335,6 +336,7 @@ export default function CampaignDetailPage() {
   const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(null);
   const [isProcessingStuck, setIsProcessingStuck] = useState(false);
   const [force, setForce] = useState(false);
+  const [locationType, setLocationType] = useState<"all" | "remote" | "office">("all");
 
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
@@ -676,7 +678,12 @@ export default function CampaignDetailPage() {
       c.postcardStatus === "pending"
   ).length;
 
-  const sortedContacts = [...contacts].sort((a, b) => contactSortKey(a) - contactSortKey(b));
+  const filteredContacts = locationType === "all"
+    ? contacts
+    : locationType === "remote"
+      ? contacts.filter((c) => c.recommendation === "HOME")
+      : contacts.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH");
+  const sortedContacts = [...filteredContacts].sort((a, b) => contactSortKey(a) - contactSortKey(b));
 
   // Overall active indicator
   const anyActive = contacts.some(
@@ -916,6 +923,34 @@ export default function CampaignDetailPage() {
             </a>
           </>
         )}
+      </div>
+
+      {/* Location type filter */}
+      <div className="flex gap-1 mb-4">
+        {([
+          { key: "all", label: "All" },
+          { key: "remote", label: "Remote" },
+          { key: "office", label: "In-Office" },
+        ] as const).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setLocationType(key)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+              locationType === key
+                ? "bg-primary/15 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-card"
+            }`}
+          >
+            {label}
+            {key !== "all" && (
+              <span className="ml-1.5 text-xs opacity-60">
+                {key === "remote"
+                  ? contacts.filter((c) => c.recommendation === "HOME").length
+                  : contacts.filter((c) => c.recommendation === "OFFICE" || c.recommendation === "BOTH").length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Column headers */}

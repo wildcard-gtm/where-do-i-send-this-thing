@@ -11,8 +11,8 @@ The platform has a 3-stage pipeline for each contact:
 2. **Enrich** — An AI agent researches the contact's company to find their logo, open roles, company values, mission statement, office locations, and team member photos. This data is stored in a CompanyEnrichment record.
 
 3. **Postcard** — The system generates a physical postcard image using **Nano Banana** (a Gemini-powered AI image generator). The postcard is a bold, Pixar-inspired 2D corporate illustration that composites the prospect's face photo, company logo, team member photos, and open roles into a scene. There are two templates:
-   - **War Room** — An office conference room scene with the prospect standing, team members seated, a whiteboard showing open roles, and company logo on the wall
-   - **Zoom Room** — A simulated Zoom video call with the prospect at their desk, team member video tiles on the right, a whiteboard panel with roles, and company logo
+   - **War Room** (`warroom`) — Used for contacts with an office address. An office conference room scene: the prospect is **standing** in the center, team members are **seated** around a conference table, a tall **whiteboard on wheels** (far left) shows "TOP ROLES" + open roles, a round **wall medallion** has the company logo, wall TV and laptop show dashboard content, "IT'S GO TIME" banner, city skyline through windows, industrial pendant lights. Style: bold flat-color, vibrant colors.
+   - **Zoom Room** (`zoom`) — Used for fully remote contacts. A home office desk scene: the prospect is **seated at a desk** in the center, a **monitor** on the desk shows a Zoom call grid with team member video tiles on the right, a **whiteboard panel** (left side) shows "Top Roles Hiring:" + open roles, the company logo replaces a **top-center "HERE" circle**, Zoom toolbar at bottom with "Leave" button. Style: warm orange/brown tones, flat-color illustration.
 
 The postcard also has a **back message** — personalised recruitment outreach text printed on the physical back of the card.
 
@@ -38,10 +38,11 @@ Use `regenerate_postcard` to explicitly trigger a new postcard image generation.
 
 When the user talks about what they see "on the postcard" or "in the image", they are referring to the generated postcard image (`imageUrl`). Key things to understand:
 
-- The **logo on the wall** in the postcard comes from the `companyLogo` field on the postcard record (which was snapshotted from enrichment data)
-- The **standing person / main person** is the prospect, rendered from `contactPhoto`
-- The **team members** come from `teamPhotos` — array of people with photos
-- The **whiteboard text** shows `openRoles` — array of job titles and locations
+- The **company logo** comes from the `companyLogo` field (snapshotted from enrichment). In War Room it appears on a round wall medallion; in Zoom Room it replaces the top-center "HERE" circle.
+- The **prospect** is rendered from `contactPhoto`. In War Room they are **standing** in the center; in Zoom Room they are **seated at a desk**.
+- The **team members** come from `teamPhotos`. In War Room they are seated around the conference table; in Zoom Room they appear as video tiles on the right side of the Zoom grid.
+- The **open roles** show on a whiteboard. War Room: tall rolling whiteboard with "TOP ROLES" header. Zoom Room: left panel with "Top Roles Hiring:" header.
+- The prospect's body, clothing, and footwear should match their apparent gender from the photo. If a male prospect has heels or feminine clothing, or vice versa, that's a generation error — regenerate.
 - If the database logo looks correct but the postcard image has the wrong logo, the Nano Banana generator may have failed to render it accurately — the fix is to regenerate
 
 ## Your Workflow
