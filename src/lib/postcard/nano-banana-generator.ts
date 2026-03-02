@@ -1,3 +1,15 @@
+/**
+ * Nano Banana Agentic Postcard Generator
+ *
+ * Uses an agentic loop to generate postcard scenes:
+ * 1. Send reference template + all input images in a single pass
+ * 2. Analyze the output against the reference and input images
+ * 3. If issues found, regenerate with descriptive corrections
+ * 4. Repeat until the analysis passes (max 4 attempts)
+ *
+ * Uses Gemini for generation (IMAGE modality) and analysis (TEXT modality).
+ * Returns base64-encoded PNG (no data: prefix).
+ */
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
@@ -15,16 +27,104 @@ export interface NanoBananaInput {
   prospectName?: string;
 }
 
+type ImageData = { data: string; mimeType: string };
+
 // Try Gemini-specific keys first, fall back to Google Search key
 const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY ||
   process.env.GOOGLE_AI_STUDIO ||
   process.env.GOOGLE_SEARCH_API_KEY;
-const MODEL = 'gemini-3.1-flash-image-preview'; // "Nano Banana 2" — confirmed via ListModels
-const API_BASE = 'https://generativelanguage.googleapis.com';
+const IMAGE_MODEL = 'gemini-3.1-flash-image-preview'; // generates images
+const ANALYSIS_MODEL = 'gemini-2.5-flash'; // analyzes images (text-only, faster + cheaper)
+const MAX_ATTEMPTS = 4;
+
+// ─── Gemini API ─────────────────────────────────────────────────────────────
+
+function callGemini(
+  model: string,
+  payload: object,
+): Promise<{ image?: string; text?: string }> {
+  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
+
+  const body = JSON.stringify(payload);
+  const urlPath = `/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+
+  return new Promise((resolve, reject) => {
+    const opts = {
+      hostname: 'generativelanguage.googleapis.com',
+      path: urlPath,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    };
+
+    const req = https.request(opts, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) {
+            reject(new Error(`Gemini API error: ${JSON.stringify(parsed.error)}`));
+            return;
+          }
+          const parts: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }> =
+            parsed.candidates?.[0]?.content?.parts ?? [];
+          const imagePart = parts.find((p) => p.inlineData);
+          const textParts = parts.filter((p) => p.text).map((p) => p.text!).join('\n');
+          resolve({
+            image: imagePart?.inlineData?.data,
+            text: textParts || undefined,
+          });
+        } catch (e) {
+          reject(new Error('Failed to parse Gemini response: ' + (e as Error).message));
+        }
+      });
+    });
+
+    req.on('error', (e) => reject(new Error('Gemini request failed: ' + e.message)));
+    req.write(body);
+    req.end();
+  });
+}
+
+/** Generate an image from a prompt + input images */
+async function generateImage(prompt: string, images: ImageData[]): Promise<string> {
+  const parts: object[] = [
+    { text: prompt },
+    ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
+  ];
+
+  const result = await callGemini(IMAGE_MODEL, {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseModalities: ['IMAGE'] },
+  });
+
+  if (!result.image) throw new Error('No image in Gemini response');
+  return result.image;
+}
+
+/** Analyze an image with text — returns text analysis */
+async function analyzeImage(prompt: string, images: ImageData[]): Promise<string> {
+  const parts: object[] = [
+    { text: prompt },
+    ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
+  ];
+
+  const result = await callGemini(ANALYSIS_MODEL, {
+    contents: [{ role: 'user', parts }],
+    generationConfig: { responseModalities: ['TEXT'] },
+  });
+
+  return result.text ?? '(no analysis returned)';
+}
+
+// ─── Image Fetching ─────────────────────────────────────────────────────────
 
 /** Fetch a remote image URL and return base64 + mimeType */
-async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string } | null> {
+async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
   return new Promise((resolve) => {
     const parsedUrl = new URL(url);
     const lib = parsedUrl.protocol === 'https:' ? https : require('http');
@@ -32,6 +132,7 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
     const req = lib.get(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; postcard-bot/1.0)' },
       timeout: 15000,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     }, (res: any) => {
       // Follow one redirect
       if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
@@ -61,7 +162,7 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 }
 
 /** Read a local template file and return base64 */
-function readLocalImageAsBase64(filePath: string): { data: string; mimeType: string } | null {
+function readLocalImageAsBase64(filePath: string): ImageData | null {
   try {
     const buffer = fs.readFileSync(filePath);
     const ext = path.extname(filePath).toLowerCase();
@@ -72,374 +173,503 @@ function readLocalImageAsBase64(filePath: string): { data: string; mimeType: str
   }
 }
 
-/** Call Gemini image generation API with a base64 input image as context */
-async function callGeminiImageAPI(payload: object): Promise<string> {
-  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
+// ─── Analysis Helpers ───────────────────────────────────────────────────────
 
-  const body = JSON.stringify(payload);
-  const urlPath = `/v1beta/models/${MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+/** Parse issues from analysis text */
+function parseIssues(analysis: string): { pass: boolean; issues: string[] } {
+  const overallMatch = analysis.match(/OVERALL:\s*(PASS|FAIL)/i);
+  const pass = overallMatch?.[1]?.toUpperCase() === 'PASS';
 
-  return new Promise((resolve, reject) => {
-    const opts = {
-      hostname: 'generativelanguage.googleapis.com',
-      path: urlPath,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    };
+  const issues: string[] = [];
+  const issuesSection = analysis.split(/ISSUES:/i)[1];
+  if (issuesSection) {
+    const lines = issuesSection.split('\n').filter((l) => l.trim());
+    for (const line of lines) {
+      const cleaned = line.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^\*+\s*/, '').trim();
+      if (cleaned && cleaned !== 'None' && cleaned !== 'N/A' && cleaned !== '(none)' && cleaned !== '(None)' && cleaned.length > 5) {
+        issues.push(cleaned);
+      }
+    }
+  }
 
-    const req = https.request(opts, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        try {
-          const parsed = JSON.parse(data);
-          if (parsed.error) {
-            reject(new Error(`Gemini API error: ${JSON.stringify(parsed.error)}`));
-            return;
-          }
-          const parts: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }> =
-            parsed.candidates?.[0]?.content?.parts ?? [];
-          const imagePart = parts.find((p) => p.inlineData);
-          if (!imagePart?.inlineData) {
-            reject(new Error('No image in Gemini response. Parts: ' + JSON.stringify(parts.map(p => p.text ?? '[image]'))));
-            return;
-          }
-          resolve(imagePart.inlineData.data); // base64 PNG
-        } catch (e) {
-          reject(new Error('Failed to parse Gemini response: ' + (e as Error).message));
-        }
-      });
-    });
-
-    req.on('error', (e) => reject(new Error('Gemini request failed: ' + e.message)));
-    req.write(body);
-    req.end();
-  });
+  return { pass, issues };
 }
 
-/** Run a single Gemini compositing stage. currentImage is the base64 scene to edit. */
-async function runStage(currentImageBase64: string, prompt: string, extraImages: Array<{ data: string; mimeType: string }> = []): Promise<string> {
-  const parts: object[] = [
-    { text: prompt },
-    { inline_data: { mime_type: 'image/png', data: currentImageBase64 } },
-    ...extraImages.map(img => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
+// ─── Data Loading ───────────────────────────────────────────────────────────
+
+interface PreparedData {
+  reference: ImageData;
+  screen: ImageData | null;
+  prospectImage: ImageData | null;
+  logoImage: ImageData | null;
+  teamImages: ImageData[];
+  rolesText: string;
+}
+
+async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData> {
+  const templatesDir = path.join(process.cwd(), 'public', 'templates');
+  const reference = readLocalImageAsBase64(path.join(templatesDir, 'reference-pose.png'));
+  const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
+  if (!reference) throw new Error('reference-pose.png not found in public/templates/');
+
+  const [prospectImage, logoImage] = await Promise.all([
+    input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
+    input.companyLogoUrl ? fetchImageAsBase64(input.companyLogoUrl) : null,
+  ]);
+
+  const teamImages: ImageData[] = [];
+  if (input.teamPhotoUrls?.length) {
+    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
+    for (const img of fetched) { if (img) teamImages.push(img); }
+  }
+
+  const rolesText = input.openRoles?.length
+    ? input.openRoles.slice(0, 3).map(r => {
+        const title = r.title.length > 25 ? r.title.slice(0, 23) + '...' : r.title;
+        return `  \u2022 ${title}`;
+      }).join('\n')
+    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
+}
+
+async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData> {
+  const templatesDir = path.join(process.cwd(), 'public', 'templates');
+  const reference = readLocalImageAsBase64(path.join(templatesDir, 'zoom-room-reference.png'));
+  const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
+  if (!reference) throw new Error('zoom-room-reference.png not found in public/templates/');
+
+  const [prospectImage, logoImage] = await Promise.all([
+    input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
+    input.companyLogoUrl ? fetchImageAsBase64(input.companyLogoUrl) : null,
+  ]);
+
+  const teamImages: ImageData[] = [];
+  if (input.teamPhotoUrls?.length) {
+    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
+    for (const img of fetched) { if (img) teamImages.push(img); }
+  }
+
+  const rolesText = input.openRoles?.length
+    ? input.openRoles.slice(0, 3).map(r => {
+        const title = r.title.length > 25 ? r.title.slice(0, 23) + '...' : r.title;
+        return `  \u2022 ${title}`;
+      }).join('\n')
+    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
+}
+
+// ─── War Room Prompts ───────────────────────────────────────────────────────
+
+function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: string[]): string {
+  const imageLabels: string[] = ['Image 1 = reference scene (reproduce this layout EXACTLY)'];
+  let imgIdx = 2;
+  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo`); imgIdx++; }
+  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect's face photo`); imgIdx++; }
+  for (let i = 0; i < data.teamImages.length; i++) { imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo`); imgIdx++; }
+  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard screenshot for screens`);
+
+  const corrections = previousIssues?.length
+    ? [
+        '',
+        'CRITICAL CORRECTIONS FROM PREVIOUS ATTEMPT (you MUST fix these):',
+        ...previousIssues.map((issue, i) => `  ${i + 1}. ${issue}`),
+        '',
+      ].join('\n')
+    : '';
+
+  return [
+    `Recreate the reference scene (Image 1) with specific modifications. Output a single complete image.`,
+    ``,
+    `IMAGE LABELS:`,
+    ...imageLabels.map((l) => `  ${l}`),
+    ``,
+    `STYLE: Bold flat-color corporate illustration with clean outlines, vibrant colors, and professional quality — like a Pixar-inspired 2D illustration. Every element must match this style consistently.`,
+    ``,
+    `PRESERVE EXACTLY (do NOT change these):`,
+    `- Room layout, furniture positions, window placement — keep untouched`,
+    `- "IT'S GO TIME" banner — same position, same text`,
+    `- Industrial pendant lights — keep untouched`,
+    `- City skyline through windows — keep untouched`,
+    `- Wooden conference table and chairs — keep untouched`,
+    `- Wide landscape format (3:2 ratio)`,
+    ``,
+    `MODIFICATIONS (change ONLY these, nothing else):`,
+    ``,
+    `1. WHITEBOARD (tall board on wheels, far left):`,
+    `   Restyle only the text on the whiteboard; keep the whiteboard itself untouched.`,
+    `   - Header: "TOP ROLES" in bold`,
+    `   - Below, list these roles in clean handwritten style:`,
+    data.rolesText,
+    `   - Text must be fully legible, within whiteboard bounds, not overflowing`,
+    ``,
+    data.logoImage
+      ? [
+          `2. LOGO: Replace ONLY the round circular medallion on the back wall with the company logo provided.`,
+          `   - Restyle only this one medallion; keep everything else on the wall untouched.`,
+          `   - Maintain the same position and approximate size as the original circle.`,
+          `   - The logo must appear EXACTLY ONCE in the entire image — never duplicate it.`,
+        ].join('\n')
+      : `2. LOGO: Keep the existing wall medallion as-is — do not change it.`,
+    ``,
+    `3. SCREENS: Replace content on the wall TV and laptop with the dashboard screenshot provided.`,
+    `   Restyle only the screen content; keep the TV frame and laptop body untouched.`,
+    ``,
+    data.prospectImage || data.teamImages.length > 0
+      ? [
+          `4. PEOPLE:`,
+          data.prospectImage
+            ? [
+                `   - STANDING PERSON: Preserve the face from the prospect photo. Maintain their facial features`,
+                `     (hair color, hair style, skin tone, facial structure, glasses if any, facial hair if any)`,
+                `     but render in the same flat-color illustration style as the rest of the scene.`,
+                `     Match skin tone consistently on face, neck, hands, arms.`,
+                `     Restyle only the face; keep their pose, clothing, and body position untouched.`,
+              ].join('\n')
+            : `   - STANDING PERSON: Keep exactly as-is — do not change their appearance.`,
+          data.teamImages.length > 0
+            ? [
+                `   - SEATED PEOPLE: Preserve the faces from the ${data.teamImages.length} team member photo(s).`,
+                `     Maintain each person's facial features but render in the same illustration style.`,
+                `     Match skin tone on ALL visible body parts. Restyle only faces; keep poses untouched.`,
+              ].join('\n')
+            : `   - SEATED PEOPLE: Keep all seated people exactly as-is.`,
+          `   - UNCHANGED PEOPLE: Anyone without a reference photo MUST remain EXACTLY as in Image 1 —`,
+          `     same face, same skin tone, same hair, same diversity. Do NOT homogenize or alter them.`,
+          `   - STYLE RULE: ALL people must be rendered in the same bold flat-color illustration style.`,
+          `     Use reference photos ONLY to know what features to draw. Do NOT paste, blend, or reproduce`,
+          `     photos realistically. No photorealistic faces on illustrated bodies.`,
+        ].join('\n')
+      : `4. PEOPLE: Keep all people exactly as they appear in the reference — do not change them.`,
+    corrections,
+    ``,
+    `FINAL CHECKS:`,
+    `- Logo appears EXACTLY ONCE (on the wall medallion only)`,
+    `- Unchanged people preserve their original diversity and appearance`,
+    `- All text is legible and within bounds`,
+    `- Wide landscape output, not square or portrait`,
+    `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
+  ].join('\n');
+}
+
+function buildWarRoomAnalysisPrompt(data: PreparedData): string {
+  const expectedRoles = data.rolesText.replace(/  \u2022 /g, '').split('\n').join(', ');
+
+  const labels: string[] = [
+    'Image 1 = original reference template (the LAYOUT to preserve)',
+    'Image 2 = generated output (the image being reviewed)',
   ];
+  let idx = 3;
+  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should appear ONCE on wall medallion)`); idx++; }
+  if (data.prospectImage) { labels.push(`Image ${idx} = prospect's REAL face photo (standing person should look like THIS, NOT like Image 1's standing person)`); idx++; }
+  for (let i = 0; i < data.teamImages.length; i++) { labels.push(`Image ${idx} = team member ${i + 1} face photo (one seated person should look like THIS)`); idx++; }
 
-  const payload = {
-    contents: [{ role: 'user', parts }],
-    generationConfig: { responseModalities: ['IMAGE'] },
-  };
-
-  return callGeminiImageAPI(payload);
+  return [
+    `You are reviewing a generated postcard image. We took the reference template (Image 1) and asked an AI to modify it. Verify the modifications were done correctly.`,
+    ``,
+    `IMAGES PROVIDED:`,
+    ...labels.map((l) => `  ${l}`),
+    ``,
+    `WHAT WE ASKED: Reproduce Image 1's layout, preserving everything except these specific changes:`,
+    `- Whiteboard text -> "TOP ROLES" + roles: ${expectedRoles}`,
+    data.logoImage ? `- Round wall medallion -> company logo (provided as a separate image)` : `- Wall medallion unchanged`,
+    `- Screen content -> dashboard charts/graphs`,
+    data.prospectImage ? `- Standing person's face -> prospect photo features (intentional replacement — they should NOT match Image 1's standing person)` : ``,
+    data.teamImages.length > 0 ? `- ${data.teamImages.length} seated person(s) -> team member photo features. Other seated people UNCHANGED from template.` : ``,
+    ``,
+    `TARGET STYLE: Bold flat-color corporate illustration with clean outlines — Pixar-inspired 2D style. Every element including faces must match this style.`,
+    ``,
+    `EVALUATE Image 2:`,
+    ``,
+    `1. LAYOUT: Room layout preserved from Image 1? (furniture, windows, "IT'S GO TIME" banner, pendant lights)`,
+    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds?`,
+    data.logoImage
+      ? `3. LOGO: EXACTLY ONE company logo matching the provided logo? Not duplicated on walls or surfaces?`
+      : `3. LOGO: N/A`,
+    `4. SCREENS: Wall TV and laptop show dashboard-like content?`,
+    data.prospectImage
+      ? `5. FACE (STANDING): Does the standing person resemble the prospect photo's features? (They should NOT look like Image 1's original — that was replaced.) Skin tone consistent on face, neck, hands, arms? Face rendered in the same flat-color illustration style as the scene (not photorealistic)?`
+      : `5. FACE (STANDING): N/A`,
+    data.teamImages.length > 0
+      ? `6. FACES (SEATED): Were ${data.teamImages.length} seated person(s) replaced with team photo features? Other seated people UNCHANGED — same face, skin tone, diversity? ALL faces in illustration style (not photorealistic)?`
+      : `6. FACES (SEATED): N/A`,
+    `7. STYLE: Consistent flat-color illustration style throughout? ALL faces (including replaced ones) must be in the same illustration style — clean outlines, flat colors, no photorealistic faces on illustrated bodies. STRICT requirement.`,
+    `8. FORMAT: Wide landscape image?`,
+    ``,
+    `For each check: PASS or FAIL with brief reason.`,
+    `Then:`,
+    `OVERALL: PASS or FAIL`,
+    `ISSUES: Numbered actionable fixes (empty if PASS).`,
+    ``,
+    `CRITICAL RULE FOR ISSUES:`,
+    `The image generator cannot see numbered references like "Image 4".`,
+    `Describe ALL corrections using VISUAL DESCRIPTIONS of the person/thing:`,
+    `BAD: "Replace the standing person with Image 4"`,
+    `GOOD: "The standing person should be a [gender, skin tone, hair color/style, glasses, facial hair, distinguishing features]. Currently it still looks like [describe problem]."`,
+    `Also describe style fixes concretely: "The standing person's face appears photorealistic with smooth gradients — redraw it with flat colors and clean outlines matching the illustration style."`,
+    ``,
+    `The standing person's face SHOULD differ from Image 1 — that's intentional.`,
+  ].filter(Boolean).join('\n');
 }
 
-// ─── Quality Enhancement Prompt ──────────────────────────────────────────────
-// After multiple generative passes, images lose sharpness. This final pass
-// restores crispness without altering content. The model re-renders at full
-// fidelity since it only needs to preserve (not transform) the scene.
+// ─── Zoom Room Prompts ──────────────────────────────────────────────────────
 
-const QUALITY_ENHANCE_PROMPT = [
-  `Enhance the quality of this image. Output the EXACT same image with these improvements:`,
-  ``,
-  `1. SHARPEN all edges — especially facial features, eyes, hairlines, text, and logos`,
-  `2. RESTORE fine detail — skin texture, clothing folds, furniture grain, screen content`,
-  `3. INCREASE contrast slightly — make colors more vibrant and blacks deeper`,
-  `4. CLEAN UP any blurry or smudged areas — every element should look crisp and intentional`,
-  ``,
-  `CRITICAL RULES:`,
-  `- Do NOT change any content, layout, composition, colors, or style`,
-  `- Do NOT move, resize, add, or remove any element`,
-  `- Do NOT alter faces, expressions, poses, or body positions`,
-  `- Do NOT change any text — preserve every word exactly as-is`,
-  `- The output must be pixel-for-pixel identical in CONTENT, just sharper and cleaner`,
-  `- Think of this as a "remaster" — same image, higher fidelity`,
-].join('\n');
+function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: string[]): string {
+  const imageLabels: string[] = ['Image 1 = reference Zoom scene (reproduce EXACTLY)'];
+  let imgIdx = 2;
+  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo`); imgIdx++; }
+  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo`); imgIdx++; }
+  for (let i = 0; i < data.teamImages.length; i++) { imageLabels.push(`Image ${imgIdx} = team member ${i + 1}`); imgIdx++; }
+  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard for monitor screen`);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WAR ROOM
-// ─────────────────────────────────────────────────────────────────────────────
+  const corrections = previousIssues?.length
+    ? '\nCRITICAL FIXES FROM PREVIOUS ATTEMPT:\n' + previousIssues.map((issue, i) => `  ${i + 1}. ${issue}`).join('\n') + '\n'
+    : '';
+
+  return [
+    `Recreate the reference Zoom call scene (Image 1) with specific modifications. Output a single image.`,
+    ``,
+    `IMAGE LABELS:`,
+    ...imageLabels.map((l) => `  ${l}`),
+    ``,
+    `STYLE: Warm-toned flat-color corporate illustration with clean outlines — Pixar-inspired 2D style. Every element must match this style consistently.`,
+    ``,
+    `PRESERVE EXACTLY (do NOT change these):`,
+    `- Zoom UI layout: toolbar at bottom, "Leave" button, participant tiles on right — keep untouched`,
+    `- Warm orange/brown color scheme — keep untouched`,
+    `- Desk setup with monitor, plants, decor — keep untouched`,
+    ``,
+    `MODIFICATIONS (change ONLY these, nothing else):`,
+    ``,
+    `1. LEFT WHITEBOARD PANEL:`,
+    `   Restyle only the text; keep the panel itself untouched.`,
+    `   Header: "Top Roles Hiring:" with these roles:`,
+    data.rolesText,
+    `   Text must be fully legible, within panel bounds, not overflowing.`,
+    ``,
+    data.logoImage
+      ? [
+          `2. LOGO: Replace ONLY the top-center "HERE" circle with the company logo provided.`,
+          `   Restyle only this one circle; keep everything else untouched.`,
+          `   The logo must appear EXACTLY ONCE in the entire image.`,
+        ].join('\n')
+      : `2. LOGO: Keep the "HERE" circle as-is — do not change it.`,
+    ``,
+    `3. MONITOR: Replace desk monitor content with the dashboard screenshot provided.`,
+    `   Restyle only the screen content; keep the monitor frame untouched.`,
+    ``,
+    data.prospectImage
+      ? [
+          `4. CENTER PERSON: Preserve the face from the prospect photo.`,
+          `   Maintain their facial features (hair, skin tone, facial structure, glasses if any)`,
+          `   but render in the same flat-color illustration style as the rest of the scene.`,
+          `   Match skin tone on face, neck, hands. Restyle only the face; keep seated-at-desk pose untouched.`,
+        ].join('\n')
+      : `4. CENTER PERSON: Keep as-is — do not change their appearance.`,
+    ``,
+    data.teamImages.length > 0
+      ? [
+          `5. VIDEO TILES: Preserve the faces from ${data.teamImages.length} team member photo(s).`,
+          `   Maintain each person's facial features but render in the same illustration style.`,
+          `   Unmodified tiles MUST stay exactly as-is — preserve their original diverse appearances.`,
+        ].join('\n')
+      : `5. VIDEO TILES: Keep all as-is — do not change any participant.`,
+    corrections,
+    ``,
+    `FINAL CHECKS:`,
+    `- Logo appears EXACTLY ONCE`,
+    `- Unchanged people preserve their original diversity and appearance`,
+    `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
+    `- All text legible and within bounds`,
+    `- Correct Zoom UI aspect ratio`,
+  ].filter(Boolean).join('\n');
+}
+
+function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
+  const expectedRoles = data.rolesText.replace(/  \u2022 /g, '').split('\n').join(', ');
+
+  const labels: string[] = [
+    'Image 1 = original Zoom reference template (the LAYOUT to preserve)',
+    'Image 2 = generated output (being reviewed)',
+  ];
+  let idx = 3;
+  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace top-center "HERE" circle)`); idx++; }
+  if (data.prospectImage) { labels.push(`Image ${idx} = prospect face photo (center person should look like THIS)`); idx++; }
+  for (let i = 0; i < data.teamImages.length; i++) { labels.push(`Image ${idx} = team member ${i + 1} face photo`); idx++; }
+
+  return [
+    `You are reviewing a generated Zoom Room postcard. We modified the reference template (Image 1). Verify the output (Image 2).`,
+    ``,
+    `IMAGES PROVIDED:`,
+    ...labels.map((l) => `  ${l}`),
+    ``,
+    `WHAT WE ASKED: Preserve Image 1's layout, changing ONLY these:`,
+    `- Whiteboard text -> "Top Roles Hiring:" + roles: ${expectedRoles}`,
+    data.logoImage ? `- Top-center "HERE" circle -> company logo (provided as separate image)` : ``,
+    `- Monitor content -> dashboard`,
+    data.prospectImage ? `- Center person's face -> prospect photo features (intentional — should NOT match Image 1's center person)` : ``,
+    data.teamImages.length > 0 ? `- ${data.teamImages.length} video tile face(s) -> team photo features. Other tiles UNCHANGED.` : ``,
+    ``,
+    `TARGET STYLE: Warm-toned flat-color corporate illustration with clean outlines — Pixar-inspired 2D style.`,
+    ``,
+    `EVALUATE Image 2:`,
+    `1. ZOOM UI: Toolbar, "Leave" button, tiles on right preserved?`,
+    `2. WHITEBOARD: "Top Roles Hiring:" with ${expectedRoles}? Legible, within bounds?`,
+    data.logoImage ? `3. LOGO: Exactly ONE company logo matching the provided logo in top-center?` : `3. LOGO: N/A`,
+    `4. MONITOR: Dashboard content on desk screen?`,
+    data.prospectImage ? `5. CENTER PERSON: Resembles prospect photo features? Should NOT match Image 1's center person. Skin tone consistent? Face in flat-color illustration style (not photorealistic)?` : `5. CENTER: N/A`,
+    data.teamImages.length > 0 ? `6. VIDEO TILES: ${data.teamImages.length} tile(s) replaced with team photo features? Others unchanged and diverse? All faces in illustration style?` : `6. TILES: N/A`,
+    `7. STYLE: Consistent flat-color illustration style? ALL faces (including replaced) must have clean outlines, flat colors — no photorealistic faces on illustrated bodies. STRICT.`,
+    `8. FORMAT: Correct aspect ratio?`,
+    ``,
+    `For each check: PASS or FAIL with brief reason.`,
+    `Then:`,
+    `OVERALL: PASS or FAIL`,
+    `ISSUES: Numbered actionable fixes (empty if PASS).`,
+    ``,
+    `CRITICAL RULE FOR ISSUES:`,
+    `The generator cannot see numbered references. Use VISUAL DESCRIPTIONS:`,
+    `BAD: "Replace center person with Image 4"`,
+    `GOOD: "The center person should be a [gender, skin tone, hair color/style, glasses, distinguishing features]. Currently it looks like [problem]."`,
+    `For style: "The center person's face is photorealistic with smooth gradients — redraw with flat colors and clean outlines."`,
+    ``,
+    `The center person SHOULD differ from Image 1 — that's intentional.`,
+  ].filter(Boolean).join('\n');
+}
+
+// ─── Agentic Generation Loops ───────────────────────────────────────────────
 
 /**
- * Generates a War Room postcard background using staged Gemini compositing.
+ * Generates a War Room postcard using an agentic generate→analyze→correct loop.
  *
- * Stage 1: Replace whiteboard text with real open roles
- * Stage 2 (if logo): Replace the round "HERE" wall medallion with company logo
- * Stage 3: Replace wall screen + laptop screen content with dashboard image
- * Stage 4 (if photos): Replace faces — standing person → prospect, seated → team (LAST to preserve quality)
- * Stage 5: Quality enhancement — sharpen and restore detail lost from multiple model passes
- *
- * Each stage receives the output of the previous as its input image.
- * If a stage fails, the pipeline continues with the previous stage's output.
+ * 1. Sends reference + all input images in a single pass
+ * 2. Analyzes the output against reference and input images
+ * 3. Regenerates with descriptive corrections if issues found
+ * 4. Repeats up to MAX_ATTEMPTS times
  *
  * Returns base64-encoded PNG (no data: prefix).
  */
 export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
-  const templatesDir = path.join(process.cwd(), 'public', 'templates');
-  const referenceImage = readLocalImageAsBase64(path.join(templatesDir, 'reference-pose.png'));
-  const screenImage = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
+  const data = await prepareWarRoomData(input);
+  let currentImage: string | null = null;
+  let previousIssues: string[] = [];
 
-  if (!referenceImage) throw new Error('reference-pose.png not found in public/templates/');
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    // Build image array: reference + logo + prospect + team + screen
+    const images: ImageData[] = [data.reference];
+    if (data.logoImage) images.push(data.logoImage);
+    if (data.prospectImage) images.push(data.prospectImage);
+    for (const tp of data.teamImages) images.push(tp);
+    if (data.screen) images.push(data.screen);
 
-  // Fetch prospect photo
-  const prospectImage = input.prospectPhotoUrl ? await fetchImageAsBase64(input.prospectPhotoUrl) : null;
-
-  // Fetch team photos (up to 4)
-  const teamImages: Array<{ data: string; mimeType: string }> = [];
-  if (input.teamPhotoUrls?.length) {
-    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
-    for (const img of fetched) { if (img) teamImages.push(img); }
-  }
-
-  // Fetch company logo
-  const logoImage = input.companyLogoUrl ? await fetchImageAsBase64(input.companyLogoUrl) : null;
-
-  // Build role list — short titles only, max 3
-  const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map(r => {
-        // Truncate long titles to keep whiteboard readable
-        const title = r.title.length > 35 ? r.title.slice(0, 33) + '…' : r.title;
-        return `• ${title}`;
-      }).join('\n')
-    : '• Software Engineer\n• Product Manager\n• Data Analyst';
-
-  // Start with the reference image
-  let current = referenceImage.data;
-
-  // ── Stage 1: Whiteboard text ─────────────────────────────────────────────
-  const boardPrompt = [
-    `This is a cartoonish illustrated conference room scene. Your ONLY task is to update the whiteboard text — do NOT change anything else (no people, no furniture, no screens, no logo, no banner).`,
-    ``,
-    `WHITEBOARD (far left of the image, tall board on wheels):`,
-    `- The header must read exactly: "TOP ROLES" — bold, clear, fully visible, not cut off`,
-    `- Below the header, list these roles in clean handwritten style, each on its own line:`,
-    rolesText,
-    `- The text must be clearly legible. Do not let any text run off the edges of the whiteboard.`,
-    `- Keep the same whiteboard position, size, and color as in the current image.`,
-    ``,
-    `CRITICAL: Change ONLY the whiteboard text. Do not touch people, faces, screens, logo, banner, table, or any other element.`,
-  ].join('\n');
-
-  try {
-    current = await runStage(current, boardPrompt);
-  } catch (e) {
-    console.error('War Room Stage 1 (whiteboard) failed, continuing:', (e as Error).message);
-  }
-
-  // ── Stage 2: Logo (only if we have one) ──────────────────────────────────
-  if (logoImage) {
-    const logoPrompt = [
-      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the round circular wall medallion/clock on the back wall with the company logo shown in Image 2 — do NOT change anything else.`,
-      ``,
-      `LOGO MEDALLION: On the back-right wall there is a round circular element (currently showing "HERE" text or a clock shape). Replace the entire content of that circle with the company logo from Image 2. Keep the circle in exactly the same position and same size on the wall. The logo should fill the circle cleanly.`,
-      ``,
-      `CRITICAL: Change ONLY the round wall medallion. Do not touch people, whiteboard, screens, banner, furniture, or any other element.`,
-    ].join('\n');
-
-    try {
-      current = await runStage(current, logoPrompt, [logoImage]);
-    } catch (e) {
-      console.error('War Room Stage 2 (logo) failed, continuing:', (e as Error).message);
+    let prompt: string;
+    if (currentImage && previousIssues.length > 0) {
+      // Include the previous output so the model can see what went wrong
+      images.push({ data: currentImage, mimeType: 'image/png' });
+      prompt = buildWarRoomGenerationPrompt(data, previousIssues) +
+        '\n\nThe LAST image provided is your previous attempt — study what went wrong and fix it.';
+    } else {
+      prompt = buildWarRoomGenerationPrompt(data);
     }
-  }
 
-  // ── Stage 3: Screen content ───────────────────────────────────────────────
-  if (screenImage) {
-    const screenPrompt = [
-      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the content shown on the screens — do NOT change anything else (no people, no whiteboard, no logo, no furniture).`,
-      ``,
-      `SCREENS: There are two screens visible in the scene:`,
-      `1. The large wall-mounted TV/monitor on the back-right wall`,
-      `2. The laptop or monitor screen visible on or near the table`,
-      `Replace the content displayed on BOTH screens with the dashboard image shown in Image 2. The screens stay in their exact same positions — only their displayed content changes.`,
-      ``,
-      `CRITICAL: Change ONLY what is shown on the screens. Do not touch people, whiteboard text, logo medallion, banner, or furniture.`,
-    ].join('\n');
+    console.log(`[NanoBanana] War Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    currentImage = await generateImage(prompt, images);
 
-    try {
-      current = await runStage(current, screenPrompt, [screenImage]);
-    } catch (e) {
-      console.error('War Room Stage 3 (screens) failed, continuing:', (e as Error).message);
+    // Skip analysis on last attempt — use whatever we got
+    if (attempt === MAX_ATTEMPTS) {
+      console.log('[NanoBanana] War Room max attempts reached, using last output');
+      break;
     }
-  }
 
-  // ── Stage 4: Faces LAST (only if we have at least one photo) ─────────────
-  // Faces go last so they pass through the fewest model iterations, preserving
-  // maximum fidelity on the most important visual element.
-  const hasPhotos = prospectImage || teamImages.length > 0;
-  if (hasPhotos) {
-    const faceExtras: Array<{ data: string; mimeType: string }> = [];
-    if (prospectImage) faceExtras.push(prospectImage);
-    for (const img of teamImages) faceExtras.push(img);
+    // Analyze: pass all reference images so analyzer knows what to expect
+    const analysisImages: ImageData[] = [
+      data.reference,
+      { data: currentImage, mimeType: 'image/png' },
+    ];
+    if (data.logoImage) analysisImages.push(data.logoImage);
+    if (data.prospectImage) analysisImages.push(data.prospectImage);
+    for (const tp of data.teamImages) analysisImages.push(tp);
 
-    const facePrompt = [
-      `This is a cartoonish illustrated conference room scene. Your ONLY task is to replace the faces and appearance of people — do NOT change anything else in the image (no furniture, no text, no backgrounds, no colors, no layout).`,
-      ``,
-      prospectImage
-        ? `STANDING PERSON: The ONE person standing near the head of the table — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features precisely. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match the reference photo — the entire person should look consistent, not just the face. Keep the same standing pose. Render in the same cartoonish style as the rest of the image.`
-        : `STANDING PERSON: Keep exactly as-is.`,
-      ``,
-      teamImages.length > 0
-        ? `SEATED PEOPLE: Replace the faces of the ${teamImages.length} seated person(s) around the table using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`} as references, one photo per person. Match each person's exact skin tone, hair, and facial features. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match each reference photo. Keep all seated positions exactly the same.`
-        : `SEATED PEOPLE: Keep all seated people exactly as-is.`,
-      ``,
-      `CRITICAL: Change ONLY the faces/appearances of people and their visible skin. Do not touch the whiteboard, text, screens, logo, banner, furniture, or background.`,
-    ].join('\n');
+    const analysisPrompt = buildWarRoomAnalysisPrompt(data);
+    const analysis = await analyzeImage(analysisPrompt, analysisImages);
+    const { pass, issues } = parseIssues(analysis);
 
-    try {
-      current = await runStage(current, facePrompt, faceExtras);
-    } catch (e) {
-      console.error('War Room Stage 4 (faces) failed, continuing:', (e as Error).message);
+    if (pass) {
+      console.log(`[NanoBanana] War Room PASSED on attempt ${attempt}`);
+      break;
     }
+
+    console.log(`[NanoBanana] War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
+    previousIssues = issues;
   }
 
-  // ── Stage 5: Quality enhancement ─────────────────────────────────────────
-  // After multiple model passes, the image loses sharpness. This final pass
-  // restores clarity without altering any content.
-  try {
-    current = await runStage(current, QUALITY_ENHANCE_PROMPT);
-  } catch (e) {
-    console.error('War Room Stage 5 (quality) failed, using previous output:', (e as Error).message);
-  }
-
-  return current;
+  if (!currentImage) throw new Error('War Room generation produced no image');
+  return currentImage;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ZOOM ROOM
-// ─────────────────────────────────────────────────────────────────────────────
-
 /**
- * Generates a Zoom Room postcard background using staged Gemini compositing.
+ * Generates a Zoom Room postcard using an agentic generate→analyze→correct loop.
  *
- * Stage 1: Replace left whiteboard roles text
- * Stage 2 (if logo): Replace round "HERE" circle with company logo
- * Stage 3: Replace monitor screen content with dashboard image
- * Stage 4 (if photos): Replace center person face → prospect, tile faces → team (LAST to preserve quality)
- * Stage 5: Quality enhancement — sharpen and restore detail
- *
+ * Same pattern as War Room but with Zoom-specific prompts and layout.
  * Returns base64-encoded PNG (no data: prefix).
  */
 export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promise<string> {
   if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
-  const templatesDir = path.join(process.cwd(), 'public', 'templates');
-  const referenceImage = readLocalImageAsBase64(path.join(templatesDir, 'zoom-room-reference.png'));
-  const screenImage = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
+  const data = await prepareZoomRoomData(input);
+  let currentImage: string | null = null;
+  let previousIssues: string[] = [];
 
-  if (!referenceImage) throw new Error('zoom-room-reference.png not found in public/templates/');
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const images: ImageData[] = [data.reference];
+    if (data.logoImage) images.push(data.logoImage);
+    if (data.prospectImage) images.push(data.prospectImage);
+    for (const tp of data.teamImages) images.push(tp);
+    if (data.screen) images.push(data.screen);
 
-  const prospectImage = input.prospectPhotoUrl ? await fetchImageAsBase64(input.prospectPhotoUrl) : null;
-
-  const teamImages: Array<{ data: string; mimeType: string }> = [];
-  if (input.teamPhotoUrls?.length) {
-    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
-    for (const img of fetched) { if (img) teamImages.push(img); }
-  }
-
-  const logoImage = input.companyLogoUrl ? await fetchImageAsBase64(input.companyLogoUrl) : null;
-
-  const rolesText = input.openRoles?.length
-    ? input.openRoles.slice(0, 3).map(r => {
-        const title = r.title.length > 35 ? r.title.slice(0, 33) + '…' : r.title;
-        return `• ${title}`;
-      }).join('\n')
-    : '• Software Engineer\n• Product Manager\n• Data Analyst';
-
-  let current = referenceImage.data;
-
-  // ── Stage 1: Whiteboard roles ─────────────────────────────────────────────
-  const boardPrompt = [
-    `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to update the text on the left-side whiteboard/panel — do NOT change anything else.`,
-    ``,
-    `LEFT PANEL (whiteboard on the left side of the screen):`,
-    `- The header must read exactly: "Top Roles Hiring:" — bold, clear, fully visible`,
-    `- Below the header, list these roles in clean style, each on its own line:`,
-    rolesText,
-    `- All text must be clearly legible and fully contained within the panel. Do not let text run off the edges.`,
-    `- Keep the panel in exactly the same position and size.`,
-    ``,
-    `CRITICAL: Change ONLY the left panel text. Do not touch people, faces, logo circle, monitor screen, Zoom toolbar, or any other element.`,
-  ].join('\n');
-
-  try {
-    current = await runStage(current, boardPrompt);
-  } catch (e) {
-    console.error('Zoom Room Stage 1 (whiteboard) failed, continuing:', (e as Error).message);
-  }
-
-  // ── Stage 2: Logo ─────────────────────────────────────────────────────────
-  if (logoImage) {
-    const logoPrompt = [
-      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the round circle at the top-center of the screen with the company logo shown in Image 2 — do NOT change anything else.`,
-      ``,
-      `LOGO CIRCLE: At the top-center of the Zoom screen there is a round circle currently showing "HERE" text. Replace the content inside that circle with the company logo from Image 2. Keep the circle in exactly the same position and size. The logo should fill the circle cleanly.`,
-      ``,
-      `CRITICAL: Change ONLY the top-center circle. Do not touch people, whiteboard panel, monitor screen, Zoom toolbar, or any other element.`,
-    ].join('\n');
-
-    try {
-      current = await runStage(current, logoPrompt, [logoImage]);
-    } catch (e) {
-      console.error('Zoom Room Stage 2 (logo) failed, continuing:', (e as Error).message);
+    let prompt: string;
+    if (currentImage && previousIssues.length > 0) {
+      images.push({ data: currentImage, mimeType: 'image/png' });
+      prompt = buildZoomRoomGenerationPrompt(data, previousIssues) +
+        '\n\nThe LAST image provided is your previous attempt — study what went wrong and fix it.';
+    } else {
+      prompt = buildZoomRoomGenerationPrompt(data);
     }
-  }
 
-  // ── Stage 3: Monitor screen ───────────────────────────────────────────────
-  if (screenImage) {
-    const screenPrompt = [
-      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the content shown on the monitor/laptop screen on the desk — do NOT change anything else.`,
-      ``,
-      `MONITOR SCREEN: The person at the desk has a monitor/laptop screen visible. Replace what is displayed on that screen with the dashboard image shown in Image 2. The monitor stays in the exact same position — only its displayed content changes.`,
-      ``,
-      `CRITICAL: Change ONLY the monitor screen content. Do not touch people, whiteboard panel, logo circle, Zoom toolbar, video tiles, or any other element.`,
-    ].join('\n');
+    console.log(`[NanoBanana] Zoom Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    currentImage = await generateImage(prompt, images);
 
-    try {
-      current = await runStage(current, screenPrompt, [screenImage]);
-    } catch (e) {
-      console.error('Zoom Room Stage 3 (screen) failed, continuing:', (e as Error).message);
+    // Skip analysis on last attempt
+    if (attempt === MAX_ATTEMPTS) {
+      console.log('[NanoBanana] Zoom Room max attempts reached, using last output');
+      break;
     }
-  }
 
-  // ── Stage 4: Faces LAST (only if we have at least one photo) ─────────────
-  const hasPhotos = prospectImage || teamImages.length > 0;
-  if (hasPhotos) {
-    const faceExtras: Array<{ data: string; mimeType: string }> = [];
-    if (prospectImage) faceExtras.push(prospectImage);
-    for (const img of teamImages) faceExtras.push(img);
+    // Analyze with all reference images
+    const analysisImages: ImageData[] = [
+      data.reference,
+      { data: currentImage, mimeType: 'image/png' },
+    ];
+    if (data.logoImage) analysisImages.push(data.logoImage);
+    if (data.prospectImage) analysisImages.push(data.prospectImage);
+    for (const tp of data.teamImages) analysisImages.push(tp);
 
-    const facePrompt = [
-      `This is a cartoonish illustrated Zoom video call scene. Your ONLY task is to replace the faces and appearance of people — do NOT change anything else (no text, no layout, no UI, no backgrounds).`,
-      ``,
-      prospectImage
-        ? `CENTER PERSON: The person sitting at the desk in the center of the screen — replace their face and appearance with the person shown in Image 2. Match their exact skin tone, hair color, hair style, and facial features. IMPORTANT: Also update the skin tone on ALL visible body parts (neck, hands, arms) to match the reference photo — the entire person should look consistent, not just the face. Keep the same seated-at-desk pose. Render in the same cartoonish style.`
-        : `CENTER PERSON: Keep exactly as-is.`,
-      ``,
-      teamImages.length > 0
-        ? `VIDEO TILES: Replace the participant faces in the ${teamImages.length} right-side video call tile(s) using Image${faceExtras.length > 1 ? `s ${prospectImage ? 3 : 2}–${(prospectImage ? 2 : 1) + teamImages.length}` : ` ${prospectImage ? 3 : 2}`}. Match each person's skin tone, hair, and facial features. IMPORTANT: Also update visible skin tone on neck/hands to match each reference photo. Keep the tile grid layout exactly as-is.`
-        : `VIDEO TILES: Keep all participant tiles exactly as-is.`,
-      ``,
-      `CRITICAL: Change ONLY faces/appearances of people and their visible skin. Do not touch the whiteboard panel, logo circle, monitor screen, Zoom UI toolbar, or any text.`,
-    ].join('\n');
+    const analysisPrompt = buildZoomRoomAnalysisPrompt(data);
+    const analysis = await analyzeImage(analysisPrompt, analysisImages);
+    const { pass, issues } = parseIssues(analysis);
 
-    try {
-      current = await runStage(current, facePrompt, faceExtras);
-    } catch (e) {
-      console.error('Zoom Room Stage 4 (faces) failed, continuing:', (e as Error).message);
+    if (pass) {
+      console.log(`[NanoBanana] Zoom Room PASSED on attempt ${attempt}`);
+      break;
     }
+
+    console.log(`[NanoBanana] Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
+    previousIssues = issues;
   }
 
-  // ── Stage 5: Quality enhancement ─────────────────────────────────────────
-  try {
-    current = await runStage(current, QUALITY_ENHANCE_PROMPT);
-  } catch (e) {
-    console.error('Zoom Room Stage 5 (quality) failed, using previous output:', (e as Error).message);
-  }
-
-  return current;
+  if (!currentImage) throw new Error('Zoom Room generation produced no image');
+  return currentImage;
 }
