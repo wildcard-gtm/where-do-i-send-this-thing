@@ -4,6 +4,9 @@
  * POST /api/corrections/chat
  * Body: { contactId, stage, message, history[], imageData?, imageMediaType? }
  * Response: text/event-stream with CorrectionEvent payloads
+ *
+ * Always loads ALL context (scan + enrich + postcard) regardless of stage,
+ * so the agent can freely edit any field.
  */
 
 import { getSession } from '@/lib/auth';
@@ -49,11 +52,11 @@ export async function POST(request: Request) {
 
   const teamUserIds = await getTeamUserIds(user);
 
-  // Load contact with relevant relations based on stage
+  // Always load ALL relations — agent can edit any stage
   const contact = await prisma.contact.findFirst({
     where: { id: contactId, userId: { in: teamUserIds } },
     include: {
-      job: stage === 'scan' ? {
+      job: {
         select: {
           id: true,
           result: true,
@@ -64,16 +67,16 @@ export async function POST(request: Request) {
             select: { type: true, data: true, iteration: true },
           },
         },
-      } : false,
-      companyEnrichments: stage === 'enrich' ? {
+      },
+      companyEnrichments: {
         where: { isLatest: true },
         take: 1,
-      } : false,
-      postcards: stage === 'postcard' ? {
+      },
+      postcards: {
         orderBy: { updatedAt: 'desc' as const },
         take: 1,
         include: { references: true },
-      } : false,
+      },
     },
   });
 
@@ -81,7 +84,7 @@ export async function POST(request: Request) {
     return new Response('Contact not found', { status: 404 });
   }
 
-  // Build CorrectionContext
+  // Build full CorrectionContext — always includes everything available
   const context: CorrectionContext = {
     contactId: contact.id,
     contact: {
@@ -100,89 +103,86 @@ export async function POST(request: Request) {
     },
   };
 
-  // Stage-specific context
-  if (stage === 'scan' && contact.job) {
+  // Scan context
+  if (contact.job) {
     const job = contact.job as typeof contact.job & {
       events?: Array<{ type: string; data: string; iteration: number | null }>;
     };
     context.jobId = job.id;
     context.jobResult = job.result ? JSON.parse(job.result) : null;
 
-    // Build research log from agent events
     if (job.events?.length) {
       context.researchLog = buildResearchLogFromEvents(job.events);
     }
   }
 
-  if (stage === 'enrich') {
-    const enrichment = (contact.companyEnrichments as Array<{
-      id: string;
-      companyName: string;
-      companyLogo: string | null;
-      openRoles: unknown;
-      companyValues: unknown;
-      companyMission: string | null;
-      officeLocations: unknown;
-      teamPhotos: unknown;
-    }>)?.[0];
-    if (enrichment) {
-      context.enrichmentId = enrichment.id;
-      context.enrichment = {
-        id: enrichment.id,
-        companyName: enrichment.companyName,
-        companyLogo: enrichment.companyLogo,
-        openRoles: enrichment.openRoles,
-        companyValues: enrichment.companyValues,
-        companyMission: enrichment.companyMission,
-        officeLocations: enrichment.officeLocations,
-        teamPhotos: enrichment.teamPhotos,
-      };
-    }
+  // Enrich context
+  const enrichment = (contact.companyEnrichments as Array<{
+    id: string;
+    companyName: string;
+    companyLogo: string | null;
+    openRoles: unknown;
+    companyValues: unknown;
+    companyMission: string | null;
+    officeLocations: unknown;
+    teamPhotos: unknown;
+  }>)?.[0];
+  if (enrichment) {
+    context.enrichmentId = enrichment.id;
+    context.enrichment = {
+      id: enrichment.id,
+      companyName: enrichment.companyName,
+      companyLogo: enrichment.companyLogo,
+      openRoles: enrichment.openRoles,
+      companyValues: enrichment.companyValues,
+      companyMission: enrichment.companyMission,
+      officeLocations: enrichment.officeLocations,
+      teamPhotos: enrichment.teamPhotos,
+    };
   }
 
-  if (stage === 'postcard') {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const postcard = ((contact.postcards as any) as Array<{
-      id: string;
-      template: string;
-      status: string;
-      backMessage: string | null;
-      companyLogo: string | null;
-      openRoles: unknown;
-      companyValues: unknown;
-      companyMission: string | null;
-      contactName: string;
-      contactTitle: string | null;
-      contactPhoto: string | null;
-      teamPhotos: unknown;
-      deliveryAddress: string | null;
-      imageUrl: string | null;
-      references: Array<{ id: string; label: string; imageUrl: string }>;
-    }>)?.[0];
-    if (postcard) {
-      context.postcardId = postcard.id;
-      context.postcard = {
-        id: postcard.id,
-        template: postcard.template,
-        status: postcard.status,
-        backMessage: postcard.backMessage,
-        companyLogo: postcard.companyLogo,
-        openRoles: postcard.openRoles,
-        companyValues: postcard.companyValues,
-        companyMission: postcard.companyMission,
-        contactName: postcard.contactName,
-        contactTitle: postcard.contactTitle,
-        contactPhoto: postcard.contactPhoto,
-        teamPhotos: postcard.teamPhotos,
-        deliveryAddress: postcard.deliveryAddress,
-        imageUrl: postcard.imageUrl,
-      };
-      context.referenceImages = postcard.references?.map((r) => ({
-        id: r.id,
-        label: r.label,
-        imageUrl: r.imageUrl,
-      }));
-    }
+  // Postcard context
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const postcard = ((contact.postcards as any) as Array<{
+    id: string;
+    template: string;
+    status: string;
+    backMessage: string | null;
+    companyLogo: string | null;
+    openRoles: unknown;
+    companyValues: unknown;
+    companyMission: string | null;
+    contactName: string;
+    contactTitle: string | null;
+    contactPhoto: string | null;
+    teamPhotos: unknown;
+    deliveryAddress: string | null;
+    imageUrl: string | null;
+    references: Array<{ id: string; label: string; imageUrl: string }>;
+  }>)?.[0];
+  if (postcard) {
+    context.postcardId = postcard.id;
+    context.postcard = {
+      id: postcard.id,
+      template: postcard.template,
+      status: postcard.status,
+      backMessage: postcard.backMessage,
+      companyLogo: postcard.companyLogo,
+      openRoles: postcard.openRoles,
+      companyValues: postcard.companyValues,
+      companyMission: postcard.companyMission,
+      contactName: postcard.contactName,
+      contactTitle: postcard.contactTitle,
+      contactPhoto: postcard.contactPhoto,
+      teamPhotos: postcard.teamPhotos,
+      deliveryAddress: postcard.deliveryAddress,
+      imageUrl: postcard.imageUrl,
+    };
+    context.referenceImages = postcard.references?.map((r) => ({
+      id: r.id,
+      label: r.label,
+      imageUrl: r.imageUrl,
+    }));
   }
 
   // Build agent input

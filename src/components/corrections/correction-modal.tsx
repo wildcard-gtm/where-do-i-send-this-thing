@@ -22,6 +22,7 @@ interface ChatMsg {
   toolCalls?: Array<{ tool: string; status: "running" | "done" }>;
   preview?: { markdown: string; changes: Record<string, unknown>; explanation: string };
   applied?: boolean;
+  regenerating?: boolean;
 }
 
 // History entry for API (minimal shape)
@@ -210,6 +211,15 @@ export default function CorrectionModal({
                     setMessages((prev) =>
                       prev.map((m) =>
                         m.id === assistantId ? { ...m, applied: true } : m
+                      )
+                    );
+                    onApplied?.();
+                    break;
+                  }
+                  case "regenerating": {
+                    setMessages((prev) =>
+                      prev.map((m) =>
+                        m.id === assistantId ? { ...m, regenerating: true } : m
                       )
                     );
                     onApplied?.();
@@ -468,23 +478,34 @@ export default function CorrectionModal({
                         <span className="text-xs font-medium text-success">Changes applied successfully</span>
                       </div>
                     )}
+
+                    {/* Regenerating indicator */}
+                    {msg.regenerating && (
+                      <div className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-2 flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                        <span className="text-xs font-medium text-primary">Postcard queued for regeneration</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
             </div>
           ))}
 
-          {sending && messages[messages.length - 1]?.role === "user" && (
-            <div className="flex justify-start">
-              <div className="bg-card rounded-xl rounded-bl-sm px-4 py-3 shadow-sm">
-                <div className="flex gap-1.5">
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <div className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+          {sending && (() => {
+            const last = messages[messages.length - 1];
+            const isWaiting = last?.role === "user" || (last?.role === "assistant" && !last.content && (!last.toolCalls || last.toolCalls.length === 0));
+            return isWaiting ? (
+              <div className="flex justify-start">
+                <div className="bg-card rounded-xl rounded-bl-sm px-4 py-3 shadow-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                    <span className="text-xs text-muted-foreground">Thinking...</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            ) : null;
+          })()}
 
           <div ref={bottomRef} />
         </div>
@@ -560,9 +581,10 @@ function humanizeToolName(name: string): string {
     fetch_company_logo: "Fetching logo...",
     fetch_url: "Reading page...",
     scrape_linkedin_profile: "Checking LinkedIn...",
-    view_current_record: "Viewing record...",
+    view_current_record: "Reviewing data...",
     preview_changes: "Preparing preview...",
     apply_changes: "Applying changes...",
+    regenerate_postcard: "Regenerating postcard...",
   };
   return map[name] || name.replace(/_/g, " ") + "...";
 }

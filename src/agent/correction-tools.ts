@@ -1,8 +1,8 @@
 /**
  * Correction Agent — Tool definitions and dispatch.
  *
- * Three tool sets (scan / enrich / postcard) plus common tools
- * (view_current_record, preview_changes, apply_changes).
+ * All tools are available regardless of which stage the user opened from.
+ * The agent can freely edit scan, enrichment, and postcard data.
  */
 
 import type { ToolDefinition, ToolResult } from './types';
@@ -73,59 +73,66 @@ export interface CorrectionContext {
     deliveryAddress: string | null;
     imageUrl: string | null;
   } | null;
-  // Reference images (postcard stage)
+  // Reference images
   referenceImages?: Array<{ id: string; label: string; imageUrl: string }>;
 }
 
-// ─── Common Tools ───────────────────────────────────────────────────────────
+// ─── Tool Definitions ──────────────────────────────────────────────────────
 
-const VIEW_CURRENT_RECORD: ToolDefinition = {
-  name: 'view_current_record',
-  description:
-    'View the current data stored for this contact at the stage being corrected. Returns all relevant fields.',
-  input_schema: { type: 'object', properties: {}, required: [] },
-};
-
-const PREVIEW_CHANGES: ToolDefinition = {
-  name: 'preview_changes',
-  description:
-    'Generate a preview of proposed changes. Shows current vs proposed values. You MUST call this before apply_changes so the user can review.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      changes: {
-        type: 'object',
-        description:
-          'Object mapping field names to their new values. Only include fields that are changing.',
-      },
-      explanation: {
-        type: 'string',
-        description: 'Brief explanation of why these changes are correct.',
-      },
-    },
-    required: ['changes', 'explanation'],
+const ALL_TOOLS: ToolDefinition[] = [
+  // ── Common ──
+  {
+    name: 'view_current_record',
+    description:
+      'View ALL current data for this contact across all stages — scan results, enrichment data, and postcard data. Returns everything we have.',
+    input_schema: { type: 'object', properties: {}, required: [] },
   },
-};
-
-const APPLY_CHANGES: ToolDefinition = {
-  name: 'apply_changes',
-  description:
-    'Apply the previously previewed changes to the database. Only call this AFTER the user has explicitly approved the preview.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      confirmed: {
-        type: 'boolean',
-        description: 'Must be true. Set to false if the user rejected the changes.',
+  {
+    name: 'preview_changes',
+    description:
+      'Generate a preview of proposed changes. Shows current vs proposed values. You MUST call this before apply_changes so the user can review. Specify which record to update: "scan" (contact fields), "enrich" (enrichment fields), or "postcard" (postcard fields).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        target: {
+          type: 'string',
+          enum: ['scan', 'enrich', 'postcard'],
+          description: 'Which record to update: "scan" for contact fields, "enrich" for enrichment, "postcard" for postcard.',
+        },
+        changes: {
+          type: 'object',
+          description: 'Object mapping field names to their new values. Only include fields that are changing.',
+        },
+        explanation: {
+          type: 'string',
+          description: 'Brief explanation of why these changes are correct.',
+        },
       },
+      required: ['target', 'changes', 'explanation'],
     },
-    required: ['confirmed'],
   },
-};
-
-// ─── Scan Tools ─────────────────────────────────────────────────────────────
-
-const SCAN_TOOLS: ToolDefinition[] = [
+  {
+    name: 'apply_changes',
+    description:
+      'Apply the previously previewed changes to the database. Only call this AFTER the user has explicitly approved the preview.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        confirmed: {
+          type: 'boolean',
+          description: 'Must be true. Set to false if the user rejected the changes.',
+        },
+      },
+      required: ['confirmed'],
+    },
+  },
+  {
+    name: 'regenerate_postcard',
+    description:
+      'Trigger regeneration of the postcard image using the current data. Use this after updating visual fields (logo, photo, roles) or when the user says the generated image looks wrong. The postcard will be queued for regeneration and a new image will be created.',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  // ── Research Tools ──
   {
     name: 'search_person_address',
     description:
@@ -173,7 +180,7 @@ const SCAN_TOOLS: ToolDefinition[] = [
   },
   {
     name: 'search_web',
-    description: 'Search the web for information about a person, company, or address.',
+    description: 'Search the web for information about a person, company, address, or anything else.',
     input_schema: {
       type: 'object',
       properties: {
@@ -183,33 +190,16 @@ const SCAN_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
   },
-];
-
-// ─── Enrich Tools ───────────────────────────────────────────────────────────
-
-const ENRICH_TOOLS: ToolDefinition[] = [
   {
     name: 'fetch_company_logo',
     description:
-      'Fetch company logo by domain. Tries Hunter.io, then Brandfetch, then Logo.dev.',
+      'Fetch company logo by domain. Tries multiple logo services.',
     input_schema: {
       type: 'object',
       properties: {
         domain: { type: 'string', description: 'Company domain (e.g. "stripe.com")' },
       },
       required: ['domain'],
-    },
-  },
-  {
-    name: 'search_web',
-    description: 'Search the web for company information, roles, values, etc.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-        num_results: { type: 'number', description: 'Number of results (default: 5)' },
-      },
-      required: ['query'],
     },
   },
   {
@@ -237,38 +227,17 @@ const ENRICH_TOOLS: ToolDefinition[] = [
   },
 ];
 
-// ─── Postcard Tools ─────────────────────────────────────────────────────────
+// ─── Public API ─────────────────────────────────────────────────────────
 
-const POSTCARD_TOOLS: ToolDefinition[] = [
-  {
-    name: 'search_web',
-    description: 'Search the web for reference material.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-        num_results: { type: 'number', description: 'Number of results (default: 5)' },
-      },
-      required: ['query'],
-    },
-  },
-];
-
-// ─── Public API ─────────────────────────────────────────────────────────────
-
-export function getCorrectionTools(stage: CorrectionStage): ToolDefinition[] {
-  const stageTools =
-    stage === 'scan' ? SCAN_TOOLS :
-    stage === 'enrich' ? ENRICH_TOOLS :
-    POSTCARD_TOOLS;
-
-  return [...stageTools, VIEW_CURRENT_RECORD, PREVIEW_CHANGES, APPLY_CHANGES];
+export function getCorrectionTools(_stage: CorrectionStage): ToolDefinition[] {
+  return ALL_TOOLS;
 }
 
 // ─── Tool Execution ─────────────────────────────────────────────────────────
 
 export interface CorrectionToolState {
   pendingChanges: Record<string, unknown> | null;
+  pendingTarget: CorrectionStage | null;
   pendingExplanation: string | null;
   applied: boolean;
 }
@@ -277,22 +246,25 @@ export async function executeCorrectionTool(
   toolName: string,
   args: Record<string, unknown>,
   context: CorrectionContext,
-  stage: CorrectionStage,
+  _stage: CorrectionStage,
   state: CorrectionToolState,
 ): Promise<{ result: ToolResult; stateUpdate?: Partial<CorrectionToolState> }> {
   switch (toolName) {
     // ── Common ────────────────────────────────────────────
 
     case 'view_current_record':
-      return { result: viewCurrentRecord(context, stage) };
+      return { result: viewCurrentRecord(context) };
 
     case 'preview_changes':
-      return previewChanges(args, context, stage);
+      return previewChanges(args, context);
 
     case 'apply_changes':
-      return applyChanges(args, context, stage, state);
+      return applyChanges(args, context, state);
 
-    // ── Scan ──────────────────────────────────────────────
+    case 'regenerate_postcard':
+      return regeneratePostcard(context);
+
+    // ── Research Tools ──────────────────────────────────────
 
     case 'search_person_address':
       return {
@@ -332,8 +304,6 @@ export async function executeCorrectionTool(
           (args.num_results as number | undefined) ?? 5,
         ),
       };
-
-    // ── Enrich ────────────────────────────────────────────
 
     case 'fetch_company_logo': {
       const domain = args.domain as string;
@@ -380,76 +350,72 @@ export async function executeCorrectionTool(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function viewCurrentRecord(ctx: CorrectionContext, stage: CorrectionStage): ToolResult {
-  if (stage === 'scan') {
-    return {
-      success: true,
-      summary: 'Current scan record',
-      data: {
-        name: ctx.contact.name,
-        email: ctx.contact.email,
-        company: ctx.contact.company,
-        title: ctx.contact.title,
-        homeAddress: ctx.contact.homeAddress,
-        officeAddress: ctx.contact.officeAddress,
-        recommendation: ctx.contact.recommendation,
-        confidence: ctx.contact.confidence,
-        careerSummary: ctx.contact.careerSummary,
-        linkedinUrl: ctx.contact.linkedinUrl,
-      },
+function viewCurrentRecord(ctx: CorrectionContext): ToolResult {
+  const data: Record<string, unknown> = {
+    scan: {
+      name: ctx.contact.name,
+      email: ctx.contact.email,
+      company: ctx.contact.company,
+      title: ctx.contact.title,
+      homeAddress: ctx.contact.homeAddress,
+      officeAddress: ctx.contact.officeAddress,
+      recommendation: ctx.contact.recommendation,
+      confidence: ctx.contact.confidence,
+      careerSummary: ctx.contact.careerSummary,
+      linkedinUrl: ctx.contact.linkedinUrl,
+      profileImageUrl: ctx.contact.profileImageUrl,
+    },
+  };
+
+  if (ctx.enrichment) {
+    data.enrichment = {
+      companyName: ctx.enrichment.companyName,
+      companyLogo: ctx.enrichment.companyLogo,
+      openRoles: ctx.enrichment.openRoles,
+      companyValues: ctx.enrichment.companyValues,
+      companyMission: ctx.enrichment.companyMission,
+      officeLocations: ctx.enrichment.officeLocations,
+      teamPhotos: ctx.enrichment.teamPhotos,
     };
   }
 
-  if (stage === 'enrich' && ctx.enrichment) {
-    return {
-      success: true,
-      summary: 'Current enrichment record',
-      data: {
-        companyName: ctx.enrichment.companyName,
-        companyLogo: ctx.enrichment.companyLogo,
-        openRoles: ctx.enrichment.openRoles,
-        companyValues: ctx.enrichment.companyValues,
-        companyMission: ctx.enrichment.companyMission,
-        officeLocations: ctx.enrichment.officeLocations,
-        teamPhotos: ctx.enrichment.teamPhotos,
-      },
+  if (ctx.postcard) {
+    data.postcard = {
+      template: ctx.postcard.template,
+      status: ctx.postcard.status,
+      backMessage: ctx.postcard.backMessage,
+      contactName: ctx.postcard.contactName,
+      contactTitle: ctx.postcard.contactTitle,
+      deliveryAddress: ctx.postcard.deliveryAddress,
+      companyLogo: ctx.postcard.companyLogo,
+      contactPhoto: ctx.postcard.contactPhoto,
+      teamPhotos: ctx.postcard.teamPhotos,
+      openRoles: ctx.postcard.openRoles,
+      imageUrl: ctx.postcard.imageUrl,
     };
   }
 
-  if (stage === 'postcard' && ctx.postcard) {
-    return {
-      success: true,
-      summary: 'Current postcard record',
-      data: {
-        template: ctx.postcard.template,
-        status: ctx.postcard.status,
-        backMessage: ctx.postcard.backMessage,
-        contactName: ctx.postcard.contactName,
-        contactTitle: ctx.postcard.contactTitle,
-        deliveryAddress: ctx.postcard.deliveryAddress,
-        companyLogo: ctx.postcard.companyLogo,
-        openRoles: ctx.postcard.openRoles,
-        contactPhoto: ctx.postcard.contactPhoto,
-        teamPhotos: ctx.postcard.teamPhotos,
-        imageUrl: ctx.postcard.imageUrl,
-        referenceImages: ctx.referenceImages ?? [],
-      },
-    };
+  if (ctx.referenceImages?.length) {
+    data.referenceImages = ctx.referenceImages;
   }
 
-  return { success: false, summary: 'No record found for this stage' };
+  return {
+    success: true,
+    summary: 'Current data across all stages',
+    data,
+  };
 }
 
 function previewChanges(
   args: Record<string, unknown>,
   ctx: CorrectionContext,
-  stage: CorrectionStage,
 ): { result: ToolResult; stateUpdate: Partial<CorrectionToolState> } {
+  const target = (args.target as CorrectionStage) ?? 'scan';
   const changes = args.changes as Record<string, unknown>;
   const explanation = args.explanation as string;
 
   // Build a markdown diff
-  const currentData = getCurrentData(ctx, stage);
+  const currentData = getCurrentData(ctx, target);
   const rows = Object.entries(changes).map(([field, newVal]) => {
     const oldVal = currentData[field] ?? '(empty)';
     const displayOld = typeof oldVal === 'object' ? JSON.stringify(oldVal, null, 1) : String(oldVal);
@@ -458,7 +424,7 @@ function previewChanges(
   });
 
   const markdown = [
-    '## Proposed Changes\n',
+    `## Proposed Changes (${target})\n`,
     '| Field | Current Value | New Value |',
     '|-------|---------------|-----------|',
     ...rows,
@@ -470,10 +436,11 @@ function previewChanges(
     result: {
       success: true,
       summary: markdown,
-      data: { changes, explanation, markdown },
+      data: { changes, explanation, markdown, target },
     },
     stateUpdate: {
       pendingChanges: changes,
+      pendingTarget: target,
       pendingExplanation: explanation,
     },
   };
@@ -482,10 +449,9 @@ function previewChanges(
 async function applyChanges(
   args: Record<string, unknown>,
   ctx: CorrectionContext,
-  stage: CorrectionStage,
   state: CorrectionToolState,
 ): Promise<{ result: ToolResult; stateUpdate: Partial<CorrectionToolState> }> {
-  if (!state.pendingChanges) {
+  if (!state.pendingChanges || !state.pendingTarget) {
     return {
       result: { success: false, summary: 'No preview generated yet. Call preview_changes first.' },
       stateUpdate: {},
@@ -495,28 +461,29 @@ async function applyChanges(
   if (args.confirmed !== true) {
     return {
       result: { success: false, summary: 'User did not confirm. Changes NOT applied.' },
-      stateUpdate: { pendingChanges: null, pendingExplanation: null },
+      stateUpdate: { pendingChanges: null, pendingTarget: null, pendingExplanation: null },
     };
   }
 
   const changes = state.pendingChanges;
+  const target = state.pendingTarget;
 
   try {
-    if (stage === 'scan') {
+    if (target === 'scan') {
       await applyScanChanges(ctx, changes);
-    } else if (stage === 'enrich') {
+    } else if (target === 'enrich') {
       await applyEnrichChanges(ctx, changes);
-    } else if (stage === 'postcard') {
+    } else if (target === 'postcard') {
       await applyPostcardChanges(ctx, changes);
     }
 
     return {
       result: {
         success: true,
-        summary: `Changes applied successfully to ${stage} record. Updated fields: ${Object.keys(changes).join(', ')}`,
-        data: { updatedFields: Object.keys(changes) },
+        summary: `Changes applied successfully to ${target} record. Updated fields: ${Object.keys(changes).join(', ')}`,
+        data: { updatedFields: Object.keys(changes), target },
       },
-      stateUpdate: { applied: true, pendingChanges: null, pendingExplanation: null },
+      stateUpdate: { applied: true, pendingChanges: null, pendingTarget: null, pendingExplanation: null },
     };
   } catch (e) {
     return {
@@ -524,6 +491,32 @@ async function applyChanges(
       stateUpdate: {},
     };
   }
+}
+
+async function regeneratePostcard(ctx: CorrectionContext): Promise<{ result: ToolResult; stateUpdate?: Partial<CorrectionToolState> }> {
+  if (!ctx.postcardId) {
+    return { result: { success: false, summary: 'No postcard found to regenerate.' } };
+  }
+
+  // Reset the postcard to pending so the generation pipeline picks it up
+  await prisma.postcard.update({
+    where: { id: ctx.postcardId },
+    data: {
+      status: 'pending',
+      imageUrl: null,
+      backgroundUrl: null,
+      errorMessage: null,
+      retryCount: 0,
+    },
+  });
+
+  return {
+    result: {
+      success: true,
+      summary: 'Postcard has been queued for regeneration. The new image will be generated with the current data.',
+      data: { postcardId: ctx.postcardId, status: 'pending' },
+    },
+  };
 }
 
 async function applyScanChanges(ctx: CorrectionContext, changes: Record<string, unknown>) {
@@ -612,8 +605,8 @@ async function applyPostcardChanges(ctx: CorrectionContext, changes: Record<stri
   await prisma.postcard.update({ where: { id: ctx.postcardId }, data });
 }
 
-function getCurrentData(ctx: CorrectionContext, stage: CorrectionStage): Record<string, unknown> {
-  if (stage === 'scan') {
+function getCurrentData(ctx: CorrectionContext, target: CorrectionStage): Record<string, unknown> {
+  if (target === 'scan') {
     return {
       name: ctx.contact.name,
       email: ctx.contact.email,
@@ -626,7 +619,7 @@ function getCurrentData(ctx: CorrectionContext, stage: CorrectionStage): Record<
       careerSummary: ctx.contact.careerSummary,
     };
   }
-  if (stage === 'enrich' && ctx.enrichment) {
+  if (target === 'enrich' && ctx.enrichment) {
     return {
       companyName: ctx.enrichment.companyName,
       companyLogo: ctx.enrichment.companyLogo,
@@ -637,7 +630,7 @@ function getCurrentData(ctx: CorrectionContext, stage: CorrectionStage): Record<
       teamPhotos: ctx.enrichment.teamPhotos,
     };
   }
-  if (stage === 'postcard' && ctx.postcard) {
+  if (target === 'postcard' && ctx.postcard) {
     return {
       template: ctx.postcard.template,
       backMessage: ctx.postcard.backMessage,

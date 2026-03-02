@@ -5,6 +5,9 @@
  * Unlike the fire-and-forget scan/enrich agents, this is multi-turn:
  * the user sends a message, the agent runs a tool loop (max 10 iterations),
  * then returns a response. The user can continue the conversation.
+ *
+ * The agent has full access to all stages — it can edit scan, enrichment,
+ * and postcard data regardless of which stage the user opened from.
  */
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
@@ -38,6 +41,7 @@ export type CorrectionEventType =
   | 'response_text'
   | 'preview'
   | 'changes_applied'
+  | 'regenerating'
   | 'error';
 
 export interface CorrectionEvent {
@@ -62,42 +66,46 @@ function loadSystemPrompt(stage: CorrectionStage, context: CorrectionContext): s
     template = FALLBACK_PROMPT;
   }
 
-  const contextBlock = buildContextBlock(stage, context);
+  const contextBlock = buildContextBlock(context, stage);
   return template
     .replace(/\{\{stage\}\}/g, stage)
     .replace(/\{\{context_block\}\}/g, contextBlock);
 }
 
-function buildContextBlock(stage: CorrectionStage, ctx: CorrectionContext): string {
+/**
+ * Build context block with ALL available data, regardless of which stage opened the modal.
+ * The "opened from" stage is noted so the agent knows what the user is primarily looking at.
+ */
+function buildContextBlock(ctx: CorrectionContext, openedFrom: CorrectionStage): string {
   const lines: string[] = [];
 
-  lines.push(`**Contact:** ${ctx.contact.name ?? 'Unknown'}`);
-  if (ctx.contact.company) lines.push(`**Company:** ${ctx.contact.company}`);
-  if (ctx.contact.title) lines.push(`**Title:** ${ctx.contact.title}`);
-  lines.push(`**LinkedIn:** ${ctx.contact.linkedinUrl}`);
+  lines.push(`**Opened from:** ${openedFrom} stage`);
   lines.push('');
 
-  if (stage === 'scan') {
-    lines.push('### Scan Results');
-    lines.push(`- **Recommendation:** ${ctx.contact.recommendation ?? 'None'}`);
-    lines.push(`- **Confidence:** ${ctx.contact.confidence ?? 'N/A'}%`);
-    lines.push(`- **Home Address:** ${ctx.contact.homeAddress ?? 'Not found'}`);
-    lines.push(`- **Office Address:** ${ctx.contact.officeAddress ?? 'Not found'}`);
-    if (ctx.contact.careerSummary) {
-      lines.push(`- **Career Summary:** ${ctx.contact.careerSummary}`);
-    }
-    if (ctx.researchLog) {
-      lines.push('');
-      lines.push('### Research Log (from original scan)');
-      lines.push(ctx.researchLog);
-    }
+  // ── Contact / Scan Data ──
+  lines.push('### Contact (Scan Data)');
+  lines.push(`- **Name:** ${ctx.contact.name ?? 'Unknown'}`);
+  if (ctx.contact.company) lines.push(`- **Company:** ${ctx.contact.company}`);
+  if (ctx.contact.title) lines.push(`- **Title:** ${ctx.contact.title}`);
+  lines.push(`- **LinkedIn:** ${ctx.contact.linkedinUrl}`);
+  lines.push(`- **Recommendation:** ${ctx.contact.recommendation ?? 'None'}`);
+  lines.push(`- **Confidence:** ${ctx.contact.confidence ?? 'N/A'}%`);
+  lines.push(`- **Home Address:** ${ctx.contact.homeAddress ?? 'Not found'}`);
+  lines.push(`- **Office Address:** ${ctx.contact.officeAddress ?? 'Not found'}`);
+  if (ctx.contact.careerSummary) {
+    lines.push(`- **Career Summary:** ${ctx.contact.careerSummary}`);
+  }
+  if (ctx.contact.profileImageUrl) {
+    lines.push(`- **Profile Image:** ${ctx.contact.profileImageUrl}`);
   }
 
-  if (stage === 'enrich' && ctx.enrichment) {
+  // ── Enrichment Data ──
+  if (ctx.enrichment) {
     const e = ctx.enrichment;
+    lines.push('');
     lines.push('### Enrichment Data');
     lines.push(`- **Company Name:** ${e.companyName ?? 'Unknown'}`);
-    lines.push(`- **Company Logo:** ${e.companyLogo ?? 'None'}`);
+    if (e.companyLogo) lines.push(`- **Company Logo:** ${e.companyLogo}`);
     if (e.openRoles) lines.push(`- **Open Roles:** ${JSON.stringify(e.openRoles)}`);
     if (e.companyValues) lines.push(`- **Company Values:** ${JSON.stringify(e.companyValues)}`);
     if (e.companyMission) lines.push(`- **Mission:** ${e.companyMission}`);
@@ -105,23 +113,30 @@ function buildContextBlock(stage: CorrectionStage, ctx: CorrectionContext): stri
     if (e.teamPhotos) lines.push(`- **Team Photos:** ${JSON.stringify(e.teamPhotos)}`);
   }
 
-  if (stage === 'postcard' && ctx.postcard) {
+  // ── Postcard Data ──
+  if (ctx.postcard) {
     const p = ctx.postcard;
+    lines.push('');
     lines.push('### Postcard Data');
     lines.push(`- **Template:** ${p.template}`);
     lines.push(`- **Status:** ${p.status}`);
     lines.push(`- **Contact Name:** ${p.contactName}`);
+    if (p.contactTitle) lines.push(`- **Contact Title:** ${p.contactTitle}`);
     lines.push(`- **Delivery Address:** ${p.deliveryAddress ?? 'None'}`);
     lines.push(`- **Back Message:** ${p.backMessage ?? 'None'}`);
-    if (p.companyLogo) lines.push(`- **Company Logo:** ${p.companyLogo}`);
+    if (p.companyLogo) lines.push(`- **Postcard Logo:** ${p.companyLogo}`);
     if (p.contactPhoto) lines.push(`- **Contact Photo:** ${p.contactPhoto}`);
     if (p.imageUrl) lines.push(`- **Current Postcard Image:** ${p.imageUrl}`);
-    if (ctx.referenceImages?.length) {
-      lines.push('');
-      lines.push('### User-Uploaded Reference Images');
-      for (const ref of ctx.referenceImages) {
-        lines.push(`- **${ref.label}:** ${ref.imageUrl}`);
-      }
+    if (p.openRoles) lines.push(`- **Postcard Open Roles:** ${JSON.stringify(p.openRoles)}`);
+    if (p.teamPhotos) lines.push(`- **Postcard Team Photos:** ${JSON.stringify(p.teamPhotos)}`);
+  }
+
+  // ── Reference Images ──
+  if (ctx.referenceImages?.length) {
+    lines.push('');
+    lines.push('### User-Uploaded Reference Images');
+    for (const ref of ctx.referenceImages) {
+      lines.push(`- **${ref.label}:** ${ref.imageUrl}`);
     }
   }
 
@@ -130,28 +145,22 @@ function buildContextBlock(stage: CorrectionStage, ctx: CorrectionContext): stri
 
 const FALLBACK_PROMPT = `# Correction Agent
 
-You are a correction specialist for WDISTT (Where Do I Send This Thing), a recruitment
-outreach platform. A human reviewer is looking at the results of an automated
-{{stage}} process and wants to correct something.
+You are a correction specialist for WDISTT (Where Do I Send This Thing), a recruitment outreach platform that generates personalised physical postcards.
 
-## Your Workflow
-1. START by summarizing the current state of the {{stage}} results — what data we have,
-   what was found. Then ask: "What would you like to correct?"
-2. LISTEN to what the user says is wrong.
-3. RESEARCH the correction using your tools. Explain what you're doing in plain language.
-4. PREVIEW your proposed changes using preview_changes — show a clear before/after.
-5. ASK: "Does this look correct? Reply **yes** to apply, or tell me what to adjust."
-6. APPLY only after explicit confirmation using apply_changes.
+You have full access to correct ANY data at ANY stage — scan, enrichment, or postcard. Use preview_changes with a "target" parameter ("scan", "enrich", or "postcard") to specify which record to update.
+
+## Workflow
+1. View the current data, understand what the user wants to fix.
+2. Research using your tools if needed.
+3. Preview changes — ALWAYS show before/after before applying.
+4. Apply only after user confirms.
+5. Regenerate postcard if visual fields changed.
 
 ## Rules
-- NEVER apply changes without showing a preview first and getting user confirmation.
-- NEVER fabricate data — only propose changes you can verify with your tools.
-- If you can't find better data than what we already have, say so honestly.
-- Use markdown formatting in your responses. Show images inline when relevant.
-- Don't reveal tool names or internal APIs to the user — say "I searched public records" etc.
-- You can make multiple research attempts if the first doesn't find what you need.
-- For postcard corrections: the user may upload reference images (new face photos, logos).
-  Use these as the corrected data when proposing changes.
+- NEVER apply without preview + confirmation.
+- NEVER fabricate data.
+- Be concise. Show images inline with markdown.
+- Don't reveal tool names to the user.
 
 ## Current State
 {{context_block}}`;
@@ -193,6 +202,7 @@ export async function runCorrectionAgent(
   let client = await getAIClientForRole('agent');
   const toolState: CorrectionToolState = {
     pendingChanges: null,
+    pendingTarget: null,
     pendingExplanation: null,
     applied: false,
   };
@@ -269,6 +279,7 @@ export async function runCorrectionAgent(
       // Apply state updates
       if (stateUpdate) {
         if ('pendingChanges' in stateUpdate) toolState.pendingChanges = stateUpdate.pendingChanges ?? null;
+        if ('pendingTarget' in stateUpdate) toolState.pendingTarget = stateUpdate.pendingTarget ?? null;
         if ('pendingExplanation' in stateUpdate) toolState.pendingExplanation = stateUpdate.pendingExplanation ?? null;
         if ('applied' in stateUpdate) toolState.applied = stateUpdate.applied ?? false;
       }
@@ -279,7 +290,7 @@ export async function runCorrectionAgent(
         data: { tool: toolUse.name, success: result.success, summary: result.summary },
       });
 
-      // Emit special events for preview and apply
+      // Emit special events for preview, apply, and regenerate
       if (toolUse.name === 'preview_changes' && result.success) {
         onEvent({
           type: 'preview',
@@ -296,7 +307,15 @@ export async function runCorrectionAgent(
         onEvent({
           type: 'changes_applied',
           timestamp: ts(),
-          data: { success: true, updatedFields: (result.data as Record<string, unknown>)?.updatedFields ?? [] },
+          data: { success: true, updatedFields: (result.data as Record<string, unknown>)?.updatedFields ?? [], target: (result.data as Record<string, unknown>)?.target ?? '' },
+        });
+      }
+
+      if (toolUse.name === 'regenerate_postcard' && result.success) {
+        onEvent({
+          type: 'regenerating',
+          timestamp: ts(),
+          data: { postcardId: (result.data as Record<string, unknown>)?.postcardId ?? '' },
         });
       }
 
