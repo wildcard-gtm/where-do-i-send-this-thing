@@ -32,6 +32,19 @@ export async function GET(
         orderBy: { createdAt: "asc" },
         take: 50,
       },
+      companyEnrichments: {
+        where: { isLatest: true },
+        take: 1,
+        select: {
+          teamPhotos: true,
+          companyName: true,
+          companyLogo: true,
+          openRoles: true,
+          companyValues: true,
+          companyMission: true,
+          officeLocations: true,
+        },
+      },
     },
   });
 
@@ -39,13 +52,16 @@ export async function GET(
     return NextResponse.json({ error: "Contact not found" }, { status: 404 });
   }
 
+  // Flatten latest enrichment onto the response
+  const enrichment = contact.companyEnrichments[0] ?? null;
+
   // Fetch role from DB (JWT may be stale)
   const dbUser = await prisma.user.findUnique({
     where: { id: user.id },
     select: { role: true },
   });
 
-  return NextResponse.json({ contact, userRole: dbUser?.role ?? "user" });
+  return NextResponse.json({ contact, enrichment, userRole: dbUser?.role ?? "user" });
 }
 
 export async function PATCH(

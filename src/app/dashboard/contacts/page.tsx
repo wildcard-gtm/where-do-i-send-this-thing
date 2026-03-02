@@ -31,6 +31,22 @@ interface ContactRow {
   postcards: { status: string }[];
 }
 
+interface TeamPhoto {
+  name?: string;
+  photoUrl: string;
+  title?: string;
+}
+
+interface EnrichmentData {
+  teamPhotos: TeamPhoto[] | null;
+  companyName: string | null;
+  companyLogo: string | null;
+  openRoles: Array<{ title: string; location?: string; level?: string; url?: string }> | null;
+  companyValues: string[] | null;
+  companyMission: string | null;
+  officeLocations: string[] | null;
+}
+
 interface ContactDetail {
   id: string;
   name: string;
@@ -119,8 +135,9 @@ function StageChips({
 function ContactModal({ contactId, onClose }: { contactId: string; onClose: () => void }) {
   const router = useRouter();
   const [contact, setContact] = useState<ContactDetail | null>(null);
+  const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "chat" | "postcard">("overview");
+  const [tab, setTab] = useState<"overview" | "chat" | "team" | "postcard">("overview");
   const [isAdmin, setIsAdmin] = useState(false);
   const [postcard, setPostcard] = useState<{
     id: string; status: string; imageUrl: string | null; template: string;
@@ -135,6 +152,7 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.contact) setContact(data.contact);
+        if (data?.enrichment) setEnrichment(data.enrichment);
         if (data?.userRole === "admin") setIsAdmin(true);
         setLoading(false);
       });
@@ -251,7 +269,7 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
         {/* Tabs */}
         {!loading && contact && (
           <div className="flex gap-1 px-5 py-2 border-b border-border/50 shrink-0">
-            {(["overview", "chat", "postcard"] as const).map((t) => (
+            {(["overview", "chat", "team", "postcard"] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -393,6 +411,85 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
               contactName={contact.name}
               initialMessages={contact.chatMessages}
             />
+          )}
+
+          {/* ── Team tab ── */}
+          {!loading && contact && tab === "team" && (
+            <div>
+              {enrichment && (enrichment.teamPhotos as TeamPhoto[] | null)?.length ? (
+                <div className="space-y-4">
+                  <p className="text-xs text-muted-foreground">
+                    Team members at <span className="font-medium text-foreground">{enrichment.companyName || contact.company || "this company"}</span> discovered during enrichment.
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {(enrichment.teamPhotos as TeamPhoto[]).map((tp, i) => (
+                      <div key={i} className="glass-card rounded-xl p-3 flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0 overflow-hidden">
+                          {tp.photoUrl
+                            ? <img src={tp.photoUrl} alt={tp.name || "Team member"} className="w-10 h-10 rounded-full object-cover" />
+                            : (tp.name || "?")[0]?.toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">{tp.name || "Unknown"}</p>
+                          {tp.title && <p className="text-xs text-muted-foreground truncate">{tp.title}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Company info summary */}
+                  {enrichment.companyMission && (
+                    <div className="glass-card rounded-xl p-4">
+                      <h4 className="text-xs font-semibold text-foreground mb-1">Mission</h4>
+                      <p className="text-xs text-muted-foreground">{enrichment.companyMission}</p>
+                    </div>
+                  )}
+                  {(enrichment.companyValues as string[] | null)?.length ? (
+                    <div className="glass-card rounded-xl p-4">
+                      <h4 className="text-xs font-semibold text-foreground mb-2">Values</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(enrichment.companyValues as string[]).map((v, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">{v}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {(enrichment.officeLocations as string[] | null)?.length ? (
+                    <div className="glass-card rounded-xl p-4">
+                      <h4 className="text-xs font-semibold text-foreground mb-2">Offices</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(enrichment.officeLocations as string[]).map((loc, i) => (
+                          <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{loc}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {(enrichment.openRoles as Array<{ title: string; location?: string; url?: string }> | null)?.length ? (
+                    <div className="glass-card rounded-xl p-4">
+                      <h4 className="text-xs font-semibold text-foreground mb-2">Open Roles</h4>
+                      <div className="space-y-1.5">
+                        {(enrichment.openRoles as Array<{ title: string; location?: string; url?: string }>).slice(0, 8).map((role, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <span className="text-foreground font-medium truncate">{role.title}</span>
+                            {role.location && <span className="text-muted-foreground shrink-0 ml-2">{role.location}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <div className="w-12 h-12 bg-muted/50 rounded-xl flex items-center justify-center mx-auto mb-3">
+                    <svg className="w-6 h-6 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-muted-foreground">No team data yet.</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">Enrich this contact to discover teammates.</p>
+                </div>
+              )}
+            </div>
           )}
 
           {/* ── Postcard tab ── */}

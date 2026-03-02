@@ -33,8 +33,8 @@ export async function POST(
     return NextResponse.json({ error: "Job not found" }, { status: 404 });
   }
 
-  if (job.status !== "failed" && job.status !== "cancelled") {
-    return NextResponse.json({ error: "Only failed or cancelled jobs can be retried" }, { status: 400 });
+  if (job.status !== "failed" && job.status !== "cancelled" && job.status !== "complete") {
+    return NextResponse.json({ error: "Only completed, failed, or cancelled jobs can be retried" }, { status: 400 });
   }
 
   // Clear old events and reset job
