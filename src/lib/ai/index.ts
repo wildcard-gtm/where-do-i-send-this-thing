@@ -54,7 +54,7 @@ export const GEMINI_IMAGE_MODELS: ModelConfig[] = [
 // Gemini models for postcard image analysis
 export const GEMINI_ANALYSIS_MODELS: ModelConfig[] = [
   { provider: 'gemini', modelId: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Current default)' },
-  { provider: 'gemini', modelId: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash (Latest)' },
+  { provider: 'gemini', modelId: 'gemini-3-flash-preview', label: 'Gemini 3 Flash (Latest)' },
   { provider: 'gemini', modelId: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Latest)' },
   { provider: 'gemini', modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ];
