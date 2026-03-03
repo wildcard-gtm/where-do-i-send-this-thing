@@ -130,6 +130,14 @@ Batch (Campaign)
 - Both `CompanyEnrichment` and `Postcard` have `retryCount Int @default(0)`, max 5 attempts, exponential backoff (2^attempt seconds)
 - Manual retry resets `retryCount` to 0: `POST /api/enrichment-batches/[id]/retry` or `POST /api/postcards/[id]/retry`
 
+### Per-Item Cancel + Stale Auto-Recovery
+- **Per-item cancel**: Small X buttons on all running/enriching/generating items across all pages (campaign, enrichment batch, postcard batch, contact)
+- Cancel endpoints: `POST /api/enrichments/[id]/cancel`, `POST /api/batches/[id]/jobs/[jobId]/cancel`, `PATCH /api/postcards/[id]` with `{status: "cancelled"}`
+- Cancelling a postcard/enrichment triggers batch finalization (checks if all items done → updates batch status)
+- Stream route checks both batch-level AND job-level cancellation at each iteration
+- **Stale auto-recovery**: Items stuck in active states >10 minutes auto-reset to "failed" on polling (GET postcard-batches/[id], enrichment-batches/[id], postcards/[id])
+- "Process Stuck" button on campaign page also resets stale running/enriching/generating items back to "pending" for re-dispatch
+
 ---
 
 ## Key Files
@@ -166,6 +174,9 @@ Batch (Campaign)
 | `src/app/api/batches/[id]/stop/route.ts` | POST — halts job processing |
 | `src/app/api/batches/[id]/retry-failed/route.ts` | POST — retries failed jobs |
 | `src/app/api/batches/[id]/jobs/[jobId]/stream/route.ts` | GET — streams AgentEvents for a job |
+| `src/app/api/batches/[id]/jobs/[jobId]/cancel/route.ts` | POST — cancels a single scan job |
+| `src/app/api/enrichments/[id]/cancel/route.ts` | POST — cancels a single enrichment |
+| `src/app/api/campaigns/[id]/process-stuck/route.ts` | POST — resets stuck/stale items for re-dispatch |
 | `src/app/api/admin/reset/route.ts` | POST — wipes DB by scope; requires `x-debug-key` header |
 | `src/app/api/debug/status/route.ts` | GET — platform status; requires `?key=` param |
 | `src/app/dashboard/enrichments/[id]/page.tsx` | Enrichment detail (per-contact spinners, polls every 3s) |
