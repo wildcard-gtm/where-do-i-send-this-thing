@@ -25,10 +25,13 @@ interface CampaignContact {
   enrichCurrentStep: string | null;
   enrichErrorMessage: string | null;
   enrichRetryCount: number;
+  enrichUpdatedAt: string | null;
   postcardId: string | null;
   postcardStatus: string | null;
   postcardBatchId: string | null;
   postcardTemplate: string | null;
+  postcardUpdatedAt: string | null;
+  jobUpdatedAt: string | null;
   isRemote: boolean | null;
 }
 
@@ -128,6 +131,20 @@ function RefreshBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
   );
 }
 
+function CancelBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="Cancel"
+      className="p-0.5 rounded text-muted-foreground/50 hover:text-danger hover:bg-danger/10 transition"
+    >
+      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    </button>
+  );
+}
+
 function CorrectBtn({ onClick }: { onClick: (e: React.MouseEvent) => void }) {
   return (
     <button
@@ -150,7 +167,7 @@ type CorrectionTarget = {
   postcardId?: string;
 } | null;
 
-function ScanPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
+function ScanPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void; onCancel?: () => void }) {
   const { currentKey, currentLabel, pct } = getJobProgress(c.stages, c.jobStatus);
 
   if (c.jobStatus === "pending") {
@@ -197,11 +214,12 @@ function ScanPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?:
       <div className="flex-1 bg-muted rounded-full h-1 min-w-[30px]">
         <div className="bg-primary h-1 rounded-full" style={{ width: `${Math.max(pct, 8)}%` }} />
       </div>
+      {onCancel && <CancelBtn onClick={(e) => { e.stopPropagation(); onCancel(); }} />}
     </div>
   );
 }
 
-function EnrichPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
+function EnrichPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void; onCancel?: () => void }) {
   const locked = !c.enrichmentId && c.jobStatus !== "complete";
 
   if (locked) {
@@ -227,6 +245,7 @@ function EnrichPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh
         <span className="text-xs font-medium text-primary truncate max-w-[100px]">
           {c.enrichCurrentStep || "Enriching"}
         </span>
+        {onCancel && <CancelBtn onClick={(e) => { e.stopPropagation(); onCancel(); }} />}
       </div>
     );
   }
@@ -250,7 +269,7 @@ function EnrichPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh
   return <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{c.enrichmentStatus}</span>;
 }
 
-function PostcardPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void }) {
+function PostcardPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void; onCancel?: () => void }) {
   const locked = c.enrichmentStatus !== "completed" && !c.postcardId;
 
   if (locked) {
@@ -274,6 +293,7 @@ function PostcardPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefre
       <div className="flex items-center gap-1.5">
         <div className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin shrink-0" />
         <span className="text-xs font-medium text-primary">Generating</span>
+        {onCancel && <CancelBtn onClick={(e) => { e.stopPropagation(); onCancel(); }} />}
       </div>
     );
   }
@@ -673,6 +693,29 @@ export default function CampaignDetailPage() {
     }
   }
 
+  // ── Per-item cancel handlers ────────────────────────────────────────────────
+
+  async function cancelScan(c: CampaignContact) {
+    await fetch(`/api/batches/${batchId}/jobs/${c.jobId}/cancel`, { method: "POST" });
+    fetchData();
+  }
+
+  async function cancelEnrich(c: CampaignContact) {
+    if (!c.enrichmentId) return;
+    await fetch(`/api/enrichments/${c.enrichmentId}/cancel`, { method: "POST" });
+    fetchData();
+  }
+
+  async function cancelPostcard(c: CampaignContact) {
+    if (!c.postcardId) return;
+    await fetch(`/api/postcards/${c.postcardId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "cancelled" }),
+    });
+    fetchData();
+  }
+
   // ── Correction handler ──────────────────────────────────────────────────────
 
   function openCorrection(c: CampaignContact, stage: "scan" | "enrich" | "postcard") {
@@ -739,11 +782,18 @@ export default function CampaignDetailPage() {
   );
   const canRunAll = canScan || canEnrich || canPostcard;
 
+  const STALE_MS = 10 * 60 * 1000;
+  const now = Date.now();
+  const isStale = (ts: string | null) => ts ? now - new Date(ts).getTime() > STALE_MS : false;
+
   const stuckCount = contacts.filter(
     (c) =>
       c.jobStatus === "pending" ||
       c.enrichmentStatus === "pending" ||
-      c.postcardStatus === "pending"
+      c.postcardStatus === "pending" ||
+      (c.jobStatus === "running" && isStale(c.jobUpdatedAt)) ||
+      (c.enrichmentStatus === "enriching" && isStale(c.enrichUpdatedAt)) ||
+      (c.postcardStatus === "generating" && isStale(c.postcardUpdatedAt))
   ).length;
 
   const filteredContacts = locationType === "all"
@@ -1103,13 +1153,13 @@ export default function CampaignDetailPage() {
               </div>
 
               {/* Scan */}
-              <div><ScanPill c={c} onRefresh={c.jobStatus === "complete" ? () => refreshScan(c) : undefined} onCorrect={c.jobStatus === "complete" && c.contactId ? () => openCorrection(c, "scan") : undefined} /></div>
+              <div><ScanPill c={c} onRefresh={c.jobStatus === "complete" ? () => refreshScan(c) : undefined} onCorrect={c.jobStatus === "complete" && c.contactId ? () => openCorrection(c, "scan") : undefined} onCancel={c.jobStatus === "running" ? () => cancelScan(c) : undefined} /></div>
 
               {/* Enrich */}
-              <div><EnrichPill c={c} onRefresh={c.enrichmentStatus === "completed" ? () => refreshEnrich(c) : undefined} onCorrect={c.enrichmentStatus === "completed" && c.contactId ? () => openCorrection(c, "enrich") : undefined} /></div>
+              <div><EnrichPill c={c} onRefresh={c.enrichmentStatus === "completed" ? () => refreshEnrich(c) : undefined} onCorrect={c.enrichmentStatus === "completed" && c.contactId ? () => openCorrection(c, "enrich") : undefined} onCancel={c.enrichmentStatus === "enriching" && c.enrichmentId ? () => cancelEnrich(c) : undefined} /></div>
 
               {/* Postcard */}
-              <div><PostcardPill c={c} onRefresh={c.postcardStatus === "ready" || c.postcardStatus === "approved" ? () => refreshPostcard(c) : undefined} onCorrect={(c.postcardStatus === "ready" || c.postcardStatus === "approved") && c.contactId ? () => openCorrection(c, "postcard") : undefined} /></div>
+              <div><PostcardPill c={c} onRefresh={c.postcardStatus === "ready" || c.postcardStatus === "approved" ? () => refreshPostcard(c) : undefined} onCorrect={(c.postcardStatus === "ready" || c.postcardStatus === "approved") && c.contactId ? () => openCorrection(c, "postcard") : undefined} onCancel={c.postcardStatus === "generating" && c.postcardId ? () => cancelPostcard(c) : undefined} /></div>
             </div>
           );
         })}

@@ -26,6 +26,14 @@ export async function POST(
     return NextResponse.json({ error: "Campaign not found" }, { status: 404 });
   }
 
+  const STALE_THRESHOLD = new Date(Date.now() - 10 * 60 * 1000);
+
+  // ── Reset stale running items back to pending ───────────────────────────
+  await prisma.job.updateMany({
+    where: { batchId: id, status: "running", updatedAt: { lt: STALE_THRESHOLD } },
+    data: { status: "pending" },
+  });
+
   // ── Stuck scan jobs (pending) ─────────────────────────────────────────────
   const pendingJobs = await prisma.job.findMany({
     where: { batchId: id, status: "pending" },
@@ -40,12 +48,24 @@ export async function POST(
     });
   }
 
-  // ── Stuck enrichments (pending) ───────────────────────────────────────────
+  // ── Stuck enrichments (pending + stale enriching) ─────────────────────────
   const enrichmentBatches = await prisma.enrichmentBatch.findMany({
     where: { scanBatchId: id },
     select: { id: true },
   });
   const enrichmentBatchIds = enrichmentBatches.map((eb) => eb.id);
+
+  // Reset stale enriching items back to pending
+  if (enrichmentBatchIds.length > 0) {
+    await prisma.companyEnrichment.updateMany({
+      where: {
+        enrichmentBatchId: { in: enrichmentBatchIds },
+        enrichmentStatus: "enriching",
+        updatedAt: { lt: STALE_THRESHOLD },
+      },
+      data: { enrichmentStatus: "pending", retryCount: 0, currentStep: null },
+    });
+  }
 
   const pendingEnrichments = enrichmentBatchIds.length > 0
     ? await prisma.companyEnrichment.findMany({
@@ -72,12 +92,24 @@ export async function POST(
     }
   }
 
-  // ── Stuck postcards (pending) ─────────────────────────────────────────────
+  // ── Stuck postcards (pending + stale generating) ─────────────────────────
   const postcardBatches = await prisma.postcardBatch.findMany({
     where: { scanBatchId: id },
     select: { id: true },
   });
   const postcardBatchIds = postcardBatches.map((pb) => pb.id);
+
+  // Reset stale generating postcards back to pending
+  if (postcardBatchIds.length > 0) {
+    await prisma.postcard.updateMany({
+      where: {
+        postcardBatchId: { in: postcardBatchIds },
+        status: "generating",
+        updatedAt: { lt: STALE_THRESHOLD },
+      },
+      data: { status: "pending", retryCount: 0 },
+    });
+  }
 
   const pendingPostcards = postcardBatchIds.length > 0
     ? await prisma.postcard.findMany({

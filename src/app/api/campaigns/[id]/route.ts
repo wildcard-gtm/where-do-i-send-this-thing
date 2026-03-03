@@ -50,6 +50,7 @@ export async function GET(
                   currentStep: true,
                   errorMessage: true,
                   retryCount: true,
+                  updatedAt: true,
                 },
               },
               postcards: {
@@ -60,6 +61,7 @@ export async function GET(
                   postcardBatchId: true,
                   status: true,
                   template: true,
+                  updatedAt: true,
                 },
               },
             },
@@ -138,10 +140,13 @@ export async function GET(
       enrichCurrentStep: enrichment?.currentStep ?? null,
       enrichErrorMessage: enrichment?.errorMessage ?? null,
       enrichRetryCount: enrichment?.retryCount ?? 0,
+      enrichUpdatedAt: enrichment?.updatedAt ?? null,
       postcardId: postcard?.id ?? null,
       postcardStatus: postcard?.status ?? null,
       postcardBatchId: postcard?.postcardBatchId ?? null,
       postcardTemplate: postcard?.template ?? null,
+      postcardUpdatedAt: postcard?.updatedAt ?? null,
+      jobUpdatedAt: job.updatedAt ?? null,
       isRemote,
     };
   });

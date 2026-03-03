@@ -36,10 +36,11 @@ interface PostcardBatch {
 const MAX_ATTEMPTS = 5;
 const CONCURRENCY = 2; // image gen is slow — keep concurrency low
 
-function StatusBadge({ status, errorMessage, retryCount }: {
+function StatusBadge({ status, errorMessage, retryCount, onCancel }: {
   status: string;
   errorMessage: string | null;
   retryCount: number;
+  onCancel?: () => void;
 }) {
   if (status === "pending") {
     return (
@@ -59,6 +60,17 @@ function StatusBadge({ status, errorMessage, retryCount }: {
             <span className="ml-1.5 text-xs text-muted-foreground">attempt {retryCount}/{MAX_ATTEMPTS}</span>
           )}
         </div>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            title="Cancel"
+            className="p-0.5 rounded text-muted-foreground/50 hover:text-danger hover:bg-danger/10 transition"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
     );
   }
@@ -407,6 +419,14 @@ export default function PostcardBatchDetailPage() {
                   status={postcard.status}
                   errorMessage={postcard.errorMessage}
                   retryCount={postcard.retryCount}
+                  onCancel={postcard.status === "generating" ? async () => {
+                    await fetch(`/api/postcards/${postcard.id}`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ status: "cancelled" }),
+                    });
+                    fetchBatch();
+                  } : undefined}
                 />
                 {(postcard.status === "ready" || postcard.status === "approved") && (
                   <Link

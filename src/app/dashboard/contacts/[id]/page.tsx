@@ -746,6 +746,20 @@ export default function ContactDetailPage() {
                         {postcard.status === "pending" ? "Queued for generation..." : "Generating illustration..."}
                       </p>
                       <p className="text-xs text-muted-foreground">This takes about 30-60 seconds</p>
+                      {postcard.status === "generating" && (
+                        <button
+                          onClick={async () => {
+                            await fetch(`/api/postcards/${postcard.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ status: "cancelled" }),
+                            });
+                          }}
+                          className="text-xs text-muted-foreground hover:text-danger transition"
+                        >
+                          Cancel
+                        </button>
+                      )}
                     </div>
                   ) : postcard.status === "failed" ? (
                     <div className="flex flex-col items-center justify-center h-64 gap-3 p-6">

@@ -38,11 +38,12 @@ const CONCURRENCY = 3;
 const DEFAULT_BACK_MESSAGE =
   `Hi [First Name],\n\nWe came across your profile and were genuinely impressed by what you're building at [Company].\n\nWe're [Your Company] — we help teams like yours [value prop in one line]. We'd love to explore if there's a fit.\n\nGive us a shout at hello@yourcompany.com or scan the QR code to book 15 minutes.\n\nCheers,\n[Your Name]`;
 
-function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
+function StatusBadge({ status, currentStep, errorMessage, retryCount, onCancel }: {
   status: string;
   currentStep: string | null;
   errorMessage: string | null;
   retryCount: number;
+  onCancel?: () => void;
 }) {
   if (status === "pending") {
     return (
@@ -62,6 +63,17 @@ function StatusBadge({ status, currentStep, errorMessage, retryCount }: {
             <span className="ml-1.5 text-xs text-muted-foreground">attempt {retryCount}/{MAX_ATTEMPTS}</span>
           )}
         </div>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            title="Cancel"
+            className="p-0.5 rounded text-muted-foreground/50 hover:text-danger hover:bg-danger/10 transition"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
     );
   }
@@ -540,6 +552,10 @@ export default function EnrichmentDetailPage() {
                   currentStep={enrichment.currentStep}
                   errorMessage={enrichment.errorMessage}
                   retryCount={enrichment.retryCount}
+                  onCancel={enrichment.enrichmentStatus === "enriching" ? async () => {
+                    await fetch(`/api/enrichments/${enrichment.id}/cancel`, { method: "POST" });
+                    fetchBatch();
+                  } : undefined}
                 />
               </div>
             </div>

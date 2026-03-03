@@ -36,5 +36,33 @@ export async function GET(
     return NextResponse.json({ error: "Enrichment batch not found" }, { status: 404 });
   }
 
+  // Auto-recover stale "enriching" items (stuck > 10 min)
+  const STALE_THRESHOLD = new Date(Date.now() - 10 * 60 * 1000);
+  const staleReset = await prisma.companyEnrichment.updateMany({
+    where: {
+      enrichmentBatchId: id,
+      enrichmentStatus: "enriching",
+      updatedAt: { lt: STALE_THRESHOLD },
+    },
+    data: { enrichmentStatus: "failed", errorMessage: "Timed out — enrichment took too long", currentStep: null },
+  });
+  if (staleReset.count > 0) {
+    // Re-fetch with updated statuses
+    const updated = await prisma.enrichmentBatch.findFirst({
+      where: { id, userId: { in: teamUserIds } },
+      include: {
+        enrichments: {
+          orderBy: { createdAt: "asc" },
+          include: {
+            contact: {
+              select: { id: true, name: true, linkedinUrl: true },
+            },
+          },
+        },
+      },
+    });
+    return NextResponse.json({ batch: updated });
+  }
+
   return NextResponse.json({ batch });
 }

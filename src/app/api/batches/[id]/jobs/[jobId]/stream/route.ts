@@ -69,13 +69,15 @@ export async function GET(
     });
   }
 
-  // Check if batch was cancelled before starting
-  if (batch.status === "cancelled") {
-    await prisma.job.update({
-      where: { id: jobId },
-      data: { status: "cancelled" },
-    });
-    return new Response("Batch cancelled", { status: 409 });
+  // Check if batch or job was cancelled before starting
+  if (batch.status === "cancelled" || job.status === "cancelled") {
+    if (job.status !== "cancelled") {
+      await prisma.job.update({
+        where: { id: jobId },
+        data: { status: "cancelled" },
+      });
+    }
+    return new Response("Cancelled", { status: 409 });
   }
 
   // Job is pending or running — start streaming
@@ -93,13 +95,13 @@ export async function GET(
 
       const sendEvent = async (event: AgentStreamEvent) => {
         try {
-          // Check if batch was cancelled mid-run
+          // Check if batch or job was cancelled mid-run
           if (event.type === "iteration_start") {
-            const b = await prisma.batch.findUnique({
-              where: { id },
-              select: { status: true },
-            });
-            if (b?.status === "cancelled") {
+            const [b, j] = await Promise.all([
+              prisma.batch.findUnique({ where: { id }, select: { status: true } }),
+              prisma.job.findUnique({ where: { id: jobId }, select: { status: true } }),
+            ]);
+            if (b?.status === "cancelled" || j?.status === "cancelled") {
               throw new Error("Batch cancelled by user");
             }
           }

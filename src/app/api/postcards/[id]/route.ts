@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 import { deletePostcardImage } from "@/lib/supabase-storage";
 
+const STALE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
 // GET — fetch postcard status (for polling)
 export async function GET(
   _request: Request,
@@ -18,7 +20,7 @@ export async function GET(
 
   const teamUserIds = await getTeamUserIds(user);
 
-  const postcard = await prisma.postcard.findFirst({
+  let postcard = await prisma.postcard.findFirst({
     where: {
       id,
       contact: { userId: { in: teamUserIds } },
@@ -27,6 +29,17 @@ export async function GET(
 
   if (!postcard) {
     return NextResponse.json({ error: "Postcard not found" }, { status: 404 });
+  }
+
+  // Auto-recover stale "generating" postcards (stuck > 10 min)
+  if (
+    postcard.status === "generating" &&
+    Date.now() - postcard.updatedAt.getTime() > STALE_THRESHOLD_MS
+  ) {
+    postcard = await prisma.postcard.update({
+      where: { id },
+      data: { status: "failed", errorMessage: "Timed out — generation took too long" },
+    });
   }
 
   return NextResponse.json({ postcard });
@@ -62,6 +75,26 @@ export async function PATCH(
   }
 
   const postcard = await prisma.postcard.update({ where: { id }, data });
+
+  // If cancelled, check if the entire batch is now done
+  if (body.status === "cancelled" && postcard.postcardBatchId) {
+    const remaining = await prisma.postcard.count({
+      where: { postcardBatchId: postcard.postcardBatchId, status: { in: ["pending", "generating"] } },
+    });
+    if (remaining === 0) {
+      const failedCount = await prisma.postcard.count({
+        where: { postcardBatchId: postcard.postcardBatchId, status: "failed" },
+      });
+      const cancelledCount = await prisma.postcard.count({
+        where: { postcardBatchId: postcard.postcardBatchId, status: "cancelled" },
+      });
+      const batchStatus = failedCount > 0 ? "failed" : cancelledCount > 0 ? "cancelled" : "complete";
+      await prisma.postcardBatch.update({
+        where: { id: postcard.postcardBatchId },
+        data: { status: batchStatus },
+      });
+    }
+  }
 
   return NextResponse.json({ postcard });
 }
