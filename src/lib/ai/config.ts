@@ -4,8 +4,8 @@ import type { AIClient, AIProvider } from './types';
 
 const DEFAULT_MODEL = 'openai::gpt-5.2';
 
-const DEFAULT_IMAGE_GEN_MODEL = 'gemini-3.1-flash-image-preview';
-const DEFAULT_IMAGE_ANALYSIS_MODEL = 'gemini-2.5-flash';
+const DEFAULT_IMAGE_GEN_MODEL = 'gemini-3-pro-image-preview';
+const DEFAULT_IMAGE_ANALYSIS_MODEL = 'gemini-3.1-pro-preview';
 
 export type ModelRole = 'agent' | 'chat' | 'fallback';
 
