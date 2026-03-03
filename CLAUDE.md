@@ -104,12 +104,11 @@ Batch (Campaign)
 
 ### Postcard Generation Flow (Postcard Stage)
 1. `POST /api/postcards/generate-bulk` — creates `PostcardBatch` (linked to `Batch.id` via `scanBatchId`), fire-and-forgets generation. Returns `postcardBatchId` → redirects to `/dashboard/postcards/batches/[id]`
-2. `POST /api/postcards/generate` — single postcard path
-3. Fire-and-forget per postcard:
-   - `generateBackground(prompt)` → base64 PNG → uploaded to Supabase Storage → public URL stored in `Postcard.backgroundUrl`
-   - Status → `generating`
-   - `screenshotPostcard(postcardId)` → fetches `GET /api/postcards/[id]/image` → base64 PNG → uploaded to Supabase Storage → public URL stored in `Postcard.imageUrl`
-   - Status → `ready`
+2. `POST /api/postcards/generate` — single postcard path. Accepts overrides: `customPrompt`, `contactPhoto`, `teamPhotos`, `companyLogo`, `parentPostcardId`
+3. Fire-and-forget per postcard: Nano Banana (Gemini) generates the full scene, uploads to Supabase Storage
+4. **Unified postcard view**: All postcard links redirect to `/dashboard/contacts/[id]?tab=postcard` — the standalone `/dashboard/postcards/[id]` page is now a redirect
+5. **Regeneration modal**: Opens from "Regenerate" button on contact page, shows prospect photo, team members, company logo, template picker, and custom AI prompt textarea. Creates new postcard with `parentPostcardId` pointing to old one (revision history). Photos uploaded via `POST /api/uploads/image`
+6. **Revision history**: Previous versions shown as thumbnails below the current postcard
 
 ### Image Rendering (`next/og`)
 - `src/app/api/postcards/[id]/image/route.tsx` — uses `ImageResponse` from `next/og`
@@ -120,6 +119,12 @@ Batch (Campaign)
 ### Templates
 - **War Room** (default): vintage map + city pins + hiring panel + contact photo. Used when contact has an office address.
 - **Zoom Room**: simulated Zoom meeting UI. Used when contact is fully remote (`fully_remote` flag or no office address).
+
+### Non-Blocking Dispatch (Campaign Page)
+- The campaign page dispatcher (`batches/[id]/page.tsx`) uses `CONCURRENCY=5` with a `withTimeout()` wrapper
+- Each dispatched job has a 5-minute timeout — if a Vercel function hangs, the slot is freed for the next job
+- Previously, a hung job would block all remaining slots indefinitely
+- The `drainQueue()` function fires recursively from `.finally()` to fill slots as they become available
 
 ### Retry Logic (Enrichments + Postcards)
 - Both `CompanyEnrichment` and `Postcard` have `retryCount Int @default(0)`, max 5 attempts, exponential backoff (2^attempt seconds)
@@ -134,7 +139,9 @@ Batch (Campaign)
 | `src/app/api/campaigns/route.ts` | GET — aggregates Batch + EnrichmentBatch + PostcardBatch into unified campaign list |
 | `src/app/api/campaigns/[id]/route.ts` | GET — unified per-contact view: Job + CompanyEnrichment + Postcard in one query |
 | `src/app/dashboard/batches/page.tsx` | "Campaigns" list page — 3-stage pills (Scan/Enrich/Postcard) |
-| `src/app/dashboard/batches/[id]/page.tsx` | **Unified campaign page** — contact table with Scan/Enrich/Postcard pills, checkbox select, shared CONCURRENCY=5 dispatcher |
+| `src/app/dashboard/batches/[id]/page.tsx` | **Unified campaign page** — contact table with Scan/Enrich/Postcard pills, checkbox select, shared CONCURRENCY=5 dispatcher with 5-min timeout per job |
+| `src/components/postcards/regenerate-modal.tsx` | Regeneration modal — edit photos/logo/template/custom prompt before regenerating |
+| `src/app/api/uploads/image/route.ts` | Standalone image upload → Supabase Storage, returns public URL |
 | `src/agent/enrichment-agent.ts` | Company enrichment agent (Bedrock/Claude) |
 | `src/agent/agent-streaming.ts` | Address lookup agent with streaming |
 | `src/agent/tools.ts` | Tool definitions and dispatch |
