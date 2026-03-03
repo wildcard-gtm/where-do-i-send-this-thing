@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, enrichWithPDL } from './services';
 import axios, { type AxiosError } from 'axios';
 
 // ─── Types ───────────────────────────────────────────────
@@ -271,16 +271,30 @@ async function executeEnrichmentTool(
         if (!profile) {
           return { result: { success: false, summary: 'Could not scrape LinkedIn profile — timeout or not found' } };
         }
-        const avatar = (profile as Record<string, unknown>).avatar as string | undefined;
+        let avatar = (profile as Record<string, unknown>).avatar as string | undefined;
+        const name = profile.name;
+        const title = profile.current_company_position ?? profile.headline;
+
+        // PDL fallback for photo
+        if (!avatar) {
+          try {
+            const pdl = await enrichWithPDL(linkedinUrl);
+            if (pdl.success && pdl.data) {
+              const pic = (pdl.data as Record<string, unknown>).profile_pic_url as string | undefined;
+              if (pic) avatar = pic;
+            }
+          } catch { /* continue without photo */ }
+        }
+
         return {
           result: {
             success: true,
-            name: profile.name,
-            title: profile.current_company_position ?? profile.headline,
+            name,
+            title,
             photo_url: avatar ?? null,
             summary: avatar
-              ? `Got photo for ${profile.name ?? 'person'}: ${avatar}`
-              : `Profile scraped but no photo found for ${profile.name ?? 'person'}`,
+              ? `Got photo for ${name ?? 'person'}: ${avatar}`
+              : `Profile scraped but no photo found for ${name ?? 'person'}`,
           },
         };
       } catch (err) {
