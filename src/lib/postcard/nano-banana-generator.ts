@@ -384,6 +384,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       `   - "Person 1" (standing presenter): Use the prospect face photo.`,
       `     Preserve their facial features (hair, skin tone, facial structure, glasses, facial hair).`,
       `     Match gender — adapt body build, clothing, and footwear to the prospect's apparent gender.`,
+      `     Give them a warm, friendly SMILE — happy and approachable expression.`,
       `     Render in illustration style, not photorealistic. Keep the standing pose.`,
     );
   } else {
@@ -395,6 +396,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       personSlots.push(
         `   - "Person ${i + 2}" (seated): Use team member ${i + 1} face photo.`,
         `     Preserve their facial features, render in illustration style. Keep the seated pose.`,
+        `     Give them a warm, friendly SMILE.`,
       );
     } else {
       removedSlots.push(`"Person ${i + 2}"`);
@@ -408,7 +410,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `IMAGE LABELS:`,
     ...imageLabels.map((l) => `  ${l}`),
     ``,
-    `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces.`,
+    `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
     `The reference template already defines the room layout, furniture, lighting, windows, banner, plants, etc. Keep ALL of that exactly as shown. Only fill in the labeled placeholder slots:`,
     ``,
@@ -558,6 +560,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
       `   - "Person 1" (center desk person): Use the prospect face photo.`,
       `     Preserve their facial features (hair, skin tone, facial structure, glasses, facial hair).`,
       `     Match gender — adapt body build, clothing to the prospect's apparent gender.`,
+      `     Give them a warm, friendly SMILE — happy and approachable expression.`,
       `     Render in illustration style, not photorealistic. Keep the seated-at-desk pose.`,
     );
   } else {
@@ -569,6 +572,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
       personSlots.push(
         `   - "Person ${i + 2}" (video tile): Use team member ${i + 1} face photo.`,
         `     Preserve their facial features, render in illustration style.`,
+        `     Give them a warm, friendly SMILE.`,
       );
     } else {
       removedSlots.push(`"Person ${i + 2}"`);
@@ -582,7 +586,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `IMAGE LABELS:`,
     ...imageLabels.map((l) => `  ${l}`),
     ``,
-    `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces.`,
+    `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
     `The reference template already defines the Zoom UI layout, desk, monitor, plants, toolbar, "Leave" button, etc. Keep ALL of that exactly as shown. Only fill in the labeled placeholder slots:`,
     ``,
