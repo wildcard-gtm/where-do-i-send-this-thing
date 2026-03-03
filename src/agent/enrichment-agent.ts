@@ -283,7 +283,26 @@ async function executeEnrichmentTool(
               const pic = (pdl.data as Record<string, unknown>).profile_pic_url as string | undefined;
               if (pic) avatar = pic;
             }
-          } catch { /* continue without photo */ }
+          } catch { /* continue */ }
+        }
+
+        // Exa → Bright Data fallback for photo
+        if (!avatar && name) {
+          const company = profile.current_company_name ?? '';
+          try {
+            const exa = await searchExaPerson(name, company, 3);
+            if (exa.success && Array.isArray(exa.data)) {
+              for (const r of exa.data as Array<{ url?: string }>) {
+                if (!r.url?.includes('linkedin.com/in/')) continue;
+                if (r.url === linkedinUrl) continue;
+                try {
+                  const p = await fetchBrightDataLinkedIn(r.url);
+                  const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
+                  if (a) { avatar = a; break; }
+                } catch { continue; }
+              }
+            }
+          } catch { /* exhausted */ }
         }
 
         return {

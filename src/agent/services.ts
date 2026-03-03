@@ -202,8 +202,32 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
     state,
     country: bdProfile?.country ?? '',
     about: bdProfile?.about?.slice(0, 500) ?? '',
-    avatar: (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined
-      ?? (pdl?.profile_pic_url as string | undefined),
+    avatar: await (async () => {
+      // 1. Bright Data avatar
+      const bdAvatar = (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined;
+      if (bdAvatar) return bdAvatar;
+      // 2. PDL profile_pic_url
+      const pdlPic = pdl?.profile_pic_url as string | undefined;
+      if (pdlPic) return pdlPic;
+      // 3. Exa person search → Bright Data scrape
+      if (name && name !== 'Unknown' && company && company !== 'N/A') {
+        try {
+          const exa = await searchExaPerson(name, company, 3);
+          if (exa.success && Array.isArray(exa.data)) {
+            for (const r of exa.data as Array<{ url?: string }>) {
+              if (!r.url?.includes('linkedin.com/in/')) continue;
+              if (r.url === url) continue; // skip same URL we already tried
+              try {
+                const p = await fetchBrightDataLinkedIn(r.url);
+                const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
+                if (a) return a;
+              } catch { continue; }
+            }
+          }
+        } catch { /* exhausted */ }
+      }
+      return undefined;
+    })(),
     experience,
     // PDL contact data merged in — agent gets phones/emails without a separate tool call
     phones,
