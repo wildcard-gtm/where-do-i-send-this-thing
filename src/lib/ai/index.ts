@@ -47,14 +47,16 @@ export function serializeModelConfig(provider: AIProvider, modelId: string): str
 // Gemini models for postcard image generation (Nano Banana)
 export const GEMINI_IMAGE_MODELS: ModelConfig[] = [
   { provider: 'gemini', modelId: 'gemini-3.1-flash-image-preview', label: 'Nano Banana 2 (Latest — fast + high quality)' },
-  { provider: 'gemini', modelId: 'nano-banana-pro-preview', label: 'Nano Banana Pro (Highest quality — slower)' },
+  { provider: 'gemini', modelId: 'gemini-3-pro-image-preview', label: 'Nano Banana Pro (Highest quality — slower)' },
   { provider: 'gemini', modelId: 'gemini-2.5-flash-image', label: 'Nano Banana (Original)' },
 ];
 
 // Gemini models for postcard image analysis
 export const GEMINI_ANALYSIS_MODELS: ModelConfig[] = [
-  { provider: 'gemini', modelId: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Fast + cheap)' },
-  { provider: 'gemini', modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Higher quality)' },
+  { provider: 'gemini', modelId: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Current default)' },
+  { provider: 'gemini', modelId: 'gemini-3.1-flash', label: 'Gemini 3.1 Flash (Latest)' },
+  { provider: 'gemini', modelId: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Latest)' },
+  { provider: 'gemini', modelId: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
 ];
 
 export type { AIClient, AIProvider, ModelConfig } from './types';
