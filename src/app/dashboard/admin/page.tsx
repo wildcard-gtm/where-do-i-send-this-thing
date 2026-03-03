@@ -47,6 +47,8 @@ interface ModelConfig {
   agent: { provider: string; modelId: string } | null;
   chat: { provider: string; modelId: string } | null;
   fallback: { provider: string; modelId: string } | null;
+  image_gen: string | null;
+  image_analysis: string | null;
 }
 
 interface BatchItem {
@@ -61,7 +63,7 @@ interface BatchItem {
 }
 
 type Tab = "prompts" | "models" | "feedback" | "messages" | "users" | "batches";
-type ModelRoleKey = "agent" | "chat" | "fallback";
+type ModelRoleKey = "agent" | "chat" | "fallback" | "image_gen" | "image_analysis";
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("prompts");
@@ -72,7 +74,9 @@ export default function AdminPage() {
   const [batches, setBatches] = useState<BatchItem[]>([]);
   const [downloadingBatch, setDownloadingBatch] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
-  const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null, fallback: null });
+  const [geminiImageModels, setGeminiImageModels] = useState<ModelOption[]>([]);
+  const [geminiAnalysisModels, setGeminiAnalysisModels] = useState<ModelOption[]>([]);
+  const [modelConfig, setModelConfig] = useState<ModelConfig>({ agent: null, chat: null, fallback: null, image_gen: null, image_analysis: null });
   const [savingModel, setSavingModel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -109,7 +113,9 @@ export default function AdminPage() {
         if (res.status === 403) { setError("You don't have admin access."); return; }
         const data = await res.json();
         setAvailableModels(data.models || []);
-        setModelConfig(data.current || { agent: null, chat: null });
+        setGeminiImageModels(data.geminiImageModels || []);
+        setGeminiAnalysisModels(data.geminiAnalysisModels || []);
+        setModelConfig(data.current || { agent: null, chat: null, fallback: null, image_gen: null, image_analysis: null });
       } else if (tab === "feedback") {
         const res = await fetch("/api/admin/feedback");
         if (res.status === 403) { setError("You don't have admin access."); return; }
@@ -209,18 +215,27 @@ export default function AdminPage() {
     }
   }
 
-  async function saveModelConfig(role: ModelRoleKey, provider: string, modelId: string) {
+  async function saveModelConfig(role: ModelRoleKey, provider: string | null, modelId: string) {
     setSavingModel(role);
     setError("");
+    const isGemini = role === "image_gen" || role === "image_analysis";
     try {
       const res = await fetch("/api/admin/models", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, provider, modelId }),
+        body: JSON.stringify({ role, provider: isGemini ? "gemini" : provider, modelId }),
       });
       if (res.ok) {
-        setModelConfig((prev) => ({ ...prev, [role]: { provider, modelId } }));
-        setSaveSuccess(`${role === "agent" ? "Agent" : role === "fallback" ? "Fallback" : "Chat"} model updated`);
+        if (isGemini) {
+          setModelConfig((prev) => ({ ...prev, [role]: modelId }));
+        } else {
+          setModelConfig((prev) => ({ ...prev, [role]: { provider, modelId } }));
+        }
+        const labels: Record<string, string> = {
+          agent: "Agent", chat: "Chat", fallback: "Fallback",
+          image_gen: "Image Generation", image_analysis: "Image Analysis",
+        };
+        setSaveSuccess(`${labels[role]} model updated`);
         setTimeout(() => setSaveSuccess(""), 3000);
       } else {
         const data = await res.json();
@@ -419,7 +434,7 @@ export default function AdminPage() {
                 { role: "fallback" as ModelRoleKey, title: "Fallback Model", description: "Used when the agent model is rate-limited (e.g. Bedrock throttling). Should be an OpenAI model like GPT-5.2." },
               ].map(({ role, title, description }) => {
                 const current = modelConfig[role];
-                const currentValue = getModelValue(current);
+                const currentValue = getModelValue(current as { provider: string; modelId: string } | null);
                 const bedrockModels = availableModels.filter((m) => m.provider === "bedrock");
                 const openaiModels = availableModels.filter((m) => m.provider === "openai");
 
@@ -464,9 +479,53 @@ export default function AdminPage() {
                     </select>
                     {current && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        Current: <span className="font-mono text-foreground/70">{current.provider}::{current.modelId}</span>
+                        Current: <span className="font-mono text-foreground/70">{(current as { provider: string; modelId: string }).provider}::{(current as { provider: string; modelId: string }).modelId}</span>
                       </p>
                     )}
+                  </div>
+                );
+              })}
+
+              {/* Gemini / Postcard Image Models */}
+              <div className="pt-2">
+                <h3 className="text-sm font-semibold text-foreground uppercase tracking-wider mb-4">Postcard Image Generation (Gemini)</h3>
+              </div>
+
+              {[
+                { role: "image_gen" as ModelRoleKey, title: "Image Generation Model", description: "Gemini model used to generate postcard scene images. Nano Banana 2 is the latest and fastest.", models: geminiImageModels, defaultModel: "gemini-3.1-flash-image-preview" },
+                { role: "image_analysis" as ModelRoleKey, title: "Image Analysis Model", description: "Gemini model used to analyze and quality-check generated images. Flash is faster and cheaper.", models: geminiAnalysisModels, defaultModel: "gemini-2.5-flash" },
+              ].map(({ role, title, description, models, defaultModel }) => {
+                const currentValue = (modelConfig[role] as string | null) ?? defaultModel;
+                return (
+                  <div key={role} className="glass-card rounded-2xl p-6">
+                    <div className="flex items-start justify-between gap-4 mb-4">
+                      <div>
+                        <h3 className="text-base font-semibold text-foreground">{title}</h3>
+                        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+                      </div>
+                      {savingModel === role && (
+                        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      )}
+                    </div>
+                    <select
+                      value={currentValue}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (!val) return;
+                        saveModelConfig(role, null, val);
+                      }}
+                      disabled={savingModel === role}
+                      className="w-full px-4 py-3 bg-background border border-border rounded-lg text-sm text-foreground focus-glow disabled:opacity-50"
+                    >
+                      {models.map((m) => (
+                        <option key={m.modelId} value={m.modelId}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Current: <span className="font-mono text-foreground/70">{currentValue}</span>
+                    </p>
                   </div>
                 );
               })}

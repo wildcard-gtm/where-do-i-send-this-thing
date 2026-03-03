@@ -5,7 +5,7 @@ import type {
 } from '@/agent/types';
 import type { ChatMessage } from '@/lib/bedrock';
 
-export type AIProvider = 'bedrock' | 'openai';
+export type AIProvider = 'bedrock' | 'openai' | 'gemini';
 
 export interface ModelConfig {
   provider: AIProvider;

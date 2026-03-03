@@ -13,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
+import { getGeminiModel } from '@/lib/ai/config';
 
 export interface NanoBananaInput {
   /** Prospect's profile photo URL (the standing person to restyle) — optional, keeps reference scene person if omitted */
@@ -34,8 +35,7 @@ const GEMINI_API_KEY =
   process.env.GEMINI_API_KEY ||
   process.env.GOOGLE_AI_STUDIO ||
   process.env.GOOGLE_SEARCH_API_KEY;
-const IMAGE_MODEL = 'gemini-3.1-flash-image-preview'; // generates images
-const ANALYSIS_MODEL = 'gemini-2.5-flash'; // analyzes images (text-only, faster + cheaper)
+// Models loaded from DB at runtime via getGeminiModel() — configured in Admin → Models tab
 const MAX_ATTEMPTS = 4;
 
 // ─── Gemini API ─────────────────────────────────────────────────────────────
@@ -92,12 +92,13 @@ function callGemini(
 
 /** Generate an image from a prompt + input images */
 async function generateImage(prompt: string, images: ImageData[]): Promise<string> {
+  const imageModel = await getGeminiModel('image_gen');
   const parts: object[] = [
     { text: prompt },
     ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
   ];
 
-  const result = await callGemini(IMAGE_MODEL, {
+  const result = await callGemini(imageModel, {
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseModalities: ['TEXT', 'IMAGE'],
@@ -110,12 +111,13 @@ async function generateImage(prompt: string, images: ImageData[]): Promise<strin
 
 /** Analyze an image with text — returns text analysis */
 async function analyzeImage(prompt: string, images: ImageData[]): Promise<string> {
+  const analysisModel = await getGeminiModel('image_analysis');
   const parts: object[] = [
     { text: prompt },
     ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
   ];
 
-  const result = await callGemini(ANALYSIS_MODEL, {
+  const result = await callGemini(analysisModel, {
     contents: [{ role: 'user', parts }],
     generationConfig: { responseModalities: ['TEXT'] },
   });

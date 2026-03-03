@@ -4,6 +4,9 @@ import type { AIClient, AIProvider } from './types';
 
 const DEFAULT_MODEL = 'openai::gpt-5.2';
 
+const DEFAULT_IMAGE_GEN_MODEL = 'gemini-3.1-flash-image-preview';
+const DEFAULT_IMAGE_ANALYSIS_MODEL = 'gemini-2.5-flash';
+
 export type ModelRole = 'agent' | 'chat' | 'fallback';
 
 export async function getAIClientForRole(role: ModelRole): Promise<AIClient> {
@@ -42,4 +45,23 @@ export async function getModelConfigForRole(
   }
 
   return parseModelConfig(DEFAULT_MODEL);
+}
+
+export type GeminiModelRole = 'image_gen' | 'image_analysis';
+
+/** Get the Gemini model ID for postcard image generation or analysis */
+export async function getGeminiModel(role: GeminiModelRole): Promise<string> {
+  const key = role === 'image_gen' ? 'config_image_gen_model' : 'config_image_analysis_model';
+  const fallback = role === 'image_gen' ? DEFAULT_IMAGE_GEN_MODEL : DEFAULT_IMAGE_ANALYSIS_MODEL;
+
+  try {
+    const prisma = new PrismaClient();
+    const row = await prisma.systemPrompt.findUnique({ where: { key } });
+    await prisma.$disconnect();
+    if (row?.content) return row.content;
+  } catch {
+    // DB unavailable
+  }
+
+  return fallback;
 }
