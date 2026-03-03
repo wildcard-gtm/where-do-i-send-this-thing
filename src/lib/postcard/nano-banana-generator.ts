@@ -284,9 +284,9 @@ export function normalizeJobTitle(title: string): string {
   // Clean up double spaces
   t = t.replace(/\s+/g, ' ').trim();
 
-  // Hard cap at 25 chars
-  if (t.length > 25) {
-    t = t.slice(0, 23) + '...';
+  // Hard cap at 35 chars — enough for most abbreviated titles
+  if (t.length > 35) {
+    t = t.slice(0, 33) + '..';
   }
 
   return t;
@@ -435,14 +435,15 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
           `4. PEOPLE — The reference has labeled silhouettes (Person 1 through Person 6). Fill in ONLY the ones with provided photos:`,
           ...personSlots,
           removedSlots.length > 0
-            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them from the scene entirely — leave their chair/seat empty, do NOT draw any character there.`
+            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them AND their label text from the scene entirely — leave their chair/seat empty, do NOT draw any character or any "Person N" text there.`
             : '',
           `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
+          `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels from the reference template must be replaced by either a real illustrated person or removed completely.`,
         ].filter(Boolean).join('\n')
       : [
           `4. PEOPLE — The reference has labeled silhouettes.`,
-          `   REMOVE ALL of them (${removedSlots.join(', ')}) — no photos were provided.`,
-          `   Leave all chairs/seats empty. No people in the final image.`,
+          `   REMOVE ALL of them (${removedSlots.join(', ')}) AND their label text — no photos were provided.`,
+          `   Leave all chairs/seats empty. No people and no "Person N" labels in the final image.`,
         ].join('\n'),
     corrections,
     ``,
@@ -451,6 +452,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `- All text legible and within bounds`,
     `- Wide landscape output (3:2), not square or portrait`,
     `- No gray silhouettes remain — only people with provided photos appear, rest are removed`,
+    `- No "Person N" label text from the template remains — all labels must be gone`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
@@ -508,8 +510,9 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
       ? `6. PERSONS 2–${data.teamImages.length + 1} (SEATED): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM: N/A`,
     `7. SILHOUETTES: Are all unprovided person slots REMOVED (empty chairs)? FAIL if any gray silhouettes remain.`,
-    `8. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
-    `9. FORMAT: Wide landscape (3:2)?`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
+    `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
+    `10. FORMAT: Wide landscape (3:2)?`,
     ``,
     `For each: PASS or FAIL with brief reason.`,
     `OVERALL: PASS or FAIL`,
@@ -519,6 +522,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `BAD: "Make Person 1 look like Image 4"`,
     `GOOD: "Person 1 (standing) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
     `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
+    `For labels: "The text 'Person 3' is still visible on the right side — remove it completely."`,
   ].filter(Boolean).join('\n');
 }
 
@@ -605,14 +609,15 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
           `4. PEOPLE — The reference has labeled silhouettes (Person 1 = center desk, Person 2–5 = video tiles). Fill in ONLY the ones with provided photos:`,
           ...personSlots,
           removedSlots.length > 0
-            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them from the scene entirely — leave the video tile empty/blank or remove the center person, do NOT draw any character there.`
+            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them AND their label text from the scene entirely — leave the video tile empty/blank or remove the center person, do NOT draw any character or any "Person N" text there.`
             : '',
           `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
+          `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels from the reference template must be replaced by either a real illustrated person or removed completely.`,
         ].filter(Boolean).join('\n')
       : [
           `4. PEOPLE — The reference has labeled silhouettes.`,
-          `   REMOVE ALL of them (${removedSlots.join(', ')}) — no photos were provided.`,
-          `   Leave video tiles empty/blank and remove center person. No people in the final image.`,
+          `   REMOVE ALL of them (${removedSlots.join(', ')}) AND their label text — no photos were provided.`,
+          `   Leave video tiles empty/blank and remove center person. No people and no "Person N" labels in the final image.`,
         ].join('\n'),
     corrections,
     ``,
@@ -621,6 +626,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `- All text legible and within bounds`,
     `- Wide landscape output (3:2), not square or portrait`,
     `- No gray silhouettes remain — only people with provided photos appear, rest are removed`,
+    `- No "Person N" label text from the template remains — all labels must be gone`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
@@ -678,8 +684,9 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
       ? `6. PERSONS 2–${data.teamImages.length + 1} (VIDEO TILES): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM TILES: N/A`,
     `7. SILHOUETTES: Are all unprovided person slots REMOVED (empty video tiles)? FAIL if any gray silhouettes remain.`,
-    `8. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
-    `9. FORMAT: Wide landscape (3:2)?`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
+    `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
+    `10. FORMAT: Wide landscape (3:2)?`,
     ``,
     `For each: PASS or FAIL with brief reason.`,
     `OVERALL: PASS or FAIL`,
@@ -689,6 +696,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `BAD: "Make Person 1 look like Image 4"`,
     `GOOD: "Person 1 (center desk) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
     `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
+    `For labels: "The text 'Person 3' is still visible on a video tile — remove it completely."`,
   ].filter(Boolean).join('\n');
 }
 
