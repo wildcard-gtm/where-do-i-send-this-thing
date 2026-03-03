@@ -515,6 +515,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `STYLE: Warm-toned flat-color corporate illustration with clean outlines — Pixar-inspired 2D style. Every element must match this style consistently.`,
     ``,
     `PRESERVE EXACTLY (do NOT change these):`,
+    `- Wide landscape format (3:2 ratio) — the output MUST be landscape, not square or portrait`,
     `- Zoom UI layout: toolbar at bottom, "Leave" button, participant tiles on right — keep untouched`,
     `- Warm orange/brown color scheme — keep untouched`,
     `- Desk setup with monitor, plants, decor — keep untouched`,
@@ -566,7 +567,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `- Unchanged people preserve their original diversity and appearance`,
     `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
     `- All text legible and within bounds`,
-    `- Correct Zoom UI aspect ratio`,
+    `- Wide landscape output (3:2 ratio), not square or portrait`,
   ].filter(Boolean).join('\n');
 }
 
@@ -619,7 +620,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
       : `5. CENTER: N/A`,
     data.teamImages.length > 0 ? `6. VIDEO TILES: ${data.teamImages.length} tile(s) replaced with team photo features? Others unchanged and diverse? All faces in illustration style?` : `6. TILES: N/A`,
     `7. STYLE: Consistent flat-color illustration style? ALL faces (including replaced) must have clean outlines, flat colors — no photorealistic faces on illustrated bodies. STRICT.`,
-    `8. FORMAT: Correct aspect ratio?`,
+    `8. FORMAT: Wide landscape image (3:2 ratio)? FAIL if square or portrait.`,
     ``,
     `For each check: PASS or FAIL with brief reason.`,
     `Then:`,
