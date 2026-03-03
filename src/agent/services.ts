@@ -58,6 +58,7 @@ export async function enrichWithPDL(linkedinUrl: string): Promise<ToolResult> {
         linkedinUrl: person.linkedin_url ?? linkedinUrl,
         industry: person.industry ?? '',
         summary: person.summary ?? '',
+        profile_pic_url: person.profile_pic_url ?? null,
       },
       summary: `PDL: ${name}${company ? ` at ${company}` : ''}${phones.length ? `, phones: ${phones.join(', ')}` : ''}${emails.length ? `, emails: ${emails.join(', ')}` : ''}`,
     };
@@ -201,7 +202,8 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
     state,
     country: bdProfile?.country ?? '',
     about: bdProfile?.about?.slice(0, 500) ?? '',
-    avatar: (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined,
+    avatar: (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined
+      ?? (pdl?.profile_pic_url as string | undefined),
     experience,
     // PDL contact data merged in — agent gets phones/emails without a separate tool call
     phones,
