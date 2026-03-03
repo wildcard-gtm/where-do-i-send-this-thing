@@ -36,6 +36,7 @@ export async function GET(
         where: { isLatest: true },
         take: 1,
         select: {
+          id: true,
           teamPhotos: true,
           companyName: true,
           companyLogo: true,

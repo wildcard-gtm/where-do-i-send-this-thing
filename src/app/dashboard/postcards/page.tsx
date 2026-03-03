@@ -46,6 +46,8 @@ export default function PostcardsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  useEffect(() => { document.title = "Postcards | WDISTT"; }, []);
+
   useEffect(() => {
     fetch("/api/campaigns")
       .then((res) => (res.ok ? res.json() : { campaigns: [] }))

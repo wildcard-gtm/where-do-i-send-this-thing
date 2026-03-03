@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getSession } from "@/lib/auth";
 import { getTeamUserIds } from "@/lib/team";
 import { prisma } from "@/lib/db";
 import AnalyticsCharts, { type AnalyticsData } from "@/components/dashboard/analytics-charts";
+
+export const metadata: Metadata = { title: "Dashboard | WDISTT" };
 
 export default async function DashboardPage() {
   const user = await getSession();

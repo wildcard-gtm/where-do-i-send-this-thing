@@ -68,6 +68,10 @@ export default function PostcardDetailPage() {
   const [uploading, setUploading] = useState(false);
   const refFileInput = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    document.title = postcard?.contactName ? `${postcard.contactName} Postcard | WDISTT` : "Postcard | WDISTT";
+  }, [postcard?.contactName]);
+
   const loadPostcard = () => {
     fetch(`/api/postcards/${postcardId}`)
       .then((res) => (res.ok ? res.json() : null))

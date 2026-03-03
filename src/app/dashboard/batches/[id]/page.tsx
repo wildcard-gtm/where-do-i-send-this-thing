@@ -341,6 +341,10 @@ export default function CampaignDetailPage() {
   const [locationType, setLocationType] = useState<"all" | "remote" | "office">("all");
   const [refreshingPhotos, setRefreshingPhotos] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    document.title = data?.batch?.name ? `${data.batch.name} | Campaigns | WDISTT` : "Campaign | WDISTT";
+  }, [data?.batch?.name]);
+
   const cancelledRef   = useRef(false);
   const queueRef       = useRef<QueueItem[]>([]);
   const activeCountRef = useRef(0);

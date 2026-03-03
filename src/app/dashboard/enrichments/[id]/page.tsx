@@ -208,6 +208,10 @@ export default function EnrichmentDetailPage() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const dispatchingRef = useRef(false);
 
+  useEffect(() => {
+    document.title = batch?.name ? `${batch.name} | Enrichments | WDISTT` : "Enrichment | WDISTT";
+  }, [batch?.name]);
+
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/enrichment-batches/${batchId}`);
     if (res.ok) {

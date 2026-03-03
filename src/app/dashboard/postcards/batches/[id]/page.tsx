@@ -122,6 +122,10 @@ export default function PostcardBatchDetailPage() {
   const [retryError, setRetryError] = useState<string | null>(null);
   const dispatchingRef = useRef(false);
 
+  useEffect(() => {
+    document.title = batch?.name ? `${batch.name} | Postcards | WDISTT` : "Postcard Batch | WDISTT";
+  }, [batch?.name]);
+
   const fetchBatch = useCallback(async () => {
     const res = await fetch(`/api/postcard-batches/${batchId}`);
     if (res.ok) {

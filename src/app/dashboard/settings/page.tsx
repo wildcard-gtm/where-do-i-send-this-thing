@@ -57,6 +57,8 @@ export default function SettingsPage() {
   const [invitePassword, setInvitePassword] = useState("");
   const [inviteConfirmPassword, setInviteConfirmPassword] = useState("");
 
+  useEffect(() => { document.title = "Settings | WDISTT"; }, []);
+
   const fetchData = useCallback(async () => {
     const [teamRes, accountRes] = await Promise.all([
       fetch("/api/team"),

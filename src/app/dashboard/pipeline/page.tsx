@@ -150,6 +150,8 @@ export default function PipelinePage() {
   const [generatingPostcards, setGeneratingPostcards] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  useEffect(() => { document.title = "Pipeline | WDISTT"; }, []);
+
   const fetchContacts = useCallback(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);

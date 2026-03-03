@@ -29,6 +29,8 @@ export default function EnrichmentsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
 
+  useEffect(() => { document.title = "Enrichments | WDISTT"; }, []);
+
   useEffect(() => {
     fetch("/api/enrichment-batches")
       .then((res) => (res.ok ? res.json() : { batches: [] }))

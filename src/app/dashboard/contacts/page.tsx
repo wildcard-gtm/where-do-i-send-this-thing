@@ -658,6 +658,8 @@ export default function ContactsPage() {
   const searchParams = useSearchParams();
   const batchIdFromUrl = searchParams.get("batchId");
 
+  useEffect(() => { document.title = "Contacts | WDISTT"; }, []);
+
   // If no batchId in URL, show campaign picker
   if (!batchIdFromUrl) {
     return <CampaignPicker />;

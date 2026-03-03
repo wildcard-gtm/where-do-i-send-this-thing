@@ -89,6 +89,8 @@ export default function AdminPage() {
   const [newUserRole, setNewUserRole] = useState("user");
   const [addingUser, setAddingUser] = useState(false);
 
+  useEffect(() => { document.title = "Admin | WDISTT"; }, []);
+
   useEffect(() => {
     loadData();
   }, [tab]);

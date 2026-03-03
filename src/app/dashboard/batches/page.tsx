@@ -303,6 +303,8 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<Campaign | null>(null);
 
+  useEffect(() => { document.title = "Campaigns | WDISTT"; }, []);
+
   const load = useCallback((archived: boolean) => {
     setLoading(true);
     fetch(`/api/campaigns${archived ? "?archived=true" : ""}`)

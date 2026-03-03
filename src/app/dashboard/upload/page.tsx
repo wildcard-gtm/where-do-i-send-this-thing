@@ -15,6 +15,8 @@ export default function UploadPage() {
   const [autoProcess, setAutoProcess] = useState(false);
   const [autoProcessLoaded, setAutoProcessLoaded] = useState(false);
 
+  useEffect(() => { document.title = "New Campaign | WDISTT"; }, []);
+
   useEffect(() => {
     fetch("/api/auth/me")
       .then((res) => (res.ok ? res.json() : null))
