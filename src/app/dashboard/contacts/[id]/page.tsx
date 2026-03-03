@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import ContactChat from "@/components/contacts/contact-chat";
 import FeedbackButtons from "@/components/contacts/feedback-buttons";
+import RegenerateModal from "@/components/postcards/regenerate-modal";
+import CorrectionModal from "@/components/corrections/correction-modal";
 
 const MapView = dynamic(() => import("@/components/results/map-view"), {
   ssr: false,
@@ -70,19 +73,58 @@ const recommendationColors: Record<string, string> = {
 
 const markdownProseClasses = "prose prose-sm max-w-none text-muted-foreground prose-headings:text-foreground prose-headings:font-semibold prose-headings:mt-3 prose-headings:mb-1 prose-p:my-1.5 prose-p:leading-relaxed prose-ul:my-1.5 prose-ul:pl-4 prose-ol:my-1.5 prose-ol:pl-4 prose-li:my-0.5 prose-li:leading-relaxed prose-strong:text-foreground prose-strong:font-semibold prose-code:text-foreground prose-code:bg-muted/50 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:before:content-none prose-code:after:content-none prose-pre:bg-muted/50 prose-pre:rounded-lg prose-pre:my-2 prose-a:text-primary prose-a:no-underline hover:prose-a:underline";
 
+interface PostcardData {
+  id: string;
+  status: string;
+  imageUrl: string | null;
+  template: string;
+  errorMessage?: string | null;
+  contactPhoto?: string | null;
+  teamPhotos?: TeamPhoto[] | null;
+  companyLogo?: string | null;
+  contactName?: string;
+  contactTitle?: string | null;
+  customPrompt?: string | null;
+  backMessage?: string | null;
+  parentPostcardId?: string | null;
+  createdAt?: string;
+}
+
+interface ReferenceImage {
+  id: string;
+  label: string;
+  imageUrl: string;
+}
+
+const statusColors: Record<string, string> = {
+  pending: "text-warning bg-warning/10",
+  generating: "text-primary bg-primary/10",
+  ready: "text-accent bg-accent/10",
+  approved: "text-success bg-success/10",
+  failed: "text-danger bg-danger/10",
+};
+
 export default function ContactDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const contactId = params.id as string;
   const [contact, setContact] = useState<Contact | null>(null);
   const [enrichment, setEnrichment] = useState<EnrichmentData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"overview" | "chat" | "team" | "postcard">("overview");
+  const initialTab = (searchParams.get("tab") as "overview" | "chat" | "team" | "postcard") || "overview";
+  const [tab, setTab] = useState<"overview" | "chat" | "team" | "postcard">(initialTab);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [postcard, setPostcard] = useState<{
-    id: string; status: string; imageUrl: string | null; template: string;
-  } | null>(null);
+  const [postcard, setPostcard] = useState<PostcardData | null>(null);
+  const [allPostcards, setAllPostcards] = useState<PostcardData[]>([]);
   const [postcardGenerating, setPostcardGenerating] = useState(false);
+  const [showRegenerateModal, setShowRegenerateModal] = useState(false);
+  const [showCorrectionModal, setShowCorrectionModal] = useState(false);
+  const [showEditBackMessage, setShowEditBackMessage] = useState(false);
+  const [editBackMessage, setEditBackMessage] = useState("");
+  const [postcardActionLoading, setPostcardActionLoading] = useState(false);
+  const [postcardReferences, setPostcardReferences] = useState<ReferenceImage[]>([]);
+  const [showPreviousVersions, setShowPreviousVersions] = useState(false);
   const [editingTeamMember, setEditingTeamMember] = useState<number | null>(null);
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
@@ -138,16 +180,37 @@ export default function ContactDetailPage() {
       });
   }, [contactId]);
 
-  // Load postcard for this contact when Postcard tab is opened
-  useEffect(() => {
-    if (tab !== "postcard") return;
+  // Load postcards for this contact when Postcard tab is opened
+  const loadPostcards = () => {
     fetch(`/api/contacts/${contactId}/postcards`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        const latest = data?.postcards?.[0] ?? null;
+        const postcards = data?.postcards ?? [];
+        setAllPostcards(postcards);
+        const latest = postcards[0] ?? null;
         setPostcard(latest);
+        if (latest?.backMessage !== undefined) {
+          setEditBackMessage(latest.backMessage ?? "");
+        }
       });
+  };
+
+  const loadPostcardReferences = (postcardId: string) => {
+    fetch(`/api/postcards/${postcardId}/references`)
+      .then((res) => (res.ok ? res.json() : { references: [] }))
+      .then((data) => setPostcardReferences(data.references || []));
+  };
+
+  useEffect(() => {
+    if (tab !== "postcard") return;
+    loadPostcards();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, contactId]);
+
+  useEffect(() => {
+    if (postcard?.id) loadPostcardReferences(postcard.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postcard?.id]);
 
   // Poll while postcard is generating
   useEffect(() => {
@@ -157,7 +220,9 @@ export default function ContactDetailPage() {
       fetch(`/api/postcards/${postcard.id}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (data?.postcard) setPostcard(data.postcard);
+          if (data?.postcard) {
+            setPostcard((prev) => prev ? { ...prev, ...data.postcard } : data.postcard);
+          }
         });
     }, 4000);
     return () => clearInterval(interval);
@@ -180,12 +245,52 @@ export default function ContactDetailPage() {
   };
 
   const handleApprovePostcard = async (id: string) => {
+    setPostcardActionLoading(true);
     await fetch(`/api/postcards/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "approved" }),
     });
     setPostcard((p) => p ? { ...p, status: "approved" } : p);
+    setPostcardActionLoading(false);
+  };
+
+  const handleSaveBackMessage = async () => {
+    if (!postcard) return;
+    setPostcardActionLoading(true);
+    setShowEditBackMessage(false);
+    await fetch(`/api/postcards/${postcard.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backMessage: editBackMessage.trim() }),
+    });
+    setPostcard((p) => p ? { ...p, backMessage: editBackMessage.trim() } : p);
+    setPostcardActionLoading(false);
+  };
+
+  const handleDownloadPostcard = async () => {
+    if (!postcard?.imageUrl) return;
+    const res = await fetch(postcard.imageUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(contact?.name || "postcard").replace(/[^a-z0-9]/gi, "_")}-postcard.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDeletePostcard = async () => {
+    if (!postcard || !confirm("Delete this postcard?")) return;
+    await fetch(`/api/postcards/${postcard.id}`, { method: "DELETE" });
+    setPostcard(null);
+    loadPostcards();
+  };
+
+  const handleRegenerated = (newPostcardId: string) => {
+    setPostcard({ id: newPostcardId, status: "pending", imageUrl: null, template: postcard?.template || "warroom" });
+    // Reload all postcards to show revision history
+    setTimeout(loadPostcards, 1000);
   };
 
   if (loading) {
@@ -599,104 +704,349 @@ export default function ContactDetailPage() {
           )}
         </div>
       ) : tab === "postcard" ? (
-        <div className="max-w-2xl">
-          <div className="glass-card rounded-2xl p-6">
-            <h3 className="text-sm font-medium text-foreground mb-4">Postcard</h3>
-
-            {!postcard ? (
-              <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground mb-4">
-                  No postcard generated yet. Run company enrichment first, then generate a postcard.
-                </p>
-                <button
-                  onClick={handleGeneratePostcard}
-                  disabled={postcardGenerating}
-                  className="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2.5 rounded-lg font-medium transition text-sm mx-auto"
-                >
-                  {postcardGenerating ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        <div>
+          {!postcard ? (
+            <div className="glass-card rounded-2xl p-12 text-center max-w-lg mx-auto">
+              <div className="w-14 h-14 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <svg className="w-7 h-7 text-muted-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <h2 className="text-lg font-semibold text-foreground mb-2">No postcard yet</h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                Run company enrichment first, then generate a postcard.
+              </p>
+              <button
+                onClick={handleGeneratePostcard}
+                disabled={postcardGenerating}
+                className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2.5 rounded-lg font-medium transition text-sm"
+              >
+                {postcardGenerating ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : null}
+                Generate Postcard
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Preview */}
+              <div className="lg:col-span-2">
+                <div className="glass-card rounded-2xl overflow-hidden">
+                  {postcard.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={postcard.imageUrl}
+                      alt="Postcard preview"
+                      className="w-full"
+                    />
+                  ) : postcard.status === "pending" || postcard.status === "generating" ? (
+                    <div className="flex flex-col items-center justify-center h-64 gap-3">
+                      <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                      <p className="text-sm text-muted-foreground capitalize">
+                        {postcard.status === "pending" ? "Queued for generation..." : "Generating illustration..."}
+                      </p>
+                      <p className="text-xs text-muted-foreground">This takes about 30-60 seconds</p>
+                    </div>
+                  ) : postcard.status === "failed" ? (
+                    <div className="flex flex-col items-center justify-center h-64 gap-3 p-6">
+                      <p className="text-danger font-medium">Generation failed</p>
+                      {postcard.errorMessage && (
+                        <p className="text-xs text-muted-foreground text-center">{postcard.errorMessage}</p>
+                      )}
+                    </div>
                   ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
+                    <div className="flex items-center justify-center h-64">
+                      <p className="text-muted-foreground text-sm">No image available</p>
+                    </div>
                   )}
-                  Generate Postcard
-                </button>
-              </div>
-            ) : postcard.status === "pending" || postcard.status === "generating" ? (
-              <div className="flex flex-col items-center py-8 gap-3">
-                <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm text-muted-foreground capitalize">
-                  {postcard.status === "pending" ? "Queued..." : "Generating background illustration..."}
-                </p>
-                <p className="text-xs text-muted-foreground">This takes about 30–60 seconds</p>
-              </div>
-            ) : postcard.status === "failed" ? (
-              <div className="text-center py-6">
-                <p className="text-danger text-sm font-medium mb-3">Generation failed</p>
-                <button
-                  onClick={handleGeneratePostcard}
-                  disabled={postcardGenerating}
-                  className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-5 py-2 rounded-lg font-medium transition text-sm"
-                >
-                  Try Again
-                </button>
-              </div>
-            ) : (
-              <div>
-                {postcard.imageUrl && (
-                  <img
-                    src={postcard.imageUrl}
-                    alt="Postcard preview"
-                    className="w-full rounded-lg mb-4"
-                  />
-                )}
-                <div className="flex items-center gap-3 flex-wrap">
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-3 mt-4 flex-wrap">
                   {postcard.status === "ready" && (
                     <button
                       onClick={() => handleApprovePostcard(postcard.id)}
-                      className="bg-success/10 text-success hover:bg-success/20 px-4 py-2 rounded-lg font-medium transition text-sm"
+                      disabled={postcardActionLoading}
+                      className="flex items-center gap-2 bg-success hover:bg-success/80 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg font-medium transition text-sm"
                     >
                       Approve
                     </button>
                   )}
                   {postcard.status === "approved" && (
-                    <span className="text-success text-sm font-medium">Approved</span>
-                  )}
-                  {postcard.imageUrl && (
-                    <button
-                      onClick={async () => {
-                        const res = await fetch(postcard.imageUrl!);
-                        const blob = await res.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement("a");
-                        a.href = url;
-                        a.download = "postcard.png";
-                        a.click();
-                        URL.revokeObjectURL(url);
-                      }}
-                      className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
-                    >
-                      Download
-                    </button>
+                    <span className="inline-flex items-center gap-1.5 text-success text-sm font-medium px-3 py-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                      Approved
+                    </span>
                   )}
                   <button
-                    onClick={() => window.open(`/dashboard/postcards/${postcard.id}`, "_blank")}
-                    className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
-                  >
-                    Full Review
-                  </button>
-                  <button
-                    onClick={handleGeneratePostcard}
-                    disabled={postcardGenerating}
-                    className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition text-sm font-medium"
+                    onClick={() => setShowRegenerateModal(true)}
+                    disabled={postcardActionLoading || postcard.status === "pending" || postcard.status === "generating"}
+                    className="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2.5 rounded-lg font-medium transition text-sm"
                   >
                     Regenerate
                   </button>
+                  <button
+                    onClick={() => setShowEditBackMessage((v) => !v)}
+                    disabled={postcardActionLoading || postcard.status === "pending" || postcard.status === "generating"}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Edit Back
+                  </button>
+                  {postcard.imageUrl && (
+                    <button
+                      onClick={handleDownloadPostcard}
+                      className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium"
+                    >
+                      Download PNG
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setShowCorrectionModal(true)}
+                    disabled={postcard.status === "pending" || postcard.status === "generating"}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-warning/50 text-warning hover:bg-warning/10 disabled:opacity-50 transition text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    Correct with AI
+                  </button>
+                  <button
+                    onClick={handleDeletePostcard}
+                    className="px-4 py-2.5 rounded-lg border border-border text-danger hover:bg-danger/10 transition text-sm font-medium"
+                  >
+                    Delete
+                  </button>
                 </div>
+
+                {/* Edit back message panel */}
+                {showEditBackMessage && (
+                  <div className="mt-4 glass-card rounded-2xl p-5 space-y-4">
+                    <h3 className="text-sm font-semibold text-foreground">Edit Back Message</h3>
+                    <p className="text-xs text-muted-foreground -mt-2">
+                      Edit the message printed on the back of the physical postcard.
+                    </p>
+                    <textarea
+                      value={editBackMessage}
+                      onChange={(e) => setEditBackMessage(e.target.value)}
+                      placeholder="Message printed on the back of the postcard"
+                      rows={5}
+                      className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition resize-none"
+                    />
+                    <div className="flex items-center justify-end gap-3 pt-2 border-t border-border/50">
+                      <button
+                        onClick={() => setShowEditBackMessage(false)}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground border border-border hover:border-muted-foreground transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveBackMessage}
+                        className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-2 rounded-lg font-medium transition text-sm"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Previous Versions */}
+                {allPostcards.length > 1 && (
+                  <div className="mt-6">
+                    <button
+                      onClick={() => setShowPreviousVersions((v) => !v)}
+                      className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition"
+                    >
+                      <svg
+                        className={`w-4 h-4 transition-transform ${showPreviousVersions ? "rotate-90" : ""}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      Previous Versions ({allPostcards.length - 1})
+                    </button>
+                    {showPreviousVersions && (
+                      <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mt-3">
+                        {allPostcards.slice(1).map((p) => (
+                          <button
+                            key={p.id}
+                            onClick={() => setPostcard(p)}
+                            className={`group relative rounded-xl overflow-hidden border-2 transition ${
+                              postcard.id === p.id ? "border-primary" : "border-border hover:border-primary/50"
+                            }`}
+                          >
+                            {p.imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={p.imageUrl}
+                                alt="Previous version"
+                                className="w-full h-20 object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-20 bg-muted/50 flex items-center justify-center">
+                                <span className="text-xs text-muted-foreground capitalize">{p.status}</span>
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent px-2 py-1">
+                              <span className="text-[10px] text-white/90">
+                                {p.createdAt ? new Date(p.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Sidebar */}
+              <div className="space-y-4">
+                {/* Status */}
+                <div className="glass-card rounded-2xl p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-foreground">Status</h3>
+                    <span className={`text-xs font-medium px-2.5 py-1 rounded-full capitalize ${statusColors[postcard.status] || "text-foreground bg-muted"}`}>
+                      {postcard.status}
+                    </span>
+                  </div>
+                  <dl className="space-y-2 text-sm">
+                    <div>
+                      <dt className="text-xs text-muted-foreground">Template</dt>
+                      <dd className="text-foreground capitalize">{postcard.template === "warroom" ? "War Room" : "Zoom Room"}</dd>
+                    </div>
+                    {postcard.createdAt && (
+                      <div>
+                        <dt className="text-xs text-muted-foreground">Created</dt>
+                        <dd className="text-foreground">
+                          {new Date(postcard.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                </div>
+
+                {/* Reference Images */}
+                {postcardReferences.length > 0 && (
+                  <div className="glass-card rounded-2xl p-5">
+                    <h3 className="text-sm font-medium text-foreground mb-3">Reference Images</h3>
+                    <div className="grid grid-cols-2 gap-2">
+                      {postcardReferences.map((ref) => (
+                        <div key={ref.id} className="relative">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={ref.imageUrl}
+                            alt={ref.label}
+                            className="w-full h-20 object-cover rounded-lg border border-border"
+                          />
+                          <span className="absolute bottom-1 left-1 text-[10px] font-medium bg-black/60 text-white px-1.5 py-0.5 rounded capitalize">
+                            {ref.label.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Data snapshot */}
+                {(postcard.contactPhoto || postcard.companyLogo || (postcard.teamPhotos as TeamPhoto[] | null)?.length) && (
+                  <div className="glass-card rounded-2xl p-5">
+                    <h3 className="text-sm font-medium text-foreground mb-3">Data Used</h3>
+                    <div className="space-y-3">
+                      {postcard.contactPhoto && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Prospect Photo</p>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={postcard.contactPhoto} alt="Prospect" className="w-10 h-10 rounded-full object-cover" />
+                        </div>
+                      )}
+                      {postcard.companyLogo && (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Logo</p>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={postcard.companyLogo} alt="Logo" className="h-8 object-contain" />
+                        </div>
+                      )}
+                      {(postcard.teamPhotos as TeamPhoto[] | null)?.length ? (
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">Team ({(postcard.teamPhotos as TeamPhoto[]).length})</p>
+                          <div className="flex -space-x-2">
+                            {(postcard.teamPhotos as TeamPhoto[]).slice(0, 4).map((tp, i) => (
+                              tp.photoUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img key={i} src={tp.photoUrl} alt={tp.name || ""} className="w-8 h-8 rounded-full object-cover border-2 border-card" />
+                              ) : (
+                                <div key={i} className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary border-2 border-card">
+                                  {(tp.name || "?")[0]?.toUpperCase()}
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-3">
+                      Switch to the <button onClick={() => setTab("team")} className="text-primary hover:underline">Team tab</button> to see all team members and enrichment data.
+                    </p>
+                  </div>
+                )}
+
+                {/* Back message preview */}
+                {postcard.backMessage && (
+                  <div className="glass-card rounded-2xl p-5">
+                    <h3 className="text-sm font-medium text-foreground mb-2">Back Message</h3>
+                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">{postcard.backMessage}</p>
+                  </div>
+                )}
+
+                {/* Custom prompt used */}
+                {postcard.customPrompt && (
+                  <div className="glass-card rounded-2xl p-5">
+                    <h3 className="text-sm font-medium text-foreground mb-2">Custom Instructions Used</h3>
+                    <p className="text-xs text-muted-foreground italic">&ldquo;{postcard.customPrompt}&rdquo;</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Regeneration Modal */}
+          {showRegenerateModal && postcard && (
+            <RegenerateModal
+              isOpen={true}
+              onClose={() => setShowRegenerateModal(false)}
+              contactId={contactId}
+              contactName={contact?.name || ""}
+              currentPostcardId={postcard.id}
+              currentTemplate={postcard.template}
+              currentContactPhoto={postcard.contactPhoto ?? contact?.profileImageUrl ?? null}
+              currentCompanyLogo={postcard.companyLogo ?? enrichment?.companyLogo ?? null}
+              currentTeamPhotos={(postcard.teamPhotos as TeamPhoto[] | null) ?? enrichment?.teamPhotos ?? null}
+              onRegenerated={handleRegenerated}
+            />
+          )}
+
+          {/* Correction Modal */}
+          {showCorrectionModal && postcard && (
+            <CorrectionModal
+              isOpen={true}
+              onClose={() => setShowCorrectionModal(false)}
+              contactId={contactId}
+              contactName={contact?.name || ""}
+              stage="postcard"
+              postcardId={postcard.id}
+              onApplied={() => {
+                loadPostcards();
+                loadPostcardReferences(postcard.id);
+              }}
+            />
+          )}
         </div>
       ) : (
         <ContactChat

@@ -85,6 +85,7 @@ export async function POST(
           companyLogo: true,
           contactPhoto: true,
           teamPhotos: true,
+          customPrompt: true,
         },
       });
 
@@ -110,6 +111,7 @@ export async function POST(
           : teamPhotos.map((p) => p.photoUrl).filter(Boolean),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
         prospectName: existing?.contactName ?? undefined,
+        customPrompt: existing?.customPrompt ?? undefined,
       };
 
       let bgBase64: string;

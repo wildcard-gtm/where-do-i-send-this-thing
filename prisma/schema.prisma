@@ -310,6 +310,10 @@ model Postcard {
   teamPhotos       Json?    // [{ name?: string, photoUrl: string, title?: string }] — snapshotted from enrichment
   deliveryAddress  String?
 
+  // Regeneration support
+  customPrompt     String?  // User's additional instructions for the AI generator
+  parentPostcardId String?  // Points to the previous version (revision history)
+
   references       PostcardReference[]
 
   createdAt        DateTime @default(now())

@@ -358,7 +358,7 @@ export default function PostcardsPage() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <Link
-                    href={`/dashboard/postcards/${postcard.id}`}
+                    href={`/dashboard/contacts/${postcard.contactId}?tab=postcard`}
                     className="text-sm font-medium text-foreground hover:text-primary transition truncate block"
                   >
                     {postcard.contactName}

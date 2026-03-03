@@ -410,7 +410,7 @@ export default function PostcardBatchDetailPage() {
                 />
                 {(postcard.status === "ready" || postcard.status === "approved") && (
                   <Link
-                    href={`/dashboard/postcards/${postcard.id}`}
+                    href={`/dashboard/contacts/${postcard.contactId}?tab=postcard`}
                     className="text-xs text-primary hover:text-primary-hover font-medium transition"
                   >
                     View

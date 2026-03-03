@@ -15,7 +15,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { contactId, template: requestedTemplate } = await request.json();
+  const {
+    contactId,
+    template: requestedTemplate,
+    customPrompt,
+    contactPhoto: overrideContactPhoto,
+    teamPhotos: overrideTeamPhotos,
+    companyLogo: overrideCompanyLogo,
+    parentPostcardId,
+  } = await request.json();
 
   if (!contactId) {
     return NextResponse.json({ error: "contactId required" }, { status: 400 });
@@ -70,13 +78,16 @@ export async function POST(request: Request) {
       retryCount: 0,
       contactName: contact.name,
       contactTitle: contact.title,
-      contactPhoto: contact.profileImageUrl,
+      contactPhoto: overrideContactPhoto ?? contact.profileImageUrl,
       deliveryAddress,
-      companyLogo: enrichment?.companyLogo ?? null,
+      companyLogo: overrideCompanyLogo ?? enrichment?.companyLogo ?? null,
       openRoles: enrichment?.openRoles ?? undefined,
       companyValues: enrichment?.companyValues ?? undefined,
       companyMission: enrichment?.companyMission ?? null,
       officeLocations: enrichment?.officeLocations ?? undefined,
+      teamPhotos: overrideTeamPhotos ?? enrichment?.teamPhotos ?? undefined,
+      customPrompt: customPrompt ?? null,
+      parentPostcardId: parentPostcardId ?? null,
     },
   });
 

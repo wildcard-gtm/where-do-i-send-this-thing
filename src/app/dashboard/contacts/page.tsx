@@ -560,7 +560,7 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
                         Download
                       </button>
                     )}
-                    <button onClick={() => window.open(`/dashboard/postcards/${postcard.id}`, "_blank")} className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium">
+                    <button onClick={() => window.open(`/dashboard/contacts/${contactId}?tab=postcard`, "_blank")} className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground transition text-sm font-medium">
                       Full Review →
                     </button>
                     <button onClick={handleGeneratePostcard} disabled={postcardGenerating} className="px-4 py-2 rounded-lg border border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition text-sm font-medium">

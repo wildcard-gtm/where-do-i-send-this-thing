@@ -26,6 +26,8 @@ export interface NanoBananaInput {
   openRoles?: Array<{ title: string; location: string }>;
   /** Prospect name for prompt context */
   prospectName?: string;
+  /** User's additional instructions for the AI generator */
+  customPrompt?: string | null;
 }
 
 type ImageData = { data: string; mimeType: string };
@@ -274,6 +276,7 @@ interface PreparedData {
   logoImage: ImageData | null;
   teamImages: ImageData[];
   rolesText: string;
+  customPrompt?: string | null;
 }
 
 async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData> {
@@ -297,7 +300,7 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
     : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
-  return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt };
 }
 
 async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData> {
@@ -321,7 +324,7 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
     : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
-  return { reference, screen, prospectImage, logoImage, teamImages, rolesText };
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt };
 }
 
 // ─── War Room Prompts ───────────────────────────────────────────────────────
@@ -418,7 +421,8 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `- All text is legible and within bounds`,
     `- Wide landscape output, not square or portrait`,
     `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
-  ].join('\n');
+    data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
+  ].filter(Boolean).join('\n');
 }
 
 function buildWarRoomAnalysisPrompt(data: PreparedData): string {
@@ -570,6 +574,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
     `- All text legible and within bounds`,
     `- Wide landscape output (3:2 ratio), not square or portrait`,
+    data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
 }
 

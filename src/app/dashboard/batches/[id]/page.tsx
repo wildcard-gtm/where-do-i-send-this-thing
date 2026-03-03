@@ -281,7 +281,7 @@ function PostcardPill({ c, onRefresh, onCorrect }: { c: CampaignContact; onRefre
     return (
       <div className="flex items-center gap-1.5">
         <Link
-          href={`/dashboard/postcards/${c.postcardId}`}
+          href={`/dashboard/contacts/${c.contactId}?tab=postcard`}
           onClick={(e) => e.stopPropagation()}
           className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-success/10 text-success hover:bg-success/20 transition"
         >
@@ -390,17 +390,36 @@ export default function CampaignDetailPage() {
 
   // ── Dispatcher ────────────────────────────────────────────────────────────
 
+  // Wrap a promise with a timeout — if it doesn't resolve in `ms`, reject so the slot is freed
+  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Dispatch timeout")), ms);
+      promise.then(resolve, reject).finally(() => clearTimeout(timer));
+    });
+  }
+
   async function dispatchItem(item: QueueItem): Promise<void> {
     if (cancelledRef.current) return;
+    // 5-minute timeout per item — if the server hangs, the slot is freed for the next item
+    const DISPATCH_TIMEOUT = 5 * 60 * 1000;
     if (item.kind === "scan") {
-      const res = await fetch(`/api/batches/${batchId}/jobs/${item.jobId}/stream`);
+      const res = await withTimeout(
+        fetch(`/api/batches/${batchId}/jobs/${item.jobId}/stream`),
+        DISPATCH_TIMEOUT
+      );
       if (!res.ok || !res.body) return;
       const reader = res.body.getReader();
       while (!(await reader.read()).done) { /* consume stream */ }
     } else if (item.kind === "enrich") {
-      await fetch(`/api/enrichments/${item.enrichmentId}/run`, { method: "POST" });
+      await withTimeout(
+        fetch(`/api/enrichments/${item.enrichmentId}/run`, { method: "POST" }),
+        DISPATCH_TIMEOUT
+      );
     } else {
-      await fetch(`/api/postcards/${item.postcardId}/run`, { method: "POST" });
+      await withTimeout(
+        fetch(`/api/postcards/${item.postcardId}/run`, { method: "POST" }),
+        DISPATCH_TIMEOUT
+      );
     }
   }
 
@@ -451,30 +470,43 @@ export default function CampaignDetailPage() {
 
     await fetchData();
 
-    // Track scan completion to call finalize
-    let remaining = allJobIds.length;
+    // Track scan completion to call finalize when all jobs settle
     const scanItems: QueueItem[] = allJobIds.map((jobId) => ({ kind: "scan", jobId }));
-    queueRef.current.push(...scanItems);
+    const totalScans = scanItems.length;
+    let settledScans = 0;
 
-    // Wrap drainQueue to finalize when all scans settle
-    const originalDrain = drainQueue;
-    void originalDrain; // suppress unused warning — using inline drain below
+    // Use a wrapper that tracks settlement and calls finalize when all scans are done
+    const originalDispatch = dispatchItem;
+    const trackingItems = scanItems.map((item) => {
+      const wrappedItem = { ...item };
+      return wrappedItem;
+    });
 
-    while (activeCountRef.current < CONCURRENCY && queueRef.current.length > 0) {
-      activeCountRef.current++;
-      const item = queueRef.current.shift()!;
-      dispatchItem(item)
-        .catch(() => {})
-        .finally(() => {
-          activeCountRef.current--;
-          fetchData();
-          remaining--;
-          if (remaining === 0) {
-            fetch(`/api/batches/${batchId}/finalize`, { method: "POST" }).catch(() => {});
-          }
-          drainQueue();
-        });
+    queueRef.current.push(...trackingItems);
+
+    // Override drain temporarily to track scan settlements
+    const savedDrain = drainQueue;
+    function scanTrackingDrain() {
+      while (activeCountRef.current < CONCURRENCY && queueRef.current.length > 0) {
+        activeCountRef.current++;
+        const item = queueRef.current.shift()!;
+        originalDispatch(item)
+          .catch(() => {})
+          .finally(() => {
+            activeCountRef.current--;
+            fetchData();
+            if (item.kind === "scan") {
+              settledScans++;
+              if (settledScans >= totalScans) {
+                fetch(`/api/batches/${batchId}/finalize`, { method: "POST" }).catch(() => {});
+              }
+            }
+            scanTrackingDrain();
+          });
+      }
     }
+    scanTrackingDrain();
+    void savedDrain; // suppress unused warning
   }
 
   async function handleEnrichSelected() {

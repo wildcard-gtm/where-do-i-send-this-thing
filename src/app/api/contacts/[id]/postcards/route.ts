@@ -37,6 +37,14 @@ export async function GET(
       imageUrl: true,
       errorMessage: true,
       createdAt: true,
+      contactPhoto: true,
+      teamPhotos: true,
+      companyLogo: true,
+      contactName: true,
+      contactTitle: true,
+      customPrompt: true,
+      backMessage: true,
+      parentPostcardId: true,
     },
   });
 
