@@ -23,6 +23,7 @@ interface ContactRow {
   linkedinUrl: string;
   company: string | null;
   title: string | null;
+  profileImageUrl: string | null;
   recommendation: string | null;
   confidence: number | null;
   createdAt: string;
