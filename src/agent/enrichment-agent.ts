@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, fetchBrightDataLinkedIn } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn } from './services';
 import axios, { type AxiosError } from 'axios';
 
 // ─── Types ───────────────────────────────────────────────
@@ -91,6 +91,18 @@ const ENRICHMENT_TOOLS = [
     },
   },
   {
+    name: 'search_people',
+    description: 'Search for people at a company using Exa AI people search. Returns LinkedIn profile URLs. Use this to find Talent Acquisition / Recruiting / People team members at the company. More targeted than search_web for finding specific people.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: { type: 'string', description: 'Search query, e.g. "Talent Acquisition Stripe" or "Head of Recruiting Uber"' },
+        num_results: { type: 'number', description: 'Number of results (default: 5)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'fetch_url',
     description: 'Fetch and read the contents of a URL. Use to scrape company careers page, about page, or values page.',
     input_schema: {
@@ -148,7 +160,7 @@ const ENRICHMENT_TOOLS = [
         },
         team_photos: {
           type: 'array',
-          description: 'Photo URLs of team members from the same company (aim for 4 people — from LinkedIn company page, team/about pages, or press coverage). Each must be a direct URL to a headshot or profile photo.',
+          description: 'Photo URLs of Talent/Recruiting team members at the company (aim for 4 people). Prioritize Talent Acquisition, Recruiters, Head of People, etc. Each must be a direct URL to a headshot.',
           items: {
             type: 'object',
             properties: {
@@ -170,22 +182,23 @@ const ENRICHMENT_TOOLS = [
 const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Given a contact's name, company, and LinkedIn URL, your job is to research and collect the following data about their company:
 
 1. **Company logo** — Call fetch_company_logo with the company domain. It tries Hunter.io first (fast/free), then Brandfetch (may also return brand colors and company description). If both fail, use fetch_url on the company homepage and look for logo image tags in the HTML.
-2. **Top 3 open roles** — Find the 3 highest-level open positions (prioritize Director, VP, Staff, Principal, Senior roles). Include the location for each role.
+2. **Top 3 open roles** — Find the 3 highest-level open positions (prioritize Director, VP, Staff, Principal, Senior roles). Include the location for each role. These should come from actual job postings.
 3. **Company values** — Find 3-6 core company values from their website or about page.
 4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
 5. **Office locations** — Find cities/regions where the company has offices.
-6. **Team photos** — Find up to 4 photos of team members from the same company. Try: the company's team/about page, LinkedIn company page employee listings, press coverage, blog author headshots, or conference speaker pages. Each photo must be a direct URL to a headshot. Aim for 4 people — include whoever you can find with real photo URLs. If you find fewer than 4, submit what you have.
+6. **Team photos** — Find up to 4 photos of people on the **Talent / People / Recruiting team** at the same company. Prioritize people with titles like: Talent Acquisition, TA, Head of Talent, VP of People, Recruiting Manager, Recruiter, Chief People Officer, People Operations, Head of Recruiting, Talent Partner. Do NOT default to random executives (CEO, CTO, CFO) — we want the target person's colleagues on the talent/recruiting team. Each photo must be a direct URL to a headshot. Aim for 4 people. If you find fewer than 4, submit what you have.
 
 WORKFLOW:
 1. First, determine the company domain from the company name (e.g. "Stripe" → "stripe.com")
 2. Call fetch_company_logo with that domain
 3. Use search_web to find: "[company] open jobs careers", "[company] company values mission", "[company] office locations"
 4. Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
-5. Use search_web to find LinkedIn profile URLs of employees at [company] — search for "site:linkedin.com/in [company name] engineer OR manager OR designer" to get individual profile URLs
-6. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs.
-7. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
+5. Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
+6. If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
+7. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs.
+8. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
 
-Be efficient — you have a max of 15 tool calls. Don't repeat searches. Prioritize quality over quantity.
+Be efficient — you have a max of 18 tool calls. Don't repeat searches. Prioritize quality over quantity.
 If you can't find certain data, submit what you have with null for missing fields.
 Never make up data. Only include what you actually found.`;
 
@@ -223,6 +236,14 @@ async function executeEnrichmentTool(
         'auto',
         (args.num_results as number | undefined) ?? 5,
       );
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'search_people': {
+      const query = args.query as string;
+      const numResults = (args.num_results as number | undefined) ?? 5;
+      // Use Exa AI people-specific search with LinkedIn domain filtering
+      const res = await searchExaPerson(query, '', numResults);
       return { result: { success: res.success, data: res.data, summary: res.summary } };
     }
 
