@@ -649,8 +649,8 @@ function CampaignPicker() {
 
 // ─── Main contacts page ───────────────────────────────────────────────────────
 
-const filterTabs = ["all", "remote", "office"] as const;
-const filterLabels: Record<string, string> = { all: "All", remote: "Remote", office: "In-Office" };
+const filterTabs = ["all", "HOME", "OFFICE", "BOTH"] as const;
+const companyTypeTabs = ["all", "remote", "office"] as const;
 
 export default function ContactsPage() {
   const router = useRouter();
@@ -673,6 +673,7 @@ function ContactsView({ batchId }: { batchId: string }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  const [companyType, setCompanyType] = useState<"all" | "remote" | "office">("all");
   const [batchFilter, setBatchFilter] = useState(batchId);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
@@ -682,23 +683,24 @@ function ContactsView({ batchId }: { batchId: string }) {
   const fetchContacts = useCallback(() => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
+    if (filter !== "all") params.set("recommendation", filter);
     if (batchFilter !== "all") params.set("batchId", batchFilter);
     params.set("limit", "50");
     fetch(`/api/contacts?${params}`)
       .then((r) => (r.ok ? r.json() : { contacts: [], total: 0, batches: [] }))
       .then((data) => {
         let fetched: ContactRow[] = data.contacts ?? [];
-        if (filter === "remote") {
+        if (companyType === "remote") {
           fetched = fetched.filter((c) => c.isRemote === true);
-        } else if (filter === "office") {
+        } else if (companyType === "office") {
           fetched = fetched.filter((c) => c.isRemote === false);
         }
         setContacts(fetched);
-        setTotal(filter !== "all" ? fetched.length : (data.total ?? 0));
+        setTotal(companyType !== "all" ? fetched.length : (data.total ?? 0));
         if (data.batches) setBatches(data.batches);
         setLoading(false);
       });
-  }, [search, filter, batchFilter]);
+  }, [search, filter, companyType, batchFilter]);
 
   useEffect(() => { fetchContacts(); }, [fetchContacts]);
 
@@ -824,19 +826,39 @@ function ContactsView({ batchId }: { batchId: string }) {
         )}
       </div>
 
-      {/* Location type filter tabs */}
-      <div className="flex gap-1 mb-5 overflow-x-auto">
-        {filterTabs.map((t) => (
-          <button
-            key={t}
-            onClick={() => setFilter(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
-              filter === t ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-card"
-            }`}
-          >
-            {filterLabels[t]}
-          </button>
-        ))}
+      {/* Filters */}
+      <div className="flex items-center gap-3 mb-5 overflow-x-auto">
+        {/* Send-to filter (delivery recommendation) */}
+        <div className="flex gap-1">
+          {filterTabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setFilter(t)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                filter === t ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {t === "all" ? "All" : t}
+            </button>
+          ))}
+        </div>
+
+        <div className="h-5 w-px bg-border shrink-0" />
+
+        {/* Company type filter (remote vs in-office) */}
+        <div className="flex gap-1">
+          {companyTypeTabs.map((t) => (
+            <button
+              key={t}
+              onClick={() => setCompanyType(t)}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+                companyType === t ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-card"
+              }`}
+            >
+              {t === "all" ? "All Types" : t === "remote" ? "Remote" : "In-Office"}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Empty state */}
