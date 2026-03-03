@@ -18,6 +18,7 @@ interface CampaignContact {
   contactId: string | null;
   contactName: string | null;
   contactTitle: string | null;
+  profileImageUrl: string | null;
   enrichmentId: string | null;
   enrichmentStatus: string | null;
   enrichmentBatchId: string | null;
@@ -989,9 +990,13 @@ export default function CampaignDetailPage() {
 
               {/* Contact */}
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
-                  {initial}
-                </div>
+                {c.profileImageUrl ? (
+                  <img src={c.profileImageUrl} alt={displayName} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-semibold text-primary shrink-0">
+                    {initial}
+                  </div>
+                )}
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground truncate">{displayName}</p>
                   <p className="text-xs text-muted-foreground truncate">{slug}</p>

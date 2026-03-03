@@ -915,9 +915,13 @@ function ContactsView({ batchId }: { batchId: string }) {
                     onChange={() => {}}
                     className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0"
                   />
-                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                    {contact.name.charAt(0).toUpperCase()}
-                  </div>
+                  {contact.profileImageUrl ? (
+                    <img src={contact.profileImageUrl} alt={contact.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
+                      {contact.name.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{contact.name}</p>
                     <p className="text-xs text-muted-foreground truncate">

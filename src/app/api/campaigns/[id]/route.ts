@@ -38,6 +38,7 @@ export async function GET(
               id: true,
               name: true,
               title: true,
+              profileImageUrl: true,
               officeAddress: true,
               companyEnrichments: {
                 where: { isLatest: true },
@@ -130,6 +131,7 @@ export async function GET(
       contactId: contact?.id ?? null,
       contactName: contact?.name ?? null,
       contactTitle: contact?.title ?? null,
+      profileImageUrl: contact?.profileImageUrl ?? null,
       enrichmentId: enrichment?.id ?? null,
       enrichmentStatus: enrichment?.enrichmentStatus ?? null,
       enrichmentBatchId: enrichment?.enrichmentBatchId ?? null,
