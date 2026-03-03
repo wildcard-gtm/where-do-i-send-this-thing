@@ -15,6 +15,7 @@
     "test:image-route": "tsx tests/test-postcard-image-route.ts",
     "test:nano-banana": "tsx tests/test-nano-banana-pipeline.ts",
     "test:fixes": "tsx tests/test-fixes.ts",
+    "test:generation": "tsx tests/test-nano-banana-generation.ts",
     "backup": "tsx scripts/backup.ts"
   },
   "dependencies": {

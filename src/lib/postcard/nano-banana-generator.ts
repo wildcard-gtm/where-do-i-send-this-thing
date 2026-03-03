@@ -129,8 +129,27 @@ async function analyzeImage(prompt: string, images: ImageData[]): Promise<string
 
 // ─── Image Fetching ─────────────────────────────────────────────────────────
 
+/** Known generic/placeholder avatar URL patterns — these are NOT real photos */
+const GENERIC_AVATAR_PATTERNS = [
+  'static.licdn.com/aero-v1/sc/h/',    // LinkedIn default gray silhouette (SVG)
+  'static.licdn.com/sc/h/',             // Older LinkedIn default avatar path
+  '/default-avatar',                     // Common placeholder pattern
+  'gravatar.com/avatar/',                // Gravatar default (may be a generated icon)
+];
+
+/** Returns true if the URL points to a known generic/placeholder avatar */
+function isGenericAvatar(url: string): boolean {
+  return GENERIC_AVATAR_PATTERNS.some((pattern) => url.includes(pattern));
+}
+
 /** Fetch a remote image URL and return base64 + mimeType */
 async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
+  // Skip known generic/placeholder avatars before making any network request
+  if (isGenericAvatar(url)) {
+    console.log(`[NanoBanana] Skipping generic avatar: ${url.slice(0, 80)}...`);
+    return null;
+  }
+
   return new Promise((resolve) => {
     const parsedUrl = new URL(url);
     const lib = parsedUrl.protocol === 'https:' ? https : require('http');
@@ -157,6 +176,12 @@ async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
+        // Skip suspiciously small images (< 2KB) — likely generic icons, not real photos
+        if (buffer.length < 2048) {
+          console.log(`[NanoBanana] Skipping tiny image (${buffer.length} bytes): ${url.slice(0, 80)}...`);
+          resolve(null);
+          return;
+        }
         resolve({ data: buffer.toString('base64'), mimeType });
       });
       res.on('error', () => resolve(null));
