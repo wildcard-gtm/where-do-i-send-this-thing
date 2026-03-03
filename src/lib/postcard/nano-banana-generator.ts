@@ -350,8 +350,10 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       ].join('\n')
     : '';
 
-  // Build people instructions based on what photos are provided
+  // Build people instructions — only slots with a provided photo get filled, all others are removed
   const personSlots: string[] = [];
+  const removedSlots: string[] = [];
+
   if (data.prospectImage) {
     personSlots.push(
       `   - "Person 1" (standing presenter): Use the prospect face photo.`,
@@ -359,12 +361,19 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       `     Match gender — adapt body build, clothing, and footwear to the prospect's apparent gender.`,
       `     Render in illustration style, not photorealistic. Keep the standing pose.`,
     );
+  } else {
+    removedSlots.push('"Person 1"');
   }
-  for (let i = 0; i < data.teamImages.length; i++) {
-    personSlots.push(
-      `   - "Person ${i + 2}" (seated): Use team member ${i + 1} face photo.`,
-      `     Preserve their facial features, render in illustration style. Keep the seated pose.`,
-    );
+
+  for (let i = 0; i < 5; i++) {
+    if (i < data.teamImages.length) {
+      personSlots.push(
+        `   - "Person ${i + 2}" (seated): Use team member ${i + 1} face photo.`,
+        `     Preserve their facial features, render in illustration style. Keep the seated pose.`,
+      );
+    } else {
+      removedSlots.push(`"Person ${i + 2}"`);
+    }
   }
 
   return [
@@ -398,17 +407,17 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     ``,
     personSlots.length > 0
       ? [
-          `4. PEOPLE — The reference has labeled silhouettes (Person 1 through Person 6). Fill in ONLY the ones listed below:`,
+          `4. PEOPLE — The reference has labeled silhouettes (Person 1 through Person 6). Fill in ONLY the ones with provided photos:`,
           ...personSlots,
-          `   - Any "Person N" silhouette NOT listed above: REMOVE that person entirely.`,
-          `     Leave their chair/seat empty. Do NOT draw a character there.`,
-          `     Only the people with provided photos should appear in the final image.`,
+          removedSlots.length > 0
+            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them from the scene entirely — leave their chair/seat empty, do NOT draw any character there.`
+            : '',
           `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
-        ].join('\n')
+        ].filter(Boolean).join('\n')
       : [
           `4. PEOPLE — The reference has labeled silhouettes.`,
-          `   REMOVE all silhouettes — leave the chairs/seats empty.`,
-          `   No people should appear in the final image since no photos were provided.`,
+          `   REMOVE ALL of them (${removedSlots.join(', ')}) — no photos were provided.`,
+          `   Leave all chairs/seats empty. No people in the final image.`,
         ].join('\n'),
     corrections,
     ``,
