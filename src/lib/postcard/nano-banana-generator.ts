@@ -292,7 +292,7 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
 
   const teamImages: ImageData[] = [];
   if (input.teamPhotoUrls?.length) {
-    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
+    const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 5).map(url => fetchImageAsBase64(url)));
     for (const img of fetched) { if (img) teamImages.push(img); }
   }
 
@@ -330,12 +330,16 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
 // ─── War Room Prompts ───────────────────────────────────────────────────────
 
 function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: string[]): string {
-  const imageLabels: string[] = ['Image 1 = reference scene (reproduce this layout EXACTLY)'];
+  // Build image label list — maps each provided image to its labeled slot in the reference
+  const imageLabels: string[] = ['Image 1 = reference template (follow this layout EXACTLY — it has labeled placeholder slots)'];
   let imgIdx = 2;
-  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo`); imgIdx++; }
-  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect's face photo`); imgIdx++; }
-  for (let i = 0; i < data.teamImages.length; i++) { imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo`); imgIdx++; }
-  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard screenshot for screens`);
+  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces [COMPANY LOGO] slot`); imgIdx++; }
+  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo → replaces "Person 1" (standing presenter)`); imgIdx++; }
+  for (let i = 0; i < data.teamImages.length; i++) {
+    imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo → replaces "Person ${i + 2}" (seated)`);
+    imgIdx++;
+  }
+  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard screenshot → replaces screen content`);
 
   const corrections = previousIssues?.length
     ? [
@@ -346,81 +350,74 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       ].join('\n')
     : '';
 
+  // Build people instructions based on what photos are provided
+  const personSlots: string[] = [];
+  if (data.prospectImage) {
+    personSlots.push(
+      `   - "Person 1" (standing presenter): Use the prospect face photo.`,
+      `     Preserve their facial features (hair, skin tone, facial structure, glasses, facial hair).`,
+      `     Match gender — adapt body build, clothing, and footwear to the prospect's apparent gender.`,
+      `     Render in illustration style, not photorealistic. Keep the standing pose.`,
+    );
+  }
+  for (let i = 0; i < data.teamImages.length; i++) {
+    personSlots.push(
+      `   - "Person ${i + 2}" (seated): Use team member ${i + 1} face photo.`,
+      `     Preserve their facial features, render in illustration style. Keep the seated pose.`,
+    );
+  }
+
   return [
-    `Recreate the reference scene (Image 1) with specific modifications. Output a single complete image.`,
+    `The reference template (Image 1) shows a War Room scene with labeled placeholder slots.`,
+    `Reproduce this scene EXACTLY, filling in the labeled slots with the provided images. Output a single wide landscape image.`,
     ``,
     `IMAGE LABELS:`,
     ...imageLabels.map((l) => `  ${l}`),
     ``,
-    `STYLE: Bold flat-color corporate illustration with clean outlines, vibrant colors, and professional quality — like a Pixar-inspired 2D illustration. Every element must match this style consistently.`,
+    `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces.`,
     ``,
-    `PRESERVE EXACTLY (do NOT change these):`,
-    `- Room layout, furniture positions, window placement — keep untouched`,
-    `- "IT'S GO TIME" banner — same position, same text`,
-    `- Industrial pendant lights — keep untouched`,
-    `- City skyline through windows — keep untouched`,
-    `- Wooden conference table and chairs — keep untouched`,
-    `- Wide landscape format (3:2 ratio)`,
+    `The reference template already defines the room layout, furniture, lighting, windows, banner, plants, etc. Keep ALL of that exactly as shown. Only fill in the labeled placeholder slots:`,
     ``,
-    `MODIFICATIONS (change ONLY these, nothing else):`,
-    ``,
-    `1. WHITEBOARD (tall board on wheels, far left):`,
-    `   Restyle only the text on the whiteboard; keep the whiteboard itself untouched.`,
+    `1. [TOP ROLES] whiteboard:`,
+    `   Replace the placeholder text with:`,
     `   - Header: "TOP ROLES" in bold`,
-    `   - Below, list these roles in clean handwritten style:`,
+    `   - Roles listed below in clean handwritten style:`,
     data.rolesText,
-    `   - Write ONLY the roles listed above. Do NOT add filler text like "no additional roles found" or "more roles coming soon." If fewer than 3 roles are listed, leave the remaining whiteboard space blank.`,
-    `   - Text must be fully legible, within whiteboard bounds, not overflowing`,
+    `   - Write ONLY these roles. No filler text. If fewer than 3, leave remaining space blank.`,
+    `   - Text must be legible and within the whiteboard bounds.`,
     ``,
     data.logoImage
       ? [
-          `2. LOGO: Replace ONLY the round circular medallion on the back wall with the company logo provided.`,
-          `   - Restyle only this one medallion; keep everything else on the wall untouched.`,
-          `   - Maintain the same position and approximate size as the original circle.`,
-          `   - The logo must appear EXACTLY ONCE in the entire image — never duplicate it.`,
+          `2. [COMPANY LOGO] circle on the wall:`,
+          `   Replace with the provided company logo. Same position, same size.`,
+          `   The logo must appear EXACTLY ONCE in the entire image.`,
         ].join('\n')
-      : `2. LOGO: Keep the existing wall medallion as-is — do not change it.`,
+      : `2. [COMPANY LOGO]: No logo provided — draw a generic decorative circle.`,
     ``,
-    `3. SCREENS: Replace content on the wall TV and laptop with the dashboard screenshot provided.`,
-    `   Restyle only the screen content; keep the TV frame and laptop body untouched.`,
+    `3. SCREENS: Replace screen content with the provided dashboard screenshot.`,
     ``,
-    data.prospectImage || data.teamImages.length > 0
+    personSlots.length > 0
       ? [
-          `4. PEOPLE:`,
-          data.prospectImage
-            ? [
-                `   - STANDING PERSON: Preserve the face from the prospect photo. Maintain their facial features`,
-                `     (hair color, hair style, skin tone, facial structure, glasses if any, facial hair if any)`,
-                `     but render in the same flat-color illustration style as the rest of the scene.`,
-                `     Match skin tone consistently on face, neck, hands, arms.`,
-                `     Adapt the person's body build, clothing, and footwear to match the prospect's apparent gender from their photo.`,
-                `     If the prospect appears male, give the person a masculine build, male clothing, and flat shoes (no heels).`,
-                `     If the prospect appears female, give the person a feminine build, female clothing, and appropriate footwear.`,
-                `     Keep their pose and body position untouched.`,
-              ].join('\n')
-            : `   - STANDING PERSON: Keep exactly as-is — do not change their appearance.`,
-          data.teamImages.length > 0
-            ? [
-                `   - SEATED PEOPLE: Preserve the faces from the ${data.teamImages.length} team member photo(s).`,
-                `     Maintain each person's facial features but render in the same illustration style.`,
-                `     Match skin tone on ALL visible body parts. Restyle only faces; keep poses untouched.`,
-              ].join('\n')
-            : `   - SEATED PEOPLE: Keep all seated people exactly as-is.`,
-          `   - UNCHANGED PEOPLE: Anyone without a reference photo MUST remain EXACTLY as in Image 1 —`,
-          `     same face, same skin tone, same hair, same diversity. Do NOT homogenize or alter them.`,
-          `   - STYLE RULE: ALL people must be rendered in the same bold flat-color illustration style.`,
-          `     Use reference photos ONLY to know what features to draw. Do NOT paste, blend, or reproduce`,
-          `     photos realistically. No photorealistic faces on illustrated bodies.`,
+          `4. PEOPLE — The reference has labeled silhouettes (Person 1 through Person 6). Fill in ONLY the ones listed below:`,
+          ...personSlots,
+          `   - Any "Person N" silhouette NOT listed above: REMOVE that person entirely.`,
+          `     Leave their chair/seat empty. Do NOT draw a character there.`,
+          `     Only the people with provided photos should appear in the final image.`,
+          `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
         ].join('\n')
-      : `4. PEOPLE: Keep all people exactly as they appear in the reference — do not change them.`,
+      : [
+          `4. PEOPLE — The reference has labeled silhouettes.`,
+          `   REMOVE all silhouettes — leave the chairs/seats empty.`,
+          `   No people should appear in the final image since no photos were provided.`,
+        ].join('\n'),
     corrections,
     ``,
     `FINAL CHECKS:`,
-    `- Logo appears EXACTLY ONCE (on the wall medallion only)`,
-    `- Unchanged people preserve their original diversity and appearance`,
-    `- All text is legible and within bounds`,
-    `- Wide landscape output, not square or portrait`,
-    `- Consistent illustration style everywhere — clean lines, vibrant colors, no photorealistic elements`,
+    `- Logo appears EXACTLY ONCE`,
+    `- All text legible and within bounds`,
+    `- Wide landscape output (3:2), not square or portrait`,
+    `- No gray silhouettes remain — only people with provided photos appear, rest are removed`,
+    `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -429,72 +426,65 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
   const expectedRoles = data.rolesText.replace(/  \u2022 /g, '').split('\n').join(', ');
 
   const labels: string[] = [
-    'Image 1 = original reference template (the LAYOUT to preserve)',
+    'Image 1 = reference template (has labeled placeholder slots — the LAYOUT to preserve)',
     'Image 2 = generated output (the image being reviewed)',
   ];
   let idx = 3;
-  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should appear ONCE on wall medallion)`); idx++; }
-  if (data.prospectImage) { labels.push(`Image ${idx} = prospect's REAL face photo (standing person should look like THIS, NOT like Image 1's standing person)`); idx++; }
-  for (let i = 0; i < data.teamImages.length; i++) { labels.push(`Image ${idx} = team member ${i + 1} face photo (one seated person should look like THIS)`); idx++; }
+  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace [COMPANY LOGO] slot, appear ONCE)`); idx++; }
+  if (data.prospectImage) { labels.push(`Image ${idx} = prospect face photo (should replace "Person 1" — the standing presenter)`); idx++; }
+  for (let i = 0; i < data.teamImages.length; i++) {
+    labels.push(`Image ${idx} = team member ${i + 1} face photo (should replace "Person ${i + 2}")`);
+    idx++;
+  }
 
   return [
-    `You are reviewing a generated postcard image. We took the reference template (Image 1) and asked an AI to modify it. Verify the modifications were done correctly.`,
+    `You are reviewing a generated War Room postcard. The reference template (Image 1) has labeled placeholder slots. We asked the AI to fill them in. Verify it was done correctly.`,
     ``,
     `IMAGES PROVIDED:`,
     ...labels.map((l) => `  ${l}`),
     ``,
-    `WHAT WE ASKED: Reproduce Image 1's layout, preserving everything except these specific changes:`,
-    `- Whiteboard text -> "TOP ROLES" + roles: ${expectedRoles}`,
-    data.logoImage ? `- Round wall medallion -> company logo (provided as a separate image)` : `- Wall medallion unchanged`,
-    `- Screen content -> dashboard charts/graphs`,
-    data.prospectImage ? `- Standing person's face -> prospect photo features (intentional replacement — they should NOT match Image 1's standing person)` : ``,
-    data.teamImages.length > 0 ? `- ${data.teamImages.length} seated person(s) -> team member photo features. Other seated people UNCHANGED from template.` : ``,
+    `WHAT WE ASKED:`,
+    `- Fill [TOP ROLES] whiteboard with: ${expectedRoles}`,
+    data.logoImage ? `- Fill [COMPANY LOGO] with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
+    `- Fill screens with the dashboard screenshot`,
+    data.prospectImage ? `- Replace "Person 1" (standing) with the prospect's facial features — intentional, should NOT match the gray silhouette` : ``,
+    data.teamImages.length > 0 ? `- Replace "Person 2"–"Person ${data.teamImages.length + 1}" with team member faces` : ``,
+    `- All remaining silhouettes (without photos) should be REMOVED — empty chairs, no people drawn there`,
     ``,
-    `TARGET STYLE: Bold flat-color corporate illustration with clean outlines — Pixar-inspired 2D style. Every element including faces must match this style.`,
+    `TARGET STYLE: Flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. No photorealistic faces.`,
     ``,
     `EVALUATE Image 2:`,
     ``,
-    `1. LAYOUT: Room layout preserved from Image 1? (furniture, windows, "IT'S GO TIME" banner, pendant lights)`,
-    `2. WHITEBOARD: Shows "TOP ROLES" with roles: ${expectedRoles}? Text legible, within bounds? Check SPELLING carefully — each role name must be spelled correctly. Compare letter by letter against: ${expectedRoles}. If any word is misspelled, FAIL this check. Also FAIL if any filler text appears (e.g. "no additional roles found", "more roles coming soon", "no other roles", or similar placeholder text). The whiteboard should show ONLY the listed roles and nothing else.`,
+    `1. LAYOUT: Does Image 2 preserve the room layout from Image 1?`,
+    `2. WHITEBOARD: Shows "TOP ROLES" with exactly: ${expectedRoles}? Check SPELLING letter by letter. FAIL if misspelled or if filler text appears (e.g. "more roles coming soon"). Only the listed roles should appear.`,
     data.logoImage
-      ? `3. LOGO: EXACTLY ONE company logo matching the provided logo? Not duplicated on walls or surfaces?`
+      ? `3. LOGO: Company logo appears EXACTLY ONCE at the [COMPANY LOGO] position? Not duplicated elsewhere?`
       : `3. LOGO: N/A`,
-    `4. SCREENS: Wall TV and laptop show dashboard-like content?`,
+    `4. SCREENS: Show dashboard content?`,
     data.prospectImage
       ? [
-          `5. FACE & BODY (STANDING) — CRITICAL CHECK:`,
-          `   A prospect photo was provided. The standing person's face MUST be REPLACED to match the prospect.`,
-          `   Compare the standing person in Image 2 against:`,
-          `   - The PROSPECT PHOTO (the face they SHOULD have) — look at hair color, hair style, skin tone, gender, facial hair, glasses`,
-          `   - Image 1's original standing person (the face they should NO LONGER have)`,
-          `   FAIL this check if the standing person still looks like Image 1's original person.`,
-          `   FAIL this check if hair color, skin tone, or gender don't match the prospect photo.`,
-          `   BODY & CLOTHING CHECK: The person's body build, clothing, and footwear must match the prospect's apparent gender.`,
-          `   FAIL if a male prospect has a feminine body, heels, a skirt, or other female clothing.`,
-          `   FAIL if a female prospect has an overly masculine body or clothing that clearly doesn't match.`,
-          `   This is the MOST IMPORTANT check — the whole point is to personalize the postcard for this specific prospect.`,
+          `5. PERSON 1 (STANDING) — CRITICAL CHECK:`,
+          `   Must match the prospect photo: hair color/style, skin tone, gender, glasses, facial hair.`,
+          `   Body build and clothing must match prospect's apparent gender.`,
+          `   FAIL if Person 1 still looks like a gray silhouette or doesn't match the prospect photo.`,
+          `   This is the MOST IMPORTANT check.`,
         ].join('\n')
-      : `5. FACE & BODY (STANDING): N/A`,
+      : `5. PERSON 1: N/A (no prospect photo provided)`,
     data.teamImages.length > 0
-      ? `6. FACES (SEATED): Were ${data.teamImages.length} seated person(s) replaced with team photo features? Other seated people UNCHANGED — same face, skin tone, diversity? ALL faces in illustration style (not photorealistic)?`
-      : `6. FACES (SEATED): N/A`,
-    `7. STYLE: Consistent flat-color illustration style throughout? ALL faces (including replaced ones) must be in the same illustration style — clean outlines, flat colors, no photorealistic faces on illustrated bodies. STRICT requirement.`,
-    `8. FORMAT: Wide landscape image?`,
+      ? `6. PERSONS 2–${data.teamImages.length + 1} (SEATED): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
+      : `6. TEAM: N/A`,
+    `7. SILHOUETTES: Are all unprovided person slots REMOVED (empty chairs)? FAIL if any gray silhouettes remain.`,
+    `8. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
+    `9. FORMAT: Wide landscape (3:2)?`,
     ``,
-    `For each check: PASS or FAIL with brief reason.`,
-    `Then:`,
+    `For each: PASS or FAIL with brief reason.`,
     `OVERALL: PASS or FAIL`,
     `ISSUES: Numbered actionable fixes (empty if PASS).`,
     ``,
-    `CRITICAL RULE FOR ISSUES:`,
-    `The image generator cannot see numbered references like "Image 4".`,
-    `Describe ALL corrections using VISUAL DESCRIPTIONS of the person/thing:`,
-    `BAD: "Replace the standing person with Image 4"`,
-    `GOOD: "The standing person should be a [gender, skin tone, hair color/style, glasses, facial hair, distinguishing features]. Currently it still looks like [describe problem]."`,
-    `Also describe style fixes concretely: "The standing person's face appears photorealistic with smooth gradients — redraw it with flat colors and clean outlines matching the illustration style."`,
-    `For spelling: "The whiteboard says '[wrong]' but should say '[correct]'."`,
-    ``,
-    `The standing person's face SHOULD differ from Image 1 — that's intentional.`,
+    `RULE FOR ISSUES: The generator cannot see image numbers. Use VISUAL DESCRIPTIONS only:`,
+    `BAD: "Make Person 1 look like Image 4"`,
+    `GOOD: "Person 1 (standing) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
+    `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
   ].filter(Boolean).join('\n');
 }
 
