@@ -1,72 +1,51 @@
 # CLAUDE.md — Project Memory
-<!-- Always update this file after any changes! Write new entries at the TOP of each section. -->
+<!-- Keep this concise and accurate. Update after significant changes. -->
 
 ## Git Rules
 - **Never add `Co-Authored-By: Claude` or any Claude co-author trailer** to commit messages.
 - Commit and push to `origin main` after completing features.
+- Always `git add` ALL relevant changed files including images/assets — `git push` only sends committed files.
 
 ---
 
 ## What This Project Is
-"Where Do I Send This Thing" — a Next.js fullstack app for automated contact enrichment and physical postcard generation targeting recruitment outreach. It scrapes LinkedIn profiles, finds home/office addresses, enriches company data, then generates printed postcards.
+"Where Do I Send This Thing" — a Next.js fullstack app for automated contact enrichment and physical postcard generation targeting recruitment outreach. It scrapes LinkedIn profiles, finds home/office addresses, enriches company data, then generates AI-illustrated postcards.
 
-**Stack:** Next.js 16.1.6 (React 19, TypeScript), Prisma 5 → Supabase (PostgreSQL), AWS Bedrock (Claude), OpenAI, Vercel hosting.
+**Stack:** Next.js 16.1.6 (React 19, TypeScript), Prisma 5 → Supabase (PostgreSQL), AWS Bedrock (Claude), Google Gemini (postcard image gen), OpenAI (fallback), Vercel hosting.
 
 ---
 
 ## Critical Gotchas (Never Forget)
 
 ### Windows: never use `2>/dev/null` in bash commands
-- This is a Windows machine. `2>/dev/null` in bash **creates a literal file named `null`** in the working directory instead of discarding stderr.
+- Creates a literal file named `null` in the working directory instead of discarding stderr.
 - Use `2>&1` to merge stderr into stdout, or just omit the redirect entirely.
-- `/null` and `/NUL` are gitignored to contain the damage, but the fix is to never use `2>/dev/null`.
-
-### Windows: use `powershell -Command` for file/process operations, not unix tools
-- `ls`, `find`, `grep` etc. may not behave as expected — prefer PowerShell or the dedicated Claude tools (Glob, Grep, Read).
-- Path separators: use forward slashes in bash commands (`d:/wildcard/...`), backslashes in PowerShell.
+- Prefer Claude tools (Glob, Grep, Read) over shell `ls`/`find`/`grep`.
 
 ### JSX in API Routes must use `.tsx` not `.ts`
-- Turbopack (used by Next.js dev) **rejects JSX syntax in `.ts` files**
-- The postcard image route `/src/app/api/postcards/[id]/image/route.tsx` uses `ImageResponse` with JSX — it MUST be `.tsx`
-- Discovered Feb 21, 2026: route was `.ts`, caused 500 on every request with "Expected '>', got 'ident'" parse error
+- Turbopack **rejects JSX syntax in `.ts` files**
+- The postcard image route `src/app/api/postcards/[id]/image/route.tsx` MUST be `.tsx`
 
 ### Vercel filesystem is read-only
 - Do NOT write files to `public/` or anywhere else at runtime on Vercel
-- Postcard images are uploaded to Supabase Storage (bucket: `postcards`) and the public URL is stored in `Postcard.backgroundUrl` / `Postcard.imageUrl`
-- Upload helper: `src/lib/supabase-storage.ts` — requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` env vars
+- Postcard images → Supabase Storage (bucket: `postcards`), URL stored in DB
+- Upload helper: `src/lib/supabase-storage.ts`
 
-### No Playwright/Chromium on Vercel
-- `@sparticuz/chromium` (~170MB) exceeds Vercel's 50MB function size limit
-- Replaced with `next/og` (`ImageResponse`) — renders React components server-side to PNG, no browser needed
-- New image route: `GET /api/postcards/[id]/image` → returns PNG bytes
-- `screenshotPostcard()` now fetches that route and returns base64 string
+### Reference templates must be committed to git
+- Nano Banana reads templates from `public/templates/` at runtime on Vercel
+- If template images are modified locally, they MUST be `git add`ed, committed, and pushed — otherwise Vercel uses the old version
+- Templates: `reference-pose.png` (War Room), `zoom-room-reference.png` (Zoom Room), `screen.png` (dashboard screenshot)
 
-### Do NOT check if dev server is running before running tests
-- Using `curl` or `Invoke-WebRequest` against localhost **blocks the Claude process** indefinitely
-- To run server-dependent tests: start `npm run dev` as a background task first, wait ~15s for "Ready", then run the test
-- If stuck: user has to kill node manually
-
-### Enrichment skips contacts with no `company` field — fixed
-- Old behavior: both `enrich-bulk` and single `enrich` routes returned 400/skipped if `contact.company` was null
-- Fix: allow all contacts through, use `contact.company ?? "Unknown"` as placeholder — enrichment agent discovers real company from LinkedIn URL
-
-### `gpt-image-1` may not be available (tier-gated)
-- `generateBackground()` tries `gpt-image-1` first, falls back to `dall-e-3` automatically
-- Both return base64 PNG — uploaded to Supabase Storage, public URL stored in DB
-- `gpt-image-1` produces ~3MB PNGs; `dall-e-3` produces smaller ones
-
-### Real lead data: Frank Chang
-- CSV ref: AMP-15 — but the "AMP" prefix is an internal code, NOT company name
-- `linkedin.com/in/frankchang` is at **Uber** (not Amplitude) — the agent correctly identifies this
-- Known address: 950 23RD ST, San Francisco, CA 94107
-- Used as the standard test lead in `tests/`
+### Do NOT check if dev server is running from a Claude tool call
+- `curl`/`Invoke-WebRequest` to localhost **blocks indefinitely**
+- Start `npm run dev` as a background task, wait ~15s for "Ready", then run tests
 
 ---
 
 ## Architecture
 
-### Campaign-Based Pipeline (New Structure)
-Each **Campaign** = one `Batch` record that owns three linked sub-batches flowing sequentially:
+### Campaign-Based Pipeline
+Each **Campaign** = one `Batch` record owning three linked sub-batches:
 
 ```
 Batch (Campaign)
@@ -77,66 +56,61 @@ Batch (Campaign)
         └── Postcards[]
 ```
 
-- `GET /api/campaigns` aggregates all three stages into a single object for the dashboard
-- `/dashboard/batches` is now the **"Campaigns" page** — shows all 3 stage pills (Scan | Enrich | Postcard) with live counts and lock/unlock state
-- **Stage locking**: Enrich is locked until ≥1 contact is scanned; Postcard is locked until ≥1 contact is enriched
+- `GET /api/campaigns` aggregates all three stages
+- `/dashboard/batches` = "Campaigns" page — 3 stage pills with lock/unlock
+- **Stage locking**: Enrich locked until ≥1 scanned; Postcard locked until ≥1 enriched
 
 ### AI Model Configuration (DB-driven)
-- Models stored in `SystemPrompt` table with keys: `config_agent_model`, `config_chat_model`, `config_fallback_model`
-- Format: `provider::modelId` (e.g. `openai::gpt-5.2`, `bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0`)
-- `src/lib/ai/config.ts` — `getAIClientForRole('agent' | 'chat' | 'fallback')` reads from DB, falls back to env vars / DEFAULT_MODEL
-- Configured in Admin → Models tab — now has 3 rows: Agent, Chat, Fallback
-- **Fallback model** is used when the agent model hits a rate limit (Bedrock ThrottlingException) — must be an OpenAI model
-- `gpt-5.2` uses the Responses API format (`max_completion_tokens`, no `temperature`) — already handled in `openai-client.ts`
+- 5 model configs in `SystemPrompt` table:
+  - `config_agent_model` — Bedrock Claude for address agent + enrichment
+  - `config_chat_model` — contact chat
+  - `config_fallback_model` — OpenAI, used on Bedrock ThrottlingException
+  - `config_image_gen_model` — Gemini model for postcard generation (default: `gemini-3-pro-image-preview`)
+  - `config_image_analysis_model` — Gemini model for postcard analysis (default: `gemini-3.1-pro-preview`)
+- Format: `provider::modelId` (e.g. `bedrock::global.anthropic.claude-sonnet-4-5-20250929-v1:0`)
+- `src/lib/ai/config.ts` — `getAIClientForRole()` for LLMs, `getGeminiModel()` for Gemini models
+- Configured in Admin → Models tab
 
-### Address Lookup Agent (Scan Stage)
-- `src/agent/agent-streaming.ts` — accepts a LinkedIn URL, runs up to 25 iterations with 9 tools
-- Tools: LinkedIn scraping (Bright Data), People Data Labs, WhitePages/Endato address search, property verification (PropMix), Exa AI web search, Google Maps distance calculation
-- Emits `AgentEvent` records to DB on each iteration (streamed via `GET /api/batches/[id]/jobs/[jobId]/stream`)
-- Output: `AgentDecision` → HOME / OFFICE / COURIER recommendation with confidence score
+### Address Lookup Agent (Scan)
+- `src/agent/agent-streaming.ts` — up to 25 iterations, 9 tools
+- Tools: LinkedIn scraping (Bright Data), Endato address search, PropMix property verification, Exa AI web search, Google Maps distance
+- Output: `AgentDecision` → HOME / OFFICE / COURIER with confidence score
 
-### Enrichment Flow (Enrich Stage)
-1. `POST /api/contacts/enrich-bulk` — creates `EnrichmentBatch` (linked to `Batch.id` via `scanBatchId`), creates `CompanyEnrichment` records (status=`enriching`), runs agents at `CONCURRENCY=3`. Returns `enrichmentBatchId` → redirects to `/dashboard/enrichments/[id]`
-2. `POST /api/contacts/[id]/enrich` — single contact path (no batch)
-3. `runEnrichmentAgent()` in `src/agent/enrichment-agent.ts` — primary model from DB, falls back to fallback model on rate limit
-4. On completion, `.finally()` marks `EnrichmentBatch.status` → `complete` or `failed`
-5. `/dashboard/enrichments/[id]` polls `GET /api/enrichment-batches/[id]` every 3s while `status === "running"`
+### Enrichment Flow (Enrich)
+- `POST /api/contacts/enrich-bulk` → creates `EnrichmentBatch`, CONCURRENCY=3, fire-and-forget
+- `src/agent/enrichment-agent.ts` — Bedrock Claude, falls back to OpenAI on rate limit
+- Contacts with no `company` use `"Unknown"` — agent discovers from LinkedIn
 
-### Postcard Generation Flow (Postcard Stage)
-1. `POST /api/postcards/generate-bulk` — creates `PostcardBatch` (linked to `Batch.id` via `scanBatchId`), fire-and-forgets generation. Returns `postcardBatchId` → redirects to `/dashboard/postcards/batches/[id]`
-2. `POST /api/postcards/generate` — single postcard path. Accepts overrides: `customPrompt`, `contactPhoto`, `teamPhotos`, `companyLogo`, `parentPostcardId`
-3. Fire-and-forget per postcard: Nano Banana (Gemini) generates the full scene, uploads to Supabase Storage
-4. **Unified postcard view**: All postcard links redirect to `/dashboard/contacts/[id]?tab=postcard` — the standalone `/dashboard/postcards/[id]` page is now a redirect
-5. **Regeneration modal**: Opens from "Regenerate" button on contact page, shows prospect photo, team members, company logo, template picker, and custom AI prompt textarea. Creates new postcard with `parentPostcardId` pointing to old one (revision history). Photos uploaded via `POST /api/uploads/image`
-6. **Revision history**: Previous versions shown as thumbnails below the current postcard
+### Postcard Generation — Nano Banana (Gemini)
+- `src/lib/postcard/nano-banana-generator.ts` — **agentic generate→analyze→correct loop**
+- **Flow**: reference template + input images → Gemini generates scene → Gemini analyzes output → regenerate with corrections → repeat (max 4 attempts)
+- Reference templates have **labeled placeholder slots**: gray silhouettes ("Person 1"–"Person 6"), "[COMPANY LOGO]", "[TOP ROLES]"
+- Two templates: **War Room** (office contacts), **Zoom Room** (remote contacts)
+- Gemini API key rotation on 429: cycles through `GEMINI_API_KEY` and `GOOGLE_AI_STUDIO`
+- `parseIssues()` extracts PASS/FAIL + issues from analysis — falls back to raw FAIL lines when issues can't be parsed
+- Images uploaded to Supabase Storage, URL stored in `Postcard.imageUrl`
+- Regeneration via modal on contact page — creates new postcard with `parentPostcardId` (revision history)
 
-### Image Rendering (`next/og`)
-- `src/app/api/postcards/[id]/image/route.tsx` — uses `ImageResponse` from `next/og`
-- Renders `WarRoomPostcard` or `ZoomRoomPostcard` React component at 1536×1024
-- **Must be `.tsx`** (not `.ts`) — contains JSX
-- No auth required; zero binary dependencies; works on Vercel
-
-### Templates
-- **War Room** (default): vintage map + city pins + hiring panel + contact photo. Used when contact has an office address.
-- **Zoom Room**: simulated Zoom meeting UI. Used when contact is fully remote (`fully_remote` flag or no office address).
+### Centralized Logging (AppLog)
+- `src/lib/app-log.ts` — `appLog(level, source, action, message, meta?)` writes to `AppLog` table
+- Sources: `gemini`, `openai`, `bedrock`, `bright_data`, `endato`, `propmix`, `exa_ai`, `supabase`, `system`
+- Fire-and-forget: `appLog(...).catch(() => {})` — never crashes caller
+- Admin UI: Logs tab (search + filter), Analytics tab (daily breakdown), Status indicators (colored dots per service)
+- Health check cron: `/api/cron/health-check` every 2 hours (vercel.json)
 
 ### Non-Blocking Dispatch (Campaign Page)
-- The campaign page dispatcher (`batches/[id]/page.tsx`) uses `CONCURRENCY=5` with a `withTimeout()` wrapper
-- Each dispatched job has a 5-minute timeout — if a Vercel function hangs, the slot is freed for the next job
-- Previously, a hung job would block all remaining slots indefinitely
-- The `drainQueue()` function fires recursively from `.finally()` to fill slots as they become available
-
-### Retry Logic (Enrichments + Postcards)
-- Both `CompanyEnrichment` and `Postcard` have `retryCount Int @default(0)`, max 5 attempts, exponential backoff (2^attempt seconds)
-- Manual retry resets `retryCount` to 0: `POST /api/enrichment-batches/[id]/retry` or `POST /api/postcards/[id]/retry`
+- `batches/[id]/page.tsx` uses `CONCURRENCY=5` with `withTimeout()` wrapper (5-min per job)
+- `drainQueue()` fires recursively from `.finally()` to fill slots
 
 ### Per-Item Cancel + Stale Auto-Recovery
-- **Per-item cancel**: Small X buttons on all running/enriching/generating items across all pages (campaign, enrichment batch, postcard batch, contact)
-- Cancel endpoints: `POST /api/enrichments/[id]/cancel`, `POST /api/batches/[id]/jobs/[jobId]/cancel`, `PATCH /api/postcards/[id]` with `{status: "cancelled"}`
-- Cancelling a postcard/enrichment triggers batch finalization (checks if all items done → updates batch status)
-- Stream route checks both batch-level AND job-level cancellation at each iteration
-- **Stale auto-recovery**: Items stuck in active states >10 minutes auto-reset to "failed" on polling (GET postcard-batches/[id], enrichment-batches/[id], postcards/[id])
-- "Process Stuck" button on campaign page also resets stale running/enriching/generating items back to "pending" for re-dispatch
+- Cancel endpoints: `POST /api/enrichments/[id]/cancel`, `POST /api/batches/[id]/jobs/[jobId]/cancel`, `PATCH /api/postcards/[id]`
+- Stale items >10 minutes auto-reset to "failed" on polling
+- "Process Stuck" button resets stale items to "pending" for re-dispatch
+
+### Postcards Gallery
+- `/dashboard/postcards` — shows only **latest** postcard per contact, hides failed/pending
+- "Versions" button opens modal with older versions, "Restore" swaps which version is current
+- API: `GET /api/postcards?latestOnly=true` (default excludes failed/pending)
 
 ---
 
@@ -144,152 +118,80 @@ Batch (Campaign)
 
 | File | Purpose |
 |---|---|
-| `src/app/api/campaigns/route.ts` | GET — aggregates Batch + EnrichmentBatch + PostcardBatch into unified campaign list |
-| `src/app/api/campaigns/[id]/route.ts` | GET — unified per-contact view: Job + CompanyEnrichment + Postcard in one query |
-| `src/app/dashboard/batches/page.tsx` | "Campaigns" list page — 3-stage pills (Scan/Enrich/Postcard) |
-| `src/app/dashboard/batches/[id]/page.tsx` | **Unified campaign page** — contact table with Scan/Enrich/Postcard pills, checkbox select, shared CONCURRENCY=5 dispatcher with 5-min timeout per job |
-| `src/components/postcards/regenerate-modal.tsx` | Regeneration modal — edit photos/logo/template/custom prompt before regenerating |
-| `src/app/api/uploads/image/route.ts` | Standalone image upload → Supabase Storage, returns public URL |
-| `src/agent/enrichment-agent.ts` | Company enrichment agent (Bedrock/Claude) |
-| `src/agent/agent-streaming.ts` | Address lookup agent with streaming |
-| `src/agent/tools.ts` | Tool definitions and dispatch |
-| `src/agent/services.ts` | External API calls (Endato, Bright Data, PropMix, etc.) |
-| `src/lib/ai/config.ts` | `getAIClientForRole()` — DB-driven model routing with fallback |
-| `src/lib/postcard/background-generator.ts` | AI background image gen (gpt-image-1 → dall-e-3 fallback) |
-| `src/lib/postcard/screenshot.ts` | Fetches image route, returns base64 |
-| `src/lib/supabase-storage.ts` | Upload/delete postcard images in Supabase Storage |
-| `src/lib/postcard/prompt-generator.ts` | War room / zoom room prompts |
+| `src/lib/postcard/nano-banana-generator.ts` | Gemini agentic postcard gen (generate→analyze→correct) |
+| `src/lib/app-log.ts` | Structured logging to AppLog table |
+| `src/lib/ai/config.ts` | `getAIClientForRole()` + `getGeminiModel()` — DB-driven model routing |
+| `src/lib/supabase-storage.ts` | Upload/delete images in Supabase Storage |
+| `src/agent/agent-streaming.ts` | Address lookup agent (Scan) |
+| `src/agent/enrichment-agent.ts` | Company enrichment agent (Enrich) |
+| `src/agent/services.ts` | External API calls (Endato, Bright Data, PropMix, Exa) |
+| `src/app/api/campaigns/route.ts` | GET — aggregates all 3 stages |
+| `src/app/api/campaigns/[id]/route.ts` | GET — per-contact view with all data |
+| `src/app/dashboard/batches/[id]/page.tsx` | Unified campaign page — CONCURRENCY=5 dispatcher |
+| `src/components/postcards/regenerate-modal.tsx` | Postcard regeneration — photos/logo/template/prompt |
 | `src/app/api/postcards/[id]/image/route.tsx` | **MUST BE .tsx** — next/og ImageResponse |
-| `src/app/api/postcards/generate/route.ts` | Single postcard generation |
-| `src/app/api/postcards/generate-bulk/route.ts` | Bulk postcard generation — creates PostcardBatch |
-| `src/app/api/contacts/[id]/enrich/route.ts` | Single contact enrichment |
-| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk enrichment — creates EnrichmentBatch, CONCURRENCY=3 |
-| `src/app/api/enrichment-batches/[id]/route.ts` | GET single enrichment batch with per-contact statuses |
-| `src/app/api/enrichment-batches/[id]/retry/route.ts` | POST — resets failed enrichments, re-queues |
-| `src/app/api/enrichment-batches/[id]/cancel/route.ts` | POST — cancels running enrichments |
-| `src/app/api/postcard-batches/[id]/route.ts` | GET single postcard batch |
-| `src/app/api/postcard-batches/[id]/retry/route.ts` | POST — retries failed postcards |
-| `src/app/api/postcard-batches/[id]/cancel/route.ts` | POST — cancels postcard generation |
-| `src/app/api/batches/[id]/start/route.ts` | POST — starts job processing |
-| `src/app/api/batches/[id]/stop/route.ts` | POST — halts job processing |
-| `src/app/api/batches/[id]/retry-failed/route.ts` | POST — retries failed jobs |
-| `src/app/api/batches/[id]/jobs/[jobId]/stream/route.ts` | GET — streams AgentEvents for a job |
-| `src/app/api/batches/[id]/jobs/[jobId]/cancel/route.ts` | POST — cancels a single scan job |
-| `src/app/api/enrichments/[id]/cancel/route.ts` | POST — cancels a single enrichment |
-| `src/app/api/campaigns/[id]/process-stuck/route.ts` | POST — resets stuck/stale items for re-dispatch |
-| `src/app/api/admin/reset/route.ts` | POST — wipes DB by scope; requires `x-debug-key` header |
-| `src/app/api/debug/status/route.ts` | GET — platform status; requires `?key=` param |
-| `src/app/dashboard/enrichments/[id]/page.tsx` | Enrichment detail (per-contact spinners, polls every 3s) |
-| `src/app/dashboard/postcards/page.tsx` | Postcard gallery — filter, approve, download, export CSV |
-| `src/app/dashboard/postcards/batches/[id]/page.tsx` | Postcard batch detail |
-| `src/app/dashboard/pipeline/page.tsx` | Pipeline overview page |
-| `src/app/dashboard/upload/page.tsx` | Upload page — paste LinkedIn URLs or CSV |
-| `src/app/sammy/page.tsx` | Internal briefing page (Shane's requirements for Sammy) |
-| `src/lib/auth.ts` | JWT + session cookie utilities |
-| `src/lib/db.ts` | Prisma singleton |
+| `src/app/api/postcards/route.ts` | GET — postcards list (latestOnly, excludes failed by default) |
+| `src/app/dashboard/admin/page.tsx` | Admin — prompts, models, logs, analytics, status |
+| `src/app/api/admin/logs/route.ts` | Paginated logs API (cursor-based) |
+| `src/app/api/admin/status/route.ts` | Per-service status from logs |
+| `src/app/api/admin/analytics/route.ts` | Token usage + daily breakdown |
+| `src/app/api/cron/health-check/route.ts` | 2-hour health check (Gemini, OpenAI, Supabase, Bedrock) |
 | `prisma/schema.prisma` | DB schema |
-| `prompts/agent_main.md` | Address lookup agent system prompt (editable via Admin UI) |
+| `vercel.json` | Cron schedule |
+| `public/templates/reference-pose.png` | War Room template (labeled placeholders) |
+| `public/templates/zoom-room-reference.png` | Zoom Room template |
 
 ---
 
 ## Database Schema (Key Models)
 
-- **User** → **Batch** (1:many, the "Campaign") → **Job** (1:many) → **AgentEvent** (1:many)
+- **User** → **Batch** (Campaign) → **Job** → **AgentEvent**
 - **Job** → **Contact** (1:1)
-- **Batch** → **EnrichmentBatch** (1:many, `scanBatchId` FK) → **CompanyEnrichment** (1:many)
-- **Batch** → **PostcardBatch** (1:many, `scanBatchId` FK) → **Postcard** (1:many)
-- **Contact** → **CompanyEnrichment** (1:many, `isLatest` flag + `revisionNumber`)
-- **Contact** → **ContactRevision** (1:many, snapshots of contact data per scan)
-- **Contact** → **Postcard** (1:many)
-- **SystemPrompt** — admin-editable agent/chat/model prompts stored in DB
+- **Batch** → **EnrichmentBatch** (`scanBatchId`) → **CompanyEnrichment**
+- **Batch** → **PostcardBatch** (`scanBatchId`) → **Postcard**
+- **Contact** → **CompanyEnrichment** (`isLatest` + `revisionNumber`)
+- **Contact** → **Postcard** (1:many, `parentPostcardId` for revision chain)
+- **Postcard** → **PostcardReference** (input images used)
+- **Team** → **TeamMember**, **PostcardTemplate**
+- **AppLog** — structured logging (level, source, action, message, meta JSON)
+- **SystemPrompt** — admin-editable prompts + 5 model configs
 
-### Exact Prisma relation field names (use these in `include`/`select` — wrong names cause TS build errors)
+### Prisma relation field names (use in `include`/`select`)
 
-| Model | Field name | Points to |
+| Model | Field | Points to |
 |---|---|---|
-| `Batch` | `jobs` | `Job[]` |
-| `Batch` | `enrichmentBatches` | `EnrichmentBatch[]` |
-| `Batch` | `postcardBatches` | `PostcardBatch[]` |
-| `Job` | `events` | `AgentEvent[]` |
-| `Job` | `contact` | `Contact?` |
 | `Contact` | `companyEnrichments` | `CompanyEnrichment[]` ← **NOT `enrichments`** |
 | `Contact` | `postcards` | `Postcard[]` |
-| `Contact` | `job` | `Job?` |
 | `EnrichmentBatch` | `enrichments` | `CompanyEnrichment[]` |
 | `PostcardBatch` | `postcards` | `Postcard[]` |
-| `CompanyEnrichment` | `contact` | `Contact` |
-| `CompanyEnrichment` | `enrichmentBatch` | `EnrichmentBatch?` |
-| `Postcard` | `contact` | `Contact` |
-| `Postcard` | `postcardBatch` | `PostcardBatch?` |
+| `Batch` | `jobs`, `enrichmentBatches`, `postcardBatches` | respective arrays |
 
 ---
 
-## Environment Variables Required
+## Environment Variables
 
 ```
-# AWS Bedrock (Claude — used for enrichment + address agent)
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_REGION
-
-# OpenAI (used for image generation + fallback model)
-OPENAI_API_KEY
-
-# Database (Supabase/PostgreSQL)
-SUPABASE_DB_URL
-SUPABASE_DB_URL_DIRECT
-
-# Supabase Storage (postcard images)
-SUPABASE_URL                  # e.g. https://xyz.supabase.co
-SUPABASE_SERVICE_ROLE_KEY     # service role JWT for server-side uploads
-
-# External data APIs
-BRIGHT_DATA_API_KEY       # LinkedIn scraping
-ENDATO_API_NAME
-ENDATO_API_PASSWORD
-EXA_AI_KEY                # Web search
-PROPMIX_ACCESS_TOKEN      # Address verification
-GOOGLE_SEARCH_API_KEY
-
-# App URL (used by screenshotPostcard to call image route)
-NEXT_PUBLIC_APP_URL       # e.g. https://your-app.vercel.app
-# On Vercel, VERCEL_URL is set automatically as fallback
-
-# Debug/admin endpoints (not user-facing)
-DEBUG_API_KEY             # wdistt-debug-k9x2mq7p4r — used by /api/admin/reset and /api/debug/status
+AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION   # Bedrock (Claude)
+OPENAI_API_KEY                                            # Fallback model
+GEMINI_API_KEY / GOOGLE_AI_STUDIO                         # Gemini postcard gen (key rotation on 429)
+SUPABASE_DB_URL / SUPABASE_DB_URL_DIRECT                  # PostgreSQL
+SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY                   # Supabase Storage
+BRIGHT_DATA_API_KEY                                       # LinkedIn scraping
+ENDATO_API_NAME / ENDATO_API_PASSWORD                     # Address lookup
+EXA_AI_KEY                                                # Web search
+PROPMIX_ACCESS_TOKEN                                      # Property verification
+GOOGLE_SEARCH_API_KEY                                     # Distance calculation
+NEXT_PUBLIC_APP_URL                                       # Used by screenshotPostcard
+JWT_SECRET                                                # Session signing
+DEBUG_API_KEY                                             # Admin/debug endpoints
+CRON_SECRET                                               # Vercel cron auth (auto-provided)
 ```
-
----
-
-## Test Scripts (in `/tests/` — gitignored)
-
-Run with `npm run <script>`:
-
-| Script | What it tests | Needs dev server? |
-|---|---|---|
-| `test:enrichment` | Enrichment agent on Frank Chang with company="Unknown" | No |
-| `test:background` | `generateBackground()` returns valid PNG | No |
-| `test:image-route` | `/api/postcards/[id]/image` returns PNG for both templates | **Yes** |
-| `test:pipeline` | Full end-to-end: background → DB record → image route → save | **Yes** |
-
-**To run server-dependent tests:**
-```bash
-# Terminal 1
-npm run dev
-# Wait for "✓ Ready" message (~15s)
-
-# Terminal 2
-npm run test:image-route
-npm run test:pipeline
-```
-
-**Never run `curl localhost:3000` or equivalent from within a Claude tool call** — it blocks indefinitely.
 
 ---
 
 ## Known Issues / TODO
 
-- Postcard images now stored in Supabase Storage (bucket: `postcards`). Old postcards may still have base64 data URLs in `imageUrl`/`backgroundUrl` — these will be replaced on regeneration.
-- The `@sparticuz/chromium` package is still in `dependencies` but is no longer used — can be removed once confident in the `next/og` approach.
-- The postcard render page at `/postcard-render/[postcardId]` still exists but is now unused (was used by the old Playwright screenshot approach).
-- Notes folder: `notes/shane-convo-2026-02-20.md` has product decisions from Shane (postcard template choices, enrichment data requirements).
+- `@sparticuz/chromium` and `playwright-core` still in `dependencies` but unused — safe to remove.
+- `/postcard-render/[postcardId]` page still exists but unused (legacy Playwright approach).
+- `src/agent/experimental/` contains a newer agent iteration — may be for testing.
+- Notes: `notes/shane-convo-2026-02-20.md` has product decisions from Shane.
