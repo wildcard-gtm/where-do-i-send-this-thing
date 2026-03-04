@@ -5,6 +5,7 @@ import { getTeamUserIds } from "@/lib/team";
 import { generateNanaBananaWarRoom, generateNanaBananaZoomRoom } from "@/lib/postcard/nano-banana-generator";
 import { uploadPostcardImage } from "@/lib/supabase-storage";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
+import { appLog } from "@/lib/app-log";
 
 export const maxDuration = 600;
 
@@ -75,6 +76,8 @@ export async function POST(
       },
     });
 
+    appLog("info", "system", "postcard_start", `Postcard ${id} generation attempt ${attempt}/${MAX_POSTCARD_ATTEMPTS}`, { postcardId: id, attempt }).catch(() => {});
+
     try {
       const existing = await prisma.postcard.findUnique({
         where: { id },
@@ -143,9 +146,11 @@ export async function POST(
         data: { status: "ready", backgroundUrl, imageUrl: backgroundUrl },
       });
 
+      appLog("info", "system", "postcard_complete", `Postcard ${id} generated successfully on attempt ${attempt}`, { postcardId: id, attempt }).catch(() => {});
       succeeded = true;
     } catch (err) {
       lastError = (err as Error).message;
+      appLog("error", "system", "postcard_fail", `Postcard ${id} attempt ${attempt} failed: ${lastError}`, { postcardId: id, attempt, error: lastError }).catch(() => {});
     }
 
     if (succeeded) break;

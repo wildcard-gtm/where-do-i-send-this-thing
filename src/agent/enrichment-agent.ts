@@ -13,6 +13,7 @@ import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types'
 import { getAIClientForRole } from '@/lib/ai/config';
 import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, enrichWithPDL } from './services';
 import axios, { type AxiosError } from 'axios';
+import { appLog } from '@/lib/app-log';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -399,6 +400,7 @@ Begin by determining the company domain, then follow the workflow above. Submit 
         usingFallback = true;
         aiClient = await getAIClientForRole('fallback');
         emit('step', { iteration, note: 'Rate limited — switching to fallback provider' });
+        appLog('warn', 'bedrock', 'rate_limit', `Bedrock rate limited during enrichment for ${input.name}, switching to fallback`, { contactId: input.contactId, error: (err as Error).message }).catch(() => {});
         try {
           response = await aiClient.callModel(messages, ENRICHMENT_TOOLS);
         } catch (fallbackErr) {

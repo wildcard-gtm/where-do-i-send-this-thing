@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { runAgentStreaming } from "@/agent/agent-streaming";
 import type { AgentStreamEvent } from "@/agent/agent-streaming";
 import { getTeamUserIds } from "@/lib/team";
+import { appLog } from "@/lib/app-log";
 
 export const maxDuration = 600; // 10 minutes for thorough investigation
 
@@ -145,6 +146,8 @@ export async function GET(
         }
       };
 
+      appLog("info", "system", "scan_start", `Scan started for job ${jobId}: ${job.linkedinUrl}`, { jobId, batchId: id }).catch(() => {});
+
       try {
         const result = await runAgentStreaming(job.linkedinUrl, sendEvent);
 
@@ -162,6 +165,8 @@ export async function GET(
             result: JSON.stringify(result),
           },
         });
+
+        appLog("info", "system", "scan_complete", `Scan completed for job ${jobId}: ${result.decision?.recommendation ?? 'no decision'}`, { jobId, recommendation: result.decision?.recommendation, confidence: result.decision?.confidence }).catch(() => {});
 
         // Auto-create or update contact
         try {
@@ -211,6 +216,10 @@ export async function GET(
           } catch {
             // Stream already closed
           }
+        }
+
+        if (!isCancelled) {
+          appLog("error", "system", "scan_fail", `Scan failed for job ${jobId}: ${message}`, { jobId, error: message }).catch(() => {});
         }
 
         await prisma.job.update({

@@ -334,3 +334,17 @@ model PostcardReference {
 
   @@index([postcardId])
 }
+
+model AppLog {
+  id        String   @id @default(cuid())
+  level     String   // "info" | "warn" | "error"
+  source    String   // "gemini" | "openai" | "bedrock" | "bright_data" | "endato" | "propmix" | "exa_ai" | "supabase" | "system"
+  action    String   // "image_gen" | "rate_limit" | "fallback" | "health_check" | etc.
+  message   String
+  meta      Json?    // { inputTokens?, outputTokens?, durationMs?, model?, error? }
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([source, createdAt])
+  @@index([level, createdAt])
+}

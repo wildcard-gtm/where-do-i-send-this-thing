@@ -15,6 +15,7 @@ import path from 'path';
 import https from 'https';
 import OpenAI from 'openai';
 import { getGeminiModel, getModelConfigForRole } from '@/lib/ai/config';
+import { appLog } from '@/lib/app-log';
 
 export interface NanoBananaInput {
   /** Prospect's profile photo URL (the standing person to restyle) — optional, keeps reference scene person if omitted */
@@ -127,12 +128,14 @@ async function callGeminiWithRetry(
         const backoffIdx = Math.min(Math.floor(attempt / GEMINI_KEYS.length), RATE_LIMIT_BACKOFF_MS.length - 1);
         const delay = RATE_LIMIT_BACKOFF_MS[backoffIdx];
         console.log(`[NanoBanana] 429 on key ${keyIdx + 1}/${GEMINI_KEYS.length}, backing off ${delay}ms...`);
+        appLog('warn', 'gemini', 'rate_limit', `429 on key ${keyIdx + 1}/${GEMINI_KEYS.length}, backing off ${delay}ms`, { model, attempt, delay }).catch(() => {});
         await new Promise((r) => setTimeout(r, delay));
         continue;
       }
       throw err; // non-429 errors propagate immediately
     }
   }
+  appLog('error', 'gemini', 'rate_limit', 'All Gemini API keys exhausted after retries', { model }).catch(() => {});
   throw lastError ?? new Error('All Gemini API keys rate limited');
 }
 
@@ -202,6 +205,7 @@ async function analyzeImage(prompt: string, images: ImageData[]): Promise<string
   } catch (err) {
     if (err instanceof GeminiRateLimitError) {
       console.log(`[NanoBanana] Gemini analysis rate-limited, falling back to OpenAI`);
+      appLog('warn', 'gemini', 'fallback', 'Gemini analysis rate-limited, falling back to OpenAI vision').catch(() => {});
       return analyzeImageWithOpenAI(prompt, images);
     }
     throw err;
@@ -823,7 +827,9 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     }
 
     console.log(`[NanoBanana] War Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    const genStart = Date.now();
     currentImage = await generateImage(prompt, images);
+    appLog('info', 'gemini', 'image_gen', `War Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
     // Skip analysis on last attempt — use whatever we got
     if (attempt === MAX_ATTEMPTS) {
@@ -846,10 +852,12 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
 
     if (pass) {
       console.log(`[NanoBanana] War Room PASSED on attempt ${attempt}`);
+      appLog('info', 'gemini', 'image_gen', `War Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
       break;
     }
 
     console.log(`[NanoBanana] War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
+    appLog('warn', 'gemini', 'image_gen', `War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`, { attempt, issues }).catch(() => {});
     previousIssues = issues;
   }
 
@@ -887,7 +895,9 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     }
 
     console.log(`[NanoBanana] Zoom Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    const genStart = Date.now();
     currentImage = await generateImage(prompt, images);
+    appLog('info', 'gemini', 'image_gen', `Zoom Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
     // Skip analysis on last attempt
     if (attempt === MAX_ATTEMPTS) {
@@ -910,10 +920,12 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
 
     if (pass) {
       console.log(`[NanoBanana] Zoom Room PASSED on attempt ${attempt}`);
+      appLog('info', 'gemini', 'image_gen', `Zoom Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
       break;
     }
 
     console.log(`[NanoBanana] Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
+    appLog('warn', 'gemini', 'image_gen', `Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`, { attempt, issues }).catch(() => {});
     previousIssues = issues;
   }
 

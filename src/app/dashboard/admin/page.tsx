@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 interface SystemPrompt {
   id: string;
@@ -62,8 +62,56 @@ interface BatchItem {
   failed: number;
 }
 
-type Tab = "prompts" | "models" | "feedback" | "messages" | "users" | "batches";
+interface LogEntry {
+  id: string;
+  level: string;
+  source: string;
+  action: string;
+  message: string;
+  meta: Record<string, unknown> | null;
+  createdAt: string;
+}
+
+interface ServiceStatus {
+  source: string;
+  status: "ok" | "error" | "unknown";
+  lastSuccess: string | null;
+  lastError: { time: string; message: string } | null;
+  recentLogs: LogEntry[];
+}
+
+interface AnalyticsSummary {
+  callsToday: number;
+  errorsToday: number;
+  errorRate: number;
+  totalTokensToday: number;
+  inputTokensToday: number;
+  outputTokensToday: number;
+}
+
+interface DailyRow {
+  day: string;
+  source: string;
+  calls: number;
+  errors: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+type Tab = "prompts" | "models" | "feedback" | "messages" | "users" | "batches" | "logs" | "analytics";
 type ModelRoleKey = "agent" | "chat" | "fallback" | "image_gen" | "image_analysis";
+
+const SERVICE_LABELS: Record<string, string> = {
+  gemini: "Gemini",
+  openai: "OpenAI",
+  bedrock: "Bedrock",
+  bright_data: "Bright Data",
+  endato: "Endato",
+  propmix: "PropMix",
+  exa_ai: "Exa AI",
+  supabase: "Supabase",
+  system: "System",
+};
 
 export default function AdminPage() {
   const [tab, setTab] = useState<Tab>("prompts");
@@ -93,10 +141,46 @@ export default function AdminPage() {
   const [newUserRole, setNewUserRole] = useState("user");
   const [addingUser, setAddingUser] = useState(false);
 
+  // Status indicators
+  const [serviceStatuses, setServiceStatuses] = useState<ServiceStatus[]>([]);
+  const [statusModalService, setStatusModalService] = useState<ServiceStatus | null>(null);
+
+  // Logs tab
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [logsCursor, setLogsCursor] = useState<string | null>(null);
+  const [logsSearch, setLogsSearch] = useState("");
+  const [logsLevel, setLogsLevel] = useState("");
+  const [logsSource, setLogsSource] = useState("");
+  const [logsFilterSources, setLogsFilterSources] = useState<string[]>([]);
+  const [logsFilterLevels, setLogsFilterLevels] = useState<string[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  // Analytics tab
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
+  const [analyticsDaily, setAnalyticsDaily] = useState<DailyRow[]>([]);
+
   useEffect(() => { document.title = "Admin | WDISTT"; }, []);
+
+  // Load service statuses on mount + poll every 60s
+  const loadStatuses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/admin/status");
+      if (res.ok) {
+        const data = await res.json();
+        setServiceStatuses(data.services || []);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    loadStatuses();
+    const interval = setInterval(loadStatuses, 60000);
+    return () => clearInterval(interval);
+  }, [loadStatuses]);
 
   useEffect(() => {
     loadData();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
   async function loadData() {
@@ -136,12 +220,69 @@ export default function AdminPage() {
         if (res.status === 403) { setError("You don't have admin access."); return; }
         const data = await res.json();
         setBatches(data.batches || []);
+      } else if (tab === "logs") {
+        await loadLogs(true);
+      } else if (tab === "analytics") {
+        const res = await fetch("/api/admin/analytics");
+        if (res.status === 403) { setError("You don't have admin access."); return; }
+        const data = await res.json();
+        setAnalyticsSummary(data.summary || null);
+        setAnalyticsDaily(data.daily || []);
       }
     } catch {
       setError("Failed to load data");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadLogs(reset = false) {
+    setLogsLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (!reset && logsCursor) params.set("cursor", logsCursor);
+      if (logsSearch) params.set("search", logsSearch);
+      if (logsLevel) params.set("level", logsLevel);
+      if (logsSource) params.set("source", logsSource);
+
+      const res = await fetch(`/api/admin/logs?${params}`);
+      if (res.status === 403) { setError("You don't have admin access."); return; }
+      const data = await res.json();
+
+      if (reset) {
+        setLogs(data.logs || []);
+      } else {
+        setLogs((prev) => [...prev, ...(data.logs || [])]);
+      }
+      setLogsCursor(data.nextCursor || null);
+      if (data.filters) {
+        setLogsFilterSources(data.filters.sources || []);
+        setLogsFilterLevels(data.filters.levels || []);
+      }
+    } catch {
+      setError("Failed to load logs");
+    } finally {
+      setLogsLoading(false);
+    }
+  }
+
+  function handleLogsFilter() {
+    setLogsCursor(null);
+    loadLogs(true);
+  }
+
+  function downloadLogs() {
+    const lines = logs.map((l) => {
+      const ts = new Date(l.createdAt).toISOString();
+      return `[${ts}] [${l.level.toUpperCase()}] [${l.source}] [${l.action}] ${l.message}${l.meta ? ` | meta: ${JSON.stringify(l.meta)}` : ""}`;
+    });
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `app-logs-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   function startEditing(prompt: SystemPrompt) {
@@ -274,21 +415,128 @@ export default function AdminPage() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "prompts", label: "Prompts" },
     { key: "models", label: "Models" },
+    { key: "logs", label: "Logs" },
+    { key: "analytics", label: "Analytics" },
     { key: "feedback", label: "Feedback" },
     { key: "messages", label: "Messages" },
     { key: "users", label: "Users" },
     { key: "batches", label: "Batches" },
   ];
 
+  const levelBadge = (level: string) => {
+    switch (level) {
+      case "info": return "bg-blue-500/10 text-blue-500";
+      case "warn": return "bg-amber-500/10 text-amber-500";
+      case "error": return "bg-danger/10 text-danger";
+      default: return "bg-muted text-muted-foreground";
+    }
+  };
+
   return (
     <div>
       <h1 className="text-2xl font-bold text-foreground mb-2">Admin</h1>
-      <p className="text-muted-foreground text-sm mb-6">
+      <p className="text-muted-foreground text-sm mb-4">
         Manage system prompts, users, feedback, and contact messages.
       </p>
 
+      {/* Service Status Indicators */}
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <span className="text-xs text-muted-foreground font-medium uppercase tracking-wider">API Status:</span>
+        {serviceStatuses.length === 0 ? (
+          <span className="text-xs text-muted-foreground">Loading...</span>
+        ) : (
+          serviceStatuses.map((s) => (
+            <button
+              key={s.source}
+              onClick={() => setStatusModalService(s)}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-full hover:bg-muted/50 transition text-xs"
+              title={`${SERVICE_LABELS[s.source] || s.source}: ${s.status}`}
+            >
+              <div className={`w-2.5 h-2.5 rounded-full ${
+                s.status === "ok" ? "bg-green-500" :
+                s.status === "error" ? "bg-red-500" :
+                "bg-gray-400"
+              }`} />
+              <span className="text-muted-foreground">{SERVICE_LABELS[s.source] || s.source}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Status Detail Modal */}
+      {statusModalService && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setStatusModalService(null)}>
+          <div className="bg-card rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-3 h-3 rounded-full ${
+                  statusModalService.status === "ok" ? "bg-green-500" :
+                  statusModalService.status === "error" ? "bg-red-500" :
+                  "bg-gray-400"
+                }`} />
+                <h3 className="text-lg font-semibold text-foreground">
+                  {SERVICE_LABELS[statusModalService.source] || statusModalService.source}
+                </h3>
+              </div>
+              <button onClick={() => setStatusModalService(null)} className="text-muted-foreground hover:text-foreground">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Status</span>
+                <span className={`font-medium ${
+                  statusModalService.status === "ok" ? "text-green-500" :
+                  statusModalService.status === "error" ? "text-red-500" :
+                  "text-gray-400"
+                }`}>{statusModalService.status.toUpperCase()}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Last Success</span>
+                <span className="text-foreground">
+                  {statusModalService.lastSuccess
+                    ? new Date(statusModalService.lastSuccess).toLocaleString()
+                    : "Never"}
+                </span>
+              </div>
+              {statusModalService.lastError && (
+                <div className="text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Last Error</span>
+                    <span className="text-danger">{new Date(statusModalService.lastError.time).toLocaleString()}</span>
+                  </div>
+                  <p className="text-xs text-danger/80 mt-1 bg-danger/5 rounded px-2 py-1">{statusModalService.lastError.message}</p>
+                </div>
+              )}
+            </div>
+
+            {statusModalService.recentLogs.length > 0 && (
+              <div>
+                <h4 className="text-sm font-medium text-foreground mb-2">Recent Logs</h4>
+                <div className="space-y-1.5">
+                  {statusModalService.recentLogs.map((log) => (
+                    <div key={log.id} className="text-xs flex items-start gap-2 py-1">
+                      <span className={`px-1.5 py-0.5 rounded font-medium shrink-0 ${levelBadge(log.level)}`}>
+                        {log.level}
+                      </span>
+                      <span className="text-muted-foreground shrink-0">
+                        {new Date(log.createdAt).toLocaleTimeString()}
+                      </span>
+                      <span className="text-foreground/80 truncate">{log.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
-      <div className="flex gap-1 mb-6 bg-muted/50 p-1 rounded-lg w-fit">
+      <div className="flex gap-1 mb-6 bg-muted/50 p-1 rounded-lg w-fit flex-wrap">
         {tabs.map((t) => (
           <button
             key={t.key}
@@ -529,6 +777,201 @@ export default function AdminPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {/* Logs Tab */}
+          {tab === "logs" && (
+            <div className="space-y-4">
+              {/* Filter row */}
+              <div className="flex gap-3 flex-wrap items-end">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Search</label>
+                  <input
+                    type="text"
+                    value={logsSearch}
+                    onChange={(e) => setLogsSearch(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleLogsFilter()}
+                    placeholder="Search messages..."
+                    className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus-glow"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Level</label>
+                  <select
+                    value={logsLevel}
+                    onChange={(e) => setLogsLevel(e.target.value)}
+                    className="px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus-glow"
+                  >
+                    <option value="">All levels</option>
+                    {logsFilterLevels.map((l) => (
+                      <option key={l} value={l}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">Source</label>
+                  <select
+                    value={logsSource}
+                    onChange={(e) => setLogsSource(e.target.value)}
+                    className="px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus-glow"
+                  >
+                    <option value="">All sources</option>
+                    {logsFilterSources.map((s) => (
+                      <option key={s} value={s}>{SERVICE_LABELS[s] || s}</option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={handleLogsFilter}
+                  className="bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg font-medium transition text-sm"
+                >
+                  Filter
+                </button>
+                <button
+                  onClick={downloadLogs}
+                  disabled={logs.length === 0}
+                  className="text-sm font-medium text-primary hover:text-primary-hover transition disabled:opacity-50 flex items-center gap-1.5 px-4 py-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Download
+                </button>
+              </div>
+
+              {/* Logs table */}
+              <div className="glass-card rounded-2xl overflow-hidden">
+                {logs.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">No logs yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider">
+                          <th className="text-left px-4 py-3 font-medium">Timestamp</th>
+                          <th className="text-left px-4 py-3 font-medium">Level</th>
+                          <th className="text-left px-4 py-3 font-medium">Source</th>
+                          <th className="text-left px-4 py-3 font-medium">Action</th>
+                          <th className="text-left px-4 py-3 font-medium">Message</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/30">
+                        {logs.map((log) => (
+                          <tr key={log.id} className="hover:bg-muted/20 transition">
+                            <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap text-xs font-mono">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <span className={`text-xs font-medium px-2 py-0.5 rounded ${levelBadge(log.level)}`}>
+                                {log.level}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-foreground text-xs">
+                              {SERVICE_LABELS[log.source] || log.source}
+                            </td>
+                            <td className="px-4 py-2.5 text-muted-foreground text-xs font-mono">
+                              {log.action}
+                            </td>
+                            <td className="px-4 py-2.5 text-foreground/80 text-xs max-w-md truncate" title={log.message}>
+                              {log.message}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Load More */}
+              {logsCursor && (
+                <div className="flex justify-center">
+                  <button
+                    onClick={() => loadLogs(false)}
+                    disabled={logsLoading}
+                    className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-6 py-2 rounded-lg font-medium transition text-sm"
+                  >
+                    {logsLoading ? "Loading..." : "Load More"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Analytics Tab */}
+          {tab === "analytics" && (
+            <div className="space-y-6">
+              {/* Summary cards */}
+              {analyticsSummary && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="glass-card rounded-2xl p-5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">API Calls Today</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">{analyticsSummary.callsToday.toLocaleString()}</p>
+                    {analyticsSummary.errorsToday > 0 && (
+                      <p className="text-xs text-danger mt-1">{analyticsSummary.errorsToday} errors</p>
+                    )}
+                  </div>
+                  <div className="glass-card rounded-2xl p-5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Error Rate</p>
+                    <p className={`text-3xl font-bold mt-1 ${analyticsSummary.errorRate > 20 ? "text-danger" : analyticsSummary.errorRate > 5 ? "text-amber-500" : "text-green-500"}`}>
+                      {analyticsSummary.errorRate}%
+                    </p>
+                  </div>
+                  <div className="glass-card rounded-2xl p-5">
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Tokens Used Today</p>
+                    <p className="text-3xl font-bold text-foreground mt-1">
+                      {analyticsSummary.totalTokensToday > 1000000
+                        ? `${(analyticsSummary.totalTokensToday / 1000000).toFixed(1)}M`
+                        : analyticsSummary.totalTokensToday > 1000
+                        ? `${(analyticsSummary.totalTokensToday / 1000).toFixed(1)}K`
+                        : analyticsSummary.totalTokensToday.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {analyticsSummary.inputTokensToday.toLocaleString()} in / {analyticsSummary.outputTokensToday.toLocaleString()} out
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Daily breakdown */}
+              <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="px-5 py-3 border-b border-border/30">
+                  <h3 className="text-sm font-semibold text-foreground">Daily Breakdown (Last 7 Days)</h3>
+                </div>
+                {analyticsDaily.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground text-sm">No data yet.</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border/30 text-xs text-muted-foreground uppercase tracking-wider">
+                          <th className="text-left px-5 py-3 font-medium">Day</th>
+                          <th className="text-left px-5 py-3 font-medium">Service</th>
+                          <th className="text-right px-5 py-3 font-medium">Calls</th>
+                          <th className="text-right px-5 py-3 font-medium">Errors</th>
+                          <th className="text-right px-5 py-3 font-medium">Input Tokens</th>
+                          <th className="text-right px-5 py-3 font-medium">Output Tokens</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/30">
+                        {analyticsDaily.map((row, i) => (
+                          <tr key={i} className="hover:bg-muted/20 transition">
+                            <td className="px-5 py-2.5 text-foreground whitespace-nowrap">{row.day}</td>
+                            <td className="px-5 py-2.5 text-foreground">{SERVICE_LABELS[row.source] || row.source}</td>
+                            <td className="px-5 py-2.5 text-foreground text-right">{row.calls.toLocaleString()}</td>
+                            <td className="px-5 py-2.5 text-right">
+                              <span className={row.errors > 0 ? "text-danger" : "text-muted-foreground"}>{row.errors}</span>
+                            </td>
+                            <td className="px-5 py-2.5 text-muted-foreground text-right">{row.inputTokens.toLocaleString()}</td>
+                            <td className="px-5 py-2.5 text-muted-foreground text-right">{row.outputTokens.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 

@@ -12,6 +12,7 @@ import type {
   ExaSearchResponse,
   DistanceMatrixResponse,
 } from './types';
+import { appLog } from '@/lib/app-log';
 
 const TIMEOUT = 30_000;
 const MAX_TEXT_PER_RESULT = 1500; // Truncate Exa text to avoid burning context
@@ -163,8 +164,10 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
   const pdl = pdlResult.status === 'fulfilled' && pdlResult.value.success ? pdlResult.value.data as Record<string, unknown> : null;
 
   if (!bdProfile && !pdl) {
+    appLog('error', 'bright_data', 'linkedin_scrape', `LinkedIn scrape failed for ${url}`, { url }).catch(() => {});
     return { success: false, summary: 'Timeout waiting for LinkedIn profile data' };
   }
+  appLog('info', 'bright_data', 'linkedin_scrape', `LinkedIn profile scraped: ${url}`, { url, hasAvatar: !!(bdProfile as Record<string, unknown> | null)?.avatar }).catch(() => {});
 
   // Build combined enrichment — LinkedIn is ground truth for current role, PDL fills in contact points
   const name = bdProfile?.name ?? (pdl?.name as string | undefined) ?? 'Unknown';
@@ -483,12 +486,14 @@ export async function searchPersonAddress(
   const endatoOk = endatoResult.success && endatoResult.data !== null;
 
   if (!wpOk && !endatoOk) {
+    appLog('error', 'endato', 'address_search', `Address search failed for ${fullName}: both WhitePages and Endato returned no results`).catch(() => {});
     return {
       success: false,
       data: null,
       summary: `Both sources failed. WhitePages: ${wpResult.summary}. Endato: ${endatoResult.summary}`,
     };
   }
+  appLog('info', 'endato', 'address_search', `Address search for ${fullName}: WP=${wpOk ? 'ok' : 'fail'}, Endato=${endatoOk ? 'ok' : 'fail'}`).catch(() => {});
 
   // Merge both results into a single response so the AI sees everything
   const combinedData: Record<string, unknown> = {};
@@ -611,6 +616,7 @@ export async function searchExaAI(
     );
 
     const results = res.data.results ?? [];
+    appLog('info', 'exa_ai', 'web_search', `Exa search: ${results.length} results for "${query}"`, { query, numResults: results.length }).catch(() => {});
     return {
       success: true,
       data: results.map(r => ({
@@ -622,6 +628,7 @@ export async function searchExaAI(
       summary: `${results.length} web results for "${query}"`,
     };
   } catch (err) {
+    appLog('error', 'exa_ai', 'web_search', `Exa search failed: ${(err as Error).message}`, { query, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Exa search failed: ${(err as Error).message}` };
   }
 }
@@ -644,12 +651,14 @@ export async function getPropertyDetails(
       timeout: TIMEOUT,
     });
 
+    appLog('info', 'propmix', 'property_lookup', `Property details retrieved for ${streetAddress}, ${city}, ${state}`).catch(() => {});
     return { success: true, data: res.data, summary: 'Property details retrieved' };
   } catch (err) {
     const status = (err as AxiosError).response?.status;
     if (status === 404) {
       return { success: true, data: null, summary: 'No property data found for this address' };
     }
+    appLog('error', 'propmix', 'property_lookup', `PropMix lookup failed: ${(err as Error).message}`, { error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `PropMix lookup failed: ${(err as Error).message}` };
   }
 }

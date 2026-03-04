@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { runEnrichmentAgent } from "@/agent/enrichment-agent";
 import { MAX_ATTEMPTS, STEP_LABELS } from "@/app/api/contacts/enrich-bulk/route";
+import { appLog } from "@/lib/app-log";
 
 export const maxDuration = 600;
 
@@ -80,6 +81,8 @@ export async function POST(
       },
     });
 
+    appLog("info", "system", "enrichment_start", `Enrichment ${id} for ${contact.name} attempt ${attempt}/${MAX_ATTEMPTS}`, { enrichmentId: id, contactId: contact.id, attempt }).catch(() => {});
+
     try {
       const result = await runEnrichmentAgent(
         {
@@ -140,6 +143,7 @@ export async function POST(
             errorMessage: null,
           },
         });
+        appLog("info", "system", "enrichment_complete", `Enrichment ${id} completed for ${contact.name}`, { enrichmentId: id, contactId: contact.id, attempt }).catch(() => {});
         succeeded = true;
       } else {
         lastError = "Agent returned no data";
@@ -155,6 +159,7 @@ export async function POST(
         return NextResponse.json({ status: "cancelled" });
       }
       lastError = msg;
+      appLog("error", "system", "enrichment_fail", `Enrichment ${id} attempt ${attempt} failed: ${msg}`, { enrichmentId: id, contactId: contact.id, attempt, error: msg }).catch(() => {});
     }
 
     if (succeeded) break;
