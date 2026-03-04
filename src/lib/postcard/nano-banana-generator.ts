@@ -477,9 +477,9 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       ].join('\n')
     : '';
 
-  // Build people instructions — only slots with a provided photo get filled, all others are removed
+  // Build people instructions — slots with photos use the photo, slots without get generic illustrated people
   const personSlots: string[] = [];
-  const removedSlots: string[] = [];
+  const genericSlots: string[] = [];
 
   if (data.prospectImage) {
     personSlots.push(
@@ -490,7 +490,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
       `     Render in illustration style, not photorealistic. Keep the standing pose.`,
     );
   } else {
-    removedSlots.push('"Person 1"');
+    genericSlots.push(`"Person 1" (standing presenter)`);
   }
 
   for (let i = 0; i < 5; i++) {
@@ -501,7 +501,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
         `     Give them a warm, friendly SMILE.`,
       );
     } else {
-      removedSlots.push(`"Person ${i + 2}"`);
+      genericSlots.push(`"Person ${i + 2}" (seated)`);
     }
   }
 
@@ -534,28 +534,29 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     ``,
     `3. SCREENS: Replace screen content with the provided dashboard screenshot.`,
     ``,
+    `4. PEOPLE — EVERY labeled person slot in the reference MUST become a fully illustrated human. No gray silhouettes, no shadows, no placeholders, no outlines — only real colorful illustrated people.`,
     personSlots.length > 0
       ? [
-          `4. PEOPLE — The reference has labeled silhouettes (Person 1 through Person 6). Fill in ONLY the ones with provided photos:`,
+          `   People with provided photos (match their appearance):`,
           ...personSlots,
-          removedSlots.length > 0
-            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them AND their label text from the scene entirely — leave their chair/seat empty, do NOT draw any character or any "Person N" text there.`
-            : '',
-          `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
-          `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels from the reference template must be replaced by either a real illustrated person or removed completely.`,
-        ].filter(Boolean).join('\n')
-      : [
-          `4. PEOPLE — The reference has labeled silhouettes.`,
-          `   REMOVE ALL of them (${removedSlots.join(', ')}) AND their label text — no photos were provided.`,
-          `   Leave all chairs/seats empty. No people and no "Person N" labels in the final image.`,
-        ].join('\n'),
+        ].join('\n')
+      : '',
+    genericSlots.length > 0
+      ? [
+          `   People WITHOUT photos — draw a unique, friendly, diverse illustrated person for each:`,
+          ...genericSlots.map(s => `   - ${s}: Draw a unique illustrated person. Pick a random gender, ethnicity, hair style, and professional clothing. Must look like a real illustrated character — warm smile, vibrant colors, full detail. NOT a silhouette, NOT a shadow, NOT a gray figure.`),
+        ].join('\n')
+      : '',
+    `   - ALL people rendered in the same illustration style — vibrant, colorful, detailed characters.`,
+    `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels replaced by actual illustrated people.`,
+    `   - NO gray silhouettes, shadows, outlines, or placeholder figures anywhere. Every person slot must be a fully colored, detailed illustrated human.`,
     corrections,
     ``,
     `FINAL CHECKS:`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
     `- Wide landscape output (3:2), not square or portrait`,
-    `- No gray silhouettes remain — only people with provided photos appear, rest are removed`,
+    `- Every person slot is a FULLY ILLUSTRATED colorful human — no gray silhouettes, no shadows, no placeholder outlines, no ghost figures`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
@@ -589,7 +590,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `- Fill screens with the dashboard screenshot`,
     data.prospectImage ? `- Replace "Person 1" (standing) with the prospect's facial features — intentional, should NOT match the gray silhouette` : ``,
     data.teamImages.length > 0 ? `- Replace "Person 2"–"Person ${data.teamImages.length + 1}" with team member faces` : ``,
-    `- All remaining silhouettes (without photos) should be REMOVED — empty chairs, no people drawn there`,
+    `- All person slots (even without provided photos) must be FULLY ILLUSTRATED colorful people — no gray silhouettes, no shadow figures, no placeholder outlines`,
     ``,
     `TARGET STYLE: Flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. No photorealistic faces.`,
     ``,
@@ -609,11 +610,11 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
           `   FAIL if Person 1 still looks like a gray silhouette or doesn't match the prospect photo.`,
           `   This is the MOST IMPORTANT check.`,
         ].join('\n')
-      : `5. PERSON 1: N/A (no prospect photo provided)`,
+      : `5. PERSON 1 (STANDING): Should be a fully illustrated person (no photo provided — generic is fine, but must be colorful and detailed, NOT a silhouette).`,
     data.teamImages.length > 0
       ? `6. PERSONS 2–${data.teamImages.length + 1} (SEATED): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM: N/A`,
-    `7. SILHOUETTES: Are all unprovided person slots REMOVED (empty chairs)? FAIL if any gray silhouettes remain.`,
+    `7. PLACEHOLDER/SILHOUETTE CHECK — CRITICAL: Look at EVERY person in the image. FAIL if ANY person appears as a gray silhouette, shadow figure, dark outline, translucent shape, or placeholder. Every person must be a fully colored, detailed illustrated human with visible facial features, clothing, and skin tones. Gray/dark/featureless figures are NOT acceptable.`,
     `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
@@ -627,6 +628,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `GOOD: "Person 1 (standing) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
     `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
     `For labels: "The text 'Person 3' is still visible on the right side — remove it completely."`,
+    `For silhouettes: "The person on the [position] chair is a gray silhouette/shadow — replace it with a fully illustrated colorful person with visible features, clothing, and skin tone."`,
   ].filter(Boolean).join('\n');
 }
 
@@ -653,9 +655,9 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
       ].join('\n')
     : '';
 
-  // Build people instructions — only slots with a provided photo get filled, all others are removed
+  // Build people instructions — slots with photos use the photo, slots without get generic illustrated people
   const personSlots: string[] = [];
-  const removedSlots: string[] = [];
+  const genericSlots: string[] = [];
 
   if (data.prospectImage) {
     personSlots.push(
@@ -666,7 +668,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
       `     Render in illustration style, not photorealistic. Keep the seated-at-desk pose.`,
     );
   } else {
-    removedSlots.push('"Person 1"');
+    genericSlots.push(`"Person 1" (center desk person)`);
   }
 
   for (let i = 0; i < 4; i++) {
@@ -677,7 +679,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
         `     Give them a warm, friendly SMILE.`,
       );
     } else {
-      removedSlots.push(`"Person ${i + 2}"`);
+      genericSlots.push(`"Person ${i + 2}" (video tile)`);
     }
   }
 
@@ -710,28 +712,29 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     ``,
     `3. MONITOR SCREEN: Replace monitor content with the provided dashboard screenshot.`,
     ``,
+    `4. PEOPLE — EVERY labeled person slot in the reference MUST become a fully illustrated human. No gray silhouettes, no shadows, no placeholders, no outlines — only real colorful illustrated people.`,
     personSlots.length > 0
       ? [
-          `4. PEOPLE — The reference has labeled silhouettes (Person 1 = center desk, Person 2–5 = video tiles). Fill in ONLY the ones with provided photos:`,
+          `   People with provided photos (match their appearance):`,
           ...personSlots,
-          removedSlots.length > 0
-            ? `   - REMOVE these (no photo provided): ${removedSlots.join(', ')}. Delete them AND their label text from the scene entirely — leave the video tile empty/blank or remove the center person, do NOT draw any character or any "Person N" text there.`
-            : '',
-          `   - ALL people rendered in the same illustration style. Use photos ONLY for facial features.`,
-          `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels from the reference template must be replaced by either a real illustrated person or removed completely.`,
-        ].filter(Boolean).join('\n')
-      : [
-          `4. PEOPLE — The reference has labeled silhouettes.`,
-          `   REMOVE ALL of them (${removedSlots.join(', ')}) AND their label text — no photos were provided.`,
-          `   Leave video tiles empty/blank and remove center person. No people and no "Person N" labels in the final image.`,
-        ].join('\n'),
+        ].join('\n')
+      : '',
+    genericSlots.length > 0
+      ? [
+          `   People WITHOUT photos — draw a unique, friendly, diverse illustrated person for each:`,
+          ...genericSlots.map(s => `   - ${s}: Draw a unique illustrated person. Pick a random gender, ethnicity, hair style, and professional clothing. Must look like a real illustrated character — warm smile, vibrant colors, full detail. NOT a silhouette, NOT a shadow, NOT a gray figure.`),
+        ].join('\n')
+      : '',
+    `   - ALL people rendered in the same illustration style — vibrant, colorful, detailed characters.`,
+    `   - The final image must have NO label text like "Person 1", "Person 2", etc. — all labels replaced by actual illustrated people.`,
+    `   - NO gray silhouettes, shadows, outlines, or placeholder figures anywhere. Every person slot must be a fully colored, detailed illustrated human.`,
     corrections,
     ``,
     `FINAL CHECKS:`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
     `- Wide landscape output (3:2), not square or portrait`,
-    `- No gray silhouettes remain — only people with provided photos appear, rest are removed`,
+    `- Every person slot is a FULLY ILLUSTRATED colorful human — no gray silhouettes, no shadows, no placeholder outlines, no ghost figures`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
@@ -765,7 +768,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `- Fill monitor screen with the dashboard screenshot`,
     data.prospectImage ? `- Replace "Person 1" (center desk) with the prospect's facial features — intentional, should NOT match the gray silhouette` : ``,
     data.teamImages.length > 0 ? `- Replace "Person 2"–"Person ${data.teamImages.length + 1}" with team member faces` : ``,
-    `- All remaining silhouettes (without photos) should be REMOVED — empty video tiles, no people drawn there`,
+    `- All person slots (even without provided photos) must be FULLY ILLUSTRATED colorful people — no gray silhouettes, no shadow figures, no placeholder outlines`,
     ``,
     `TARGET STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. No photorealistic faces.`,
     ``,
@@ -785,11 +788,11 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
           `   FAIL if Person 1 still looks like a gray silhouette or doesn't match the prospect photo.`,
           `   This is the MOST IMPORTANT check.`,
         ].join('\n')
-      : `5. PERSON 1: N/A (no prospect photo provided)`,
+      : `5. PERSON 1 (CENTER DESK): Should be a fully illustrated person (no photo provided — generic is fine, but must be colorful and detailed, NOT a silhouette).`,
     data.teamImages.length > 0
       ? `6. PERSONS 2–${data.teamImages.length + 1} (VIDEO TILES): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM TILES: N/A`,
-    `7. SILHOUETTES: Are all unprovided person slots REMOVED (empty video tiles)? FAIL if any gray silhouettes remain.`,
+    `7. PLACEHOLDER/SILHOUETTE CHECK — CRITICAL: Look at EVERY person in the image. FAIL if ANY person appears as a gray silhouette, shadow figure, dark outline, translucent shape, or placeholder. Every person must be a fully colored, detailed illustrated human with visible facial features, clothing, and skin tones. Gray/dark/featureless figures are NOT acceptable.`,
     `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
