@@ -27,24 +27,23 @@ interface Campaign {
 }
 
 const statusColors: Record<string, string> = {
-  pending: "text-warning bg-warning/10",
-  generating: "text-primary bg-primary/10",
   ready: "text-accent bg-accent/10",
   approved: "text-success bg-success/10",
-  failed: "text-danger bg-danger/10",
 };
-
-const filterTabs = ["all", "pending", "generating", "ready", "approved", "failed"];
 
 export default function PostcardsPage() {
   const [postcards, setPostcards] = useState<Postcard[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [templateFilter, setTemplateFilter] = useState<"all" | "warroom" | "zoom">("all");
   const [campaignId, setCampaignId] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [actionMessage, setActionMessage] = useState<string | null>(null);
+  // Older versions modal
+  const [versionsContactId, setVersionsContactId] = useState<string | null>(null);
+  const [olderVersions, setOlderVersions] = useState<Postcard[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   useEffect(() => { document.title = "Postcards | WDISTT"; }, []);
 
@@ -55,8 +54,8 @@ export default function PostcardsPage() {
   }, []);
 
   const loadPostcards = () => {
-    const params = new URLSearchParams();
-    if (filter !== "all") params.set("status", filter);
+    const params = new URLSearchParams({ latestOnly: "true" });
+    if (statusFilter !== "all") params.set("status", statusFilter);
     if (campaignId !== "all") params.set("campaignId", campaignId);
     fetch(`/api/postcards?${params}`)
       .then((res) => (res.ok ? res.json() : { postcards: [] }))
@@ -70,18 +69,7 @@ export default function PostcardsPage() {
     setLoading(true);
     loadPostcards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter, campaignId]);
-
-  // Poll for status changes while any postcard is in-progress
-  useEffect(() => {
-    const hasInProgress = postcards.some(
-      (p) => p.status === "pending" || p.status === "generating"
-    );
-    if (!hasInProgress) return;
-    const interval = setInterval(loadPostcards, 5000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [postcards]);
+  }, [statusFilter, campaignId]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -123,17 +111,6 @@ export default function PostcardsPage() {
     a.download = `${p.contactName.replace(/[^a-z0-9]/gi, "_")}-postcard.png`;
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  const handleRetry = async (id: string) => {
-    const res = await fetch(`/api/postcards/${id}/retry`, { method: "POST" });
-    if (res.ok) {
-      setPostcards((prev) =>
-        prev.map((p) => (p.id === id ? { ...p, status: "pending" } : p))
-      );
-      // Kick off generation (keeps Vercel function alive via browser)
-      fetch(`/api/postcards/${id}/run`, { method: "POST" }).catch(() => {});
-    }
   };
 
   const handleExportCsv = () => {
@@ -192,6 +169,42 @@ export default function PostcardsPage() {
     setActionMessage(`Downloaded ${targets.length} postcard(s).`);
   };
 
+  // Show older versions for a contact
+  const openVersions = async (contactId: string) => {
+    setVersionsContactId(contactId);
+    setVersionsLoading(true);
+    const res = await fetch(`/api/postcards?contactId=${contactId}&includeAll=true`);
+    const data = res.ok ? await res.json() : { postcards: [] };
+    // Exclude the current (latest ready/approved) — show all others
+    const current = postcards.find((p) => p.contactId === contactId);
+    setOlderVersions(
+      (data.postcards || []).filter((p: Postcard) => p.id !== current?.id && (p.status === "ready" || p.status === "approved"))
+    );
+    setVersionsLoading(false);
+  };
+
+  // Restore an older postcard as the "current" by approving it and un-approving the current one
+  const handleRestore = async (oldPostcard: Postcard) => {
+    // Set the old one to "ready" (or keep its current status) — user can then approve it
+    // The gallery already shows the latest by createdAt, so we update the old one's updatedAt
+    await fetch(`/api/postcards/${oldPostcard.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" }),
+    });
+    // Demote the current one back to "ready"
+    const current = postcards.find((p) => p.contactId === oldPostcard.contactId);
+    if (current && current.id !== oldPostcard.id) {
+      await fetch(`/api/postcards/${current.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      });
+    }
+    setVersionsContactId(null);
+    loadPostcards();
+  };
+
   const filteredPostcards = templateFilter === "all"
     ? postcards
     : postcards.filter((p) => p.template === templateFilter);
@@ -246,12 +259,12 @@ export default function PostcardsPage() {
       {/* Filters */}
       <div className="flex items-center gap-3 mb-6 overflow-x-auto">
         <div className="flex gap-1">
-          {filterTabs.map((tab) => (
+          {(["all", "ready", "approved"] as const).map((tab) => (
             <button
               key={tab}
-              onClick={() => setFilter(tab)}
+              onClick={() => setStatusFilter(tab)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap capitalize ${
-                filter === tab
+                statusFilter === tab
                   ? "bg-primary/15 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-card"
               }`}
@@ -344,10 +357,6 @@ export default function PostcardsPage() {
                       alt="Postcard"
                       className="w-full h-full object-cover"
                     />
-                  ) : postcard.status === "pending" || postcard.status === "generating" ? (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                    </div>
                   ) : (
                     <div className="w-full h-full flex items-center justify-center text-muted-foreground text-xs">
                       No image
@@ -393,14 +402,13 @@ export default function PostcardsPage() {
                       Approve
                     </button>
                   )}
-                  {postcard.status === "failed" && (
-                    <button
-                      onClick={() => handleRetry(postcard.id)}
-                      className="text-xs font-medium px-3 py-1.5 rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition"
-                    >
-                      Retry
-                    </button>
-                  )}
+                  <button
+                    onClick={() => openVersions(postcard.contactId)}
+                    className="text-xs font-medium px-3 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition"
+                    title="View older versions"
+                  >
+                    Versions
+                  </button>
                   {postcard.imageUrl && (
                     <button
                       onClick={() => handleDownloadSingle(postcard)}
@@ -418,6 +426,54 @@ export default function PostcardsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Older Versions Modal */}
+      {versionsContactId && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setVersionsContactId(null)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 border-b border-border">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-foreground">Older Versions</h2>
+                <button onClick={() => setVersionsContactId(null)} className="text-muted-foreground hover:text-foreground transition text-xl">&times;</button>
+              </div>
+              <p className="text-sm text-muted-foreground mt-1">Select an older postcard to restore it as the current version.</p>
+            </div>
+            <div className="p-6">
+              {versionsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : olderVersions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No older versions available.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {olderVersions.map((v) => (
+                    <div key={v.id} className="border border-border rounded-xl overflow-hidden hover:border-primary/50 transition">
+                      {v.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={v.imageUrl} alt="Postcard version" className="w-full aspect-[3/2] object-cover" />
+                      ) : (
+                        <div className="w-full aspect-[3/2] bg-muted flex items-center justify-center text-muted-foreground text-xs">No image</div>
+                      )}
+                      <div className="p-3 flex items-center justify-between">
+                        <div className="text-xs text-muted-foreground">
+                          {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                        </div>
+                        <button
+                          onClick={() => handleRestore(v)}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

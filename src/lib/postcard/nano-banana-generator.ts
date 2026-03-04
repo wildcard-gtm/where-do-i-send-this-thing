@@ -301,10 +301,27 @@ function parseIssues(analysis: string): { pass: boolean; issues: string[] } {
   if (issuesSection) {
     const lines = issuesSection.split('\n').filter((l) => l.trim());
     for (const line of lines) {
-      const cleaned = line.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^\*+\s*/, '').trim();
+      const cleaned = line.replace(/^\s*\d+[\.\)]\s*/, '').replace(/^\*+\s*/, '').replace(/^[-•]\s*/, '').trim();
       if (cleaned && cleaned !== 'None' && cleaned !== 'N/A' && cleaned !== '(none)' && cleaned !== '(None)' && cleaned.length > 5) {
         issues.push(cleaned);
       }
+    }
+  }
+
+  // If analysis says FAIL but we couldn't parse specific issues, extract FAIL
+  // lines from the per-check section as fallback — the generator needs feedback
+  if (!pass && issues.length === 0) {
+    const failLines = analysis
+      .split('\n')
+      .filter((l) => /FAIL/i.test(l) && !/OVERALL/i.test(l))
+      .map((l) => l.replace(/^\s*\d+[\.\)]\s*/, '').trim())
+      .filter((l) => l.length > 10);
+    if (failLines.length > 0) {
+      issues.push(...failLines);
+    } else {
+      // Last resort: include a trimmed version of the full analysis
+      const trimmed = analysis.slice(0, 500).trim();
+      issues.push(`Analysis returned FAIL. Full feedback: ${trimmed}`);
     }
   }
 

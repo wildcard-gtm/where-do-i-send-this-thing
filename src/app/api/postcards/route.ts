@@ -4,6 +4,12 @@ import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 
 // GET - all postcards for current user
+// Query params:
+//   status - filter by status (ready, approved, etc.)
+//   contactId - filter by contact
+//   campaignId - filter by campaign
+//   latestOnly - "true" to return only the most recent postcard per contact
+//   includeAll - "true" to include failed/pending/generating (excluded by default)
 export async function GET(request: Request) {
   const user = await getSession();
   if (!user) {
@@ -14,23 +20,42 @@ export async function GET(request: Request) {
   const status = searchParams.get("status");
   const contactId = searchParams.get("contactId");
   const campaignId = searchParams.get("campaignId");
+  const latestOnly = searchParams.get("latestOnly") === "true";
+  const includeAll = searchParams.get("includeAll") === "true";
 
   const teamUserIds = await getTeamUserIds(user);
 
   const where: Record<string, unknown> = {
     contact: { userId: { in: teamUserIds } },
   };
-  if (status) where.status = status;
+
+  if (status) {
+    where.status = status;
+  } else if (!includeAll) {
+    // By default, exclude failed/pending/generating/cancelled
+    where.status = { in: ["ready", "approved"] };
+  }
+
   if (contactId) where.contactId = contactId;
   if (campaignId) where.postcardBatch = { scanBatchId: campaignId };
 
-  const postcards = await prisma.postcard.findMany({
+  let postcards = await prisma.postcard.findMany({
     where,
     orderBy: { createdAt: "desc" },
     include: {
       contact: { select: { id: true, name: true, company: true } },
     },
   });
+
+  // Deduplicate: keep only the most recent postcard per contact
+  if (latestOnly) {
+    const seen = new Set<string>();
+    postcards = postcards.filter((p) => {
+      if (seen.has(p.contactId)) return false;
+      seen.add(p.contactId);
+      return true;
+    });
+  }
 
   return NextResponse.json({ postcards });
 }
