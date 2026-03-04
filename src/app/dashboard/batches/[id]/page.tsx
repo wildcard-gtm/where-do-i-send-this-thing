@@ -360,6 +360,7 @@ export default function CampaignDetailPage() {
   const [force, setForce] = useState(false);
   const [locationType, setLocationType] = useState<"all" | "remote" | "office">("all");
   const [refreshingPhotos, setRefreshingPhotos] = useState<Set<string>>(new Set());
+  const [isStopping, setIsStopping] = useState(false);
 
   useEffect(() => {
     document.title = data?.batch?.name ? `${data.batch.name} | Campaigns | WDISTT` : "Campaign | WDISTT";
@@ -755,6 +756,61 @@ export default function CampaignDetailPage() {
     fetchData();
   }
 
+  // ── Stop All — cancel everything in progress ────────────────────────────────
+
+  async function handleStopAll() {
+    if (!data) return;
+    setIsStopping(true);
+    cancelledRef.current = true;
+    queueRef.current = [];
+    retriedIdsRef.current.clear();
+
+    const promises: Promise<unknown>[] = [];
+
+    // Cancel running scan jobs
+    for (const c of data.contacts) {
+      if (c.jobStatus === "running" || c.jobStatus === "pending") {
+        promises.push(fetch(`/api/batches/${batchId}/jobs/${c.jobId}/cancel`, { method: "POST" }).catch(() => {}));
+      }
+    }
+
+    // Cancel active enrichments
+    for (const c of data.contacts) {
+      if ((c.enrichmentStatus === "enriching" || c.enrichmentStatus === "pending") && c.enrichmentId) {
+        promises.push(fetch(`/api/enrichments/${c.enrichmentId}/cancel`, { method: "POST" }).catch(() => {}));
+      }
+    }
+
+    // Cancel active postcards
+    for (const c of data.contacts) {
+      if ((c.postcardStatus === "generating" || c.postcardStatus === "pending") && c.postcardId) {
+        promises.push(fetch(`/api/postcards/${c.postcardId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "cancelled" }),
+        }).catch(() => {}));
+      }
+    }
+
+    // Also stop the scan batch itself
+    promises.push(fetch(`/api/batches/${batchId}/stop`, { method: "POST" }).catch(() => {}));
+
+    // Cancel enrichment batches
+    if (data.enrichBatchId) {
+      promises.push(fetch(`/api/enrichment-batches/${data.enrichBatchId}/cancel`, { method: "POST" }).catch(() => {}));
+    }
+
+    // Cancel postcard batches
+    if (data.postcardBatchId) {
+      promises.push(fetch(`/api/postcard-batches/${data.postcardBatchId}/cancel`, { method: "POST" }).catch(() => {}));
+    }
+
+    await Promise.allSettled(promises);
+    cancelledRef.current = false;
+    await fetchData();
+    setIsStopping(false);
+  }
+
   // ── Correction handler ──────────────────────────────────────────────────────
 
   function openCorrection(c: CampaignContact, stage: "scan" | "enrich" | "postcard") {
@@ -880,12 +936,31 @@ export default function CampaignDetailPage() {
             {" · "}{total} contact{total !== 1 ? "s" : ""}
           </p>
         </div>
-        <Link
-          href="/dashboard/batches"
-          className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg font-medium transition text-sm shrink-0"
-        >
-          ← Campaigns
-        </Link>
+        <div className="flex items-center gap-2 shrink-0">
+          {anyActive && (
+            <button
+              onClick={handleStopAll}
+              disabled={isStopping}
+              className="inline-flex items-center gap-2 bg-danger/10 hover:bg-danger/20 text-danger border border-danger/20 px-4 py-2 rounded-lg font-medium transition text-sm disabled:opacity-50"
+            >
+              {isStopping ? (
+                <div className="w-4 h-4 border-2 border-danger border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+                </svg>
+              )}
+              Stop All
+            </button>
+          )}
+          <Link
+            href="/dashboard/batches"
+            className="border border-border hover:border-muted-foreground text-muted-foreground hover:text-foreground px-4 py-2 rounded-lg font-medium transition text-sm"
+          >
+            ← Campaigns
+          </Link>
+        </div>
       </div>
 
       {/* Action bar */}
