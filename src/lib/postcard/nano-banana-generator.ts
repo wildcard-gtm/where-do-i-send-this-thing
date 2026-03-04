@@ -13,7 +13,8 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { getGeminiModel } from '@/lib/ai/config';
+import OpenAI from 'openai';
+import { getGeminiModel, getModelConfigForRole } from '@/lib/ai/config';
 
 export interface NanoBananaInput {
   /** Prospect's profile photo URL (the standing person to restyle) — optional, keeps reference scene person if omitted */
@@ -32,24 +33,31 @@ export interface NanoBananaInput {
 
 type ImageData = { data: string; mimeType: string };
 
-// Try Gemini-specific keys first, fall back to Google Search key
-const GEMINI_API_KEY =
-  process.env.GEMINI_API_KEY ||
-  process.env.GOOGLE_AI_STUDIO ||
-  process.env.GOOGLE_SEARCH_API_KEY;
+// Collect all available Gemini API keys for rotation on 429
+const GEMINI_KEYS: string[] = [
+  process.env.GEMINI_API_KEY,
+  process.env.GOOGLE_AI_STUDIO,
+].filter(Boolean) as string[];
 // Models loaded from DB at runtime via getGeminiModel() — configured in Admin → Models tab
 const MAX_ATTEMPTS = 4;
+const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 10000]; // backoff delays for 429 retries
 
 // ─── Gemini API ─────────────────────────────────────────────────────────────
+
+class GeminiRateLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GeminiRateLimitError';
+  }
+}
 
 function callGemini(
   model: string,
   payload: object,
+  apiKey: string,
 ): Promise<{ image?: string; text?: string }> {
-  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
-
   const body = JSON.stringify(payload);
-  const urlPath = `/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  const urlPath = `/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   return new Promise((resolve, reject) => {
     const opts = {
@@ -69,6 +77,11 @@ function callGemini(
         try {
           const parsed = JSON.parse(data);
           if (parsed.error) {
+            const code = parsed.error.code;
+            if (code === 429) {
+              reject(new GeminiRateLimitError(`Gemini 429: ${parsed.error.message ?? 'rate limited'}`));
+              return;
+            }
             reject(new Error(`Gemini API error: ${JSON.stringify(parsed.error)}`));
             return;
           }
@@ -92,6 +105,37 @@ function callGemini(
   });
 }
 
+/** Call Gemini with key rotation and backoff on 429 */
+async function callGeminiWithRetry(
+  model: string,
+  payload: object,
+): Promise<{ image?: string; text?: string }> {
+  if (GEMINI_KEYS.length === 0) {
+    throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
+  }
+
+  let lastError: Error | null = null;
+  // Try each key, with backoff between attempts
+  for (let attempt = 0; attempt < GEMINI_KEYS.length + RATE_LIMIT_BACKOFF_MS.length; attempt++) {
+    const keyIdx = attempt % GEMINI_KEYS.length;
+    const key = GEMINI_KEYS[keyIdx];
+    try {
+      return await callGemini(model, payload, key);
+    } catch (err) {
+      if (err instanceof GeminiRateLimitError) {
+        lastError = err;
+        const backoffIdx = Math.min(Math.floor(attempt / GEMINI_KEYS.length), RATE_LIMIT_BACKOFF_MS.length - 1);
+        const delay = RATE_LIMIT_BACKOFF_MS[backoffIdx];
+        console.log(`[NanoBanana] 429 on key ${keyIdx + 1}/${GEMINI_KEYS.length}, backing off ${delay}ms...`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err; // non-429 errors propagate immediately
+    }
+  }
+  throw lastError ?? new Error('All Gemini API keys rate limited');
+}
+
 /** Generate an image from a prompt + input images */
 async function generateImage(prompt: string, images: ImageData[]): Promise<string> {
   const imageModel = await getGeminiModel('image_gen');
@@ -100,7 +144,7 @@ async function generateImage(prompt: string, images: ImageData[]): Promise<strin
     ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
   ];
 
-  const result = await callGemini(imageModel, {
+  const result = await callGeminiWithRetry(imageModel, {
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseModalities: ['TEXT', 'IMAGE'],
@@ -111,7 +155,37 @@ async function generateImage(prompt: string, images: ImageData[]): Promise<strin
   return result.image;
 }
 
-/** Analyze an image with text — returns text analysis */
+/** Analyze an image via OpenAI vision (fallback when Gemini is rate-limited) */
+async function analyzeImageWithOpenAI(prompt: string, images: ImageData[]): Promise<string> {
+  const fallbackConfig = await getModelConfigForRole('fallback');
+  const modelId = fallbackConfig.modelId;
+  console.log(`[NanoBanana] Falling back to OpenAI vision: ${modelId}`);
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const content: any[] = [
+    { type: 'text', text: prompt },
+    ...images.map((img) => ({
+      type: 'image_url',
+      image_url: { url: `data:${img.mimeType};base64,${img.data}` },
+    })),
+  ];
+
+  const isNewModel = modelId.startsWith('gpt-5') || modelId.startsWith('o3') || modelId.startsWith('o4');
+  const tokenParam = isNewModel
+    ? { max_completion_tokens: 4096 }
+    : { max_tokens: 4096 };
+
+  const response = await openai.chat.completions.create({
+    model: modelId,
+    messages: [{ role: 'user', content }],
+    ...tokenParam,
+  } as Parameters<typeof openai.chat.completions.create>[0]) as OpenAI.ChatCompletion;
+
+  return response.choices[0]?.message?.content ?? '(no analysis returned)';
+}
+
+/** Analyze an image with text — returns text analysis. Falls back to OpenAI on Gemini 429. */
 async function analyzeImage(prompt: string, images: ImageData[]): Promise<string> {
   const analysisModel = await getGeminiModel('image_analysis');
   const parts: object[] = [
@@ -119,12 +193,19 @@ async function analyzeImage(prompt: string, images: ImageData[]): Promise<string
     ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
   ];
 
-  const result = await callGemini(analysisModel, {
-    contents: [{ role: 'user', parts }],
-    generationConfig: { responseModalities: ['TEXT'] },
-  });
-
-  return result.text ?? '(no analysis returned)';
+  try {
+    const result = await callGeminiWithRetry(analysisModel, {
+      contents: [{ role: 'user', parts }],
+      generationConfig: { responseModalities: ['TEXT'] },
+    });
+    return result.text ?? '(no analysis returned)';
+  } catch (err) {
+    if (err instanceof GeminiRateLimitError) {
+      console.log(`[NanoBanana] Gemini analysis rate-limited, falling back to OpenAI`);
+      return analyzeImageWithOpenAI(prompt, images);
+    }
+    throw err;
+  }
 }
 
 // ─── Image Fetching ─────────────────────────────────────────────────────────
@@ -717,7 +798,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
  * Returns base64-encoded PNG (no data: prefix).
  */
 export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise<string> {
-  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
+  if (GEMINI_KEYS.length === 0) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const data = await prepareWarRoomData(input);
   let currentImage: string | null = null;
@@ -783,7 +864,7 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
  * Returns base64-encoded PNG (no data: prefix).
  */
 export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promise<string> {
-  if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
+  if (GEMINI_KEYS.length === 0) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const data = await prepareZoomRoomData(input);
   let currentImage: string | null = null;
