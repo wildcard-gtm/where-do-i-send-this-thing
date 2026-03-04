@@ -369,6 +369,7 @@ export default function CampaignDetailPage() {
   const queueRef       = useRef<QueueItem[]>([]);
   const activeCountRef = useRef(0);
   const selectAllRef   = useRef<HTMLInputElement>(null);
+  const retriedIdsRef  = useRef<Set<string>>(new Set());
 
   useEffect(() => () => { cancelledRef.current = true; }, []);
 
@@ -401,6 +402,44 @@ export default function CampaignDetailPage() {
     return () => clearInterval(t);
   }, [data, fetchData]);
 
+  // Auto-retry: when dispatching is active and a postcard/enrichment fails,
+  // automatically reset it and re-dispatch (once per item per session)
+  useEffect(() => {
+    if (!data || cancelledRef.current) return;
+    // Only auto-retry while we have active dispatches (user initiated a run)
+    if (activeCountRef.current === 0 && queueRef.current.length === 0) return;
+
+    const retryItems: QueueItem[] = [];
+
+    for (const c of data.contacts) {
+      // Auto-retry failed postcards
+      if (c.postcardStatus === "failed" && c.postcardId && !retriedIdsRef.current.has(`pc:${c.postcardId}`)) {
+        retriedIdsRef.current.add(`pc:${c.postcardId}`);
+        retryItems.push({ kind: "postcard", postcardId: c.postcardId });
+      }
+      // Auto-retry failed enrichments
+      if (c.enrichmentStatus === "failed" && c.enrichmentId && !retriedIdsRef.current.has(`en:${c.enrichmentId}`)) {
+        retriedIdsRef.current.add(`en:${c.enrichmentId}`);
+        retryItems.push({ kind: "enrich", enrichmentId: c.enrichmentId });
+      }
+    }
+
+    if (retryItems.length === 0) return;
+
+    // Reset each failed item via its retry endpoint, then re-dispatch
+    (async () => {
+      for (const item of retryItems) {
+        if (item.kind === "postcard") {
+          await fetch(`/api/postcards/${item.postcardId}/retry`, { method: "POST" });
+        } else if (item.kind === "enrich") {
+          await fetch(`/api/enrichments/${item.enrichmentId}/retry`, { method: "POST" });
+        }
+      }
+      await fetchData();
+      enqueueAndDispatch(retryItems);
+    })();
+  }, [data, fetchData]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Indeterminate state for select-all checkbox
   const allSelected = !!data && data.contacts.length > 0 && data.contacts.every((c) => selectedIds.has(c.jobId));
   const someSelected = !allSelected && selectedIds.size > 0;
@@ -420,8 +459,8 @@ export default function CampaignDetailPage() {
 
   async function dispatchItem(item: QueueItem): Promise<void> {
     if (cancelledRef.current) return;
-    // 5-minute timeout per item — if the server hangs, the slot is freed for the next item
-    const DISPATCH_TIMEOUT = 5 * 60 * 1000;
+    // 10-minute timeout per item — matches server maxDuration=600
+    const DISPATCH_TIMEOUT = 10 * 60 * 1000;
     if (item.kind === "scan") {
       const res = await withTimeout(
         fetch(`/api/batches/${batchId}/jobs/${item.jobId}/stream`),

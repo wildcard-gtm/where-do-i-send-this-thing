@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { runEnrichmentAgent } from "@/agent/enrichment-agent";
 import { MAX_ATTEMPTS, STEP_LABELS } from "@/app/api/contacts/enrich-bulk/route";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // POST /api/enrichments/[id]/run
 // Runs a single CompanyEnrichment record synchronously — called from the browser

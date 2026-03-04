@@ -3,7 +3,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // POST /api/postcards/[id]/retry
 // Resets a failed postcard's retryCount to 0 and status to pending.

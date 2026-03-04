@@ -6,7 +6,7 @@ import { generateNanaBananaWarRoom, generateNanaBananaZoomRoom } from "@/lib/pos
 import { uploadPostcardImage } from "@/lib/supabase-storage";
 import { MAX_POSTCARD_ATTEMPTS } from "@/app/api/postcards/generate-bulk/route";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 // POST /api/postcards/[id]/run
 // Runs a single Postcard generation synchronously — called from the browser
