@@ -510,7 +510,8 @@ function ReviewCard({
   }
 
   const isGenerating = postcard.status === "pending" || postcard.status === "generating" || regenerating;
-  const displayImageUrl = pollingImageUrl || postcard.imageUrl;
+  // When actively regenerating (pollingId set), hide old image until new one arrives
+  const displayImageUrl = pollingId ? pollingImageUrl : (pollingImageUrl || postcard.imageUrl);
 
   return (
     <div className={`glass-card rounded-2xl overflow-hidden border ${
