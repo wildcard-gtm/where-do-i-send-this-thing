@@ -855,9 +855,27 @@ function ReviewCard({
 
           {/* Row 2: Team Members */}
           <div>
-            <label className="block text-xs font-medium text-muted-foreground mb-2">
-              Team Members ({teamPhotos.length})
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-medium text-muted-foreground">
+                Team Members ({teamPhotos.length})
+              </label>
+              <div className="flex gap-2">
+                {teamPhotos.length < ((postcard.teamPhotos as TeamPhoto[] | null) ?? []).length && (
+                  <button
+                    onClick={() => setTeamPhotos((postcard.teamPhotos as TeamPhoto[] | null) ?? [])}
+                    className="text-[11px] text-muted-foreground hover:text-primary transition"
+                  >
+                    Reset
+                  </button>
+                )}
+                <button
+                  onClick={() => setTeamPhotos((prev) => [...prev, { photoUrl: "", name: "", title: "" }])}
+                  className="text-[11px] text-primary hover:text-primary/80 transition font-medium"
+                >
+                  + Add Member
+                </button>
+              </div>
+            </div>
             {teamPhotos.length === 0 ? (
               <p className="text-xs text-muted-foreground italic">No team members. Postcard will use generic illustrated people.</p>
             ) : (
