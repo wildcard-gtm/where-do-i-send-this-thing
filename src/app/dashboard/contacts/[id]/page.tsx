@@ -84,6 +84,7 @@ interface PostcardData {
   companyLogo?: string | null;
   contactName?: string;
   contactTitle?: string | null;
+  openRoles?: Array<{ title: string; location?: string }> | null;
   customPrompt?: string | null;
   backMessage?: string | null;
   parentPostcardId?: string | null;
@@ -1037,11 +1038,13 @@ export default function ContactDetailPage() {
               onClose={() => setShowRegenerateModal(false)}
               contactId={contactId}
               contactName={contact?.name || ""}
+              contactTitle={contact?.title ?? postcard.contactTitle ?? null}
               currentPostcardId={postcard.id}
               currentTemplate={postcard.template}
               currentContactPhoto={postcard.contactPhoto ?? contact?.profileImageUrl ?? null}
               currentCompanyLogo={postcard.companyLogo ?? enrichment?.companyLogo ?? null}
               currentTeamPhotos={(postcard.teamPhotos as TeamPhoto[] | null) ?? enrichment?.teamPhotos ?? null}
+              currentOpenRoles={(postcard.openRoles as Array<{ title: string; location?: string }> | null) ?? (enrichment?.openRoles as Array<{ title: string; location?: string }> | null) ?? null}
               onRegenerated={handleRegenerated}
             />
           )}

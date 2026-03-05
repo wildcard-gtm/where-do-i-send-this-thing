@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     contactPhoto: overrideContactPhoto,
     teamPhotos: overrideTeamPhotos,
     companyLogo: overrideCompanyLogo,
+    openRoles: overrideOpenRoles,
     parentPostcardId,
   } = await request.json();
 
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       contactPhoto: overrideContactPhoto ?? contact.profileImageUrl,
       deliveryAddress,
       companyLogo: overrideCompanyLogo ?? enrichment?.companyLogo ?? null,
-      openRoles: enrichment?.openRoles ?? undefined,
+      openRoles: overrideOpenRoles ?? enrichment?.openRoles ?? undefined,
       companyValues: enrichment?.companyValues ?? undefined,
       companyMission: enrichment?.companyMission ?? null,
       officeLocations: enrichment?.officeLocations ?? undefined,

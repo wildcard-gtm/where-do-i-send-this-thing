@@ -386,9 +386,9 @@ export function normalizeJobTitle(title: string): string {
   // Clean up double spaces
   t = t.replace(/\s+/g, ' ').trim();
 
-  // Hard cap at 35 chars — enough for most abbreviated titles
-  if (t.length > 35) {
-    t = t.slice(0, 33) + '..';
+  // Hard cap at 50 chars — allow full titles on the whiteboard without truncation
+  if (t.length > 50) {
+    t = t.slice(0, 48) + '..';
   }
 
   return t;
@@ -460,7 +460,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
   // Build image label list — maps each provided image to its labeled slot in the reference
   const imageLabels: string[] = ['Image 1 = reference template (follow this layout EXACTLY — it has labeled placeholder slots)'];
   let imgIdx = 2;
-  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces [COMPANY LOGO] slot`); imgIdx++; }
+  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces COMPANY LOGO slot`); imgIdx++; }
   if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo → replaces "Person 1" (standing presenter)`); imgIdx++; }
   for (let i = 0; i < data.teamImages.length; i++) {
     imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo → replaces "Person ${i + 2}" (seated)`);
@@ -516,21 +516,22 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     ``,
     `The reference template already defines the room layout, furniture, lighting, windows, banner, plants, etc. Keep ALL of that exactly as shown. Only fill in the labeled placeholder slots:`,
     ``,
-    `1. [TOP ROLES] whiteboard:`,
+    `1. TOP ROLES whiteboard:`,
     `   Replace the placeholder text with:`,
-    `   - Header: "TOP ROLES" in bold`,
-    `   - Roles listed below in clean handwritten style:`,
+    `   - Header: "TOP ROLES" in bold, CENTERED horizontally on the whiteboard`,
+    `   - Roles listed below in clean handwritten style, CENTERED on the whiteboard:`,
     data.rolesText,
     `   - Write ONLY these roles. No filler text. If fewer than 3, leave remaining space blank.`,
-    `   - Text must be legible and within the whiteboard bounds.`,
+    `   - Each role title must be FULLY VISIBLE — no truncation, no ellipses, no cut-off text.`,
+    `   - Text must be legible, CENTERED, and within the whiteboard bounds.`,
     ``,
     data.logoImage
       ? [
-          `2. [COMPANY LOGO] circle on the wall:`,
+          `2. COMPANY LOGO circle on the wall:`,
           `   Replace with the provided company logo. Same position, same size.`,
           `   The logo must appear EXACTLY ONCE in the entire image.`,
         ].join('\n')
-      : `2. [COMPANY LOGO]: No logo provided — draw a generic decorative circle.`,
+      : `2. COMPANY LOGO: No logo provided — draw a generic decorative circle.`,
     ``,
     `3. SCREENS: Replace screen content with the provided dashboard screenshot.`,
     ``,
@@ -558,6 +559,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `- Wide landscape output (3:2), not square or portrait`,
     `- Every person slot is a FULLY ILLUSTRATED colorful human — no gray silhouettes, no shadows, no placeholder outlines, no ghost figures`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
+    `- NEVER render square brackets in the image. No "[TOP ROLES]", "[COMPANY LOGO]", or any bracketed text. Write clean text only.`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
@@ -571,7 +573,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     'Image 2 = generated output (the image being reviewed)',
   ];
   let idx = 3;
-  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace [COMPANY LOGO] slot, appear ONCE)`); idx++; }
+  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace COMPANY LOGO slot, appear ONCE)`); idx++; }
   if (data.prospectImage) { labels.push(`Image ${idx} = prospect face photo (should replace "Person 1" — the standing presenter)`); idx++; }
   for (let i = 0; i < data.teamImages.length; i++) {
     labels.push(`Image ${idx} = team member ${i + 1} face photo (should replace "Person ${i + 2}")`);
@@ -585,8 +587,8 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     ...labels.map((l) => `  ${l}`),
     ``,
     `WHAT WE ASKED:`,
-    `- Fill [TOP ROLES] whiteboard with: ${expectedRoles}`,
-    data.logoImage ? `- Fill [COMPANY LOGO] with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
+    `- Fill TOP ROLES whiteboard with: ${expectedRoles}`,
+    data.logoImage ? `- Fill COMPANY LOGO with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
     `- Fill screens with the dashboard screenshot`,
     data.prospectImage ? `- Replace "Person 1" (standing) with the prospect's facial features — intentional, should NOT match the gray silhouette` : ``,
     data.teamImages.length > 0 ? `- Replace "Person 2"–"Person ${data.teamImages.length + 1}" with team member faces` : ``,
@@ -597,9 +599,9 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `EVALUATE Image 2:`,
     ``,
     `1. LAYOUT: Does Image 2 preserve the room layout from Image 1?`,
-    `2. WHITEBOARD: Shows "TOP ROLES" with exactly: ${expectedRoles}? Check SPELLING letter by letter. FAIL if misspelled or if filler text appears (e.g. "more roles coming soon"). Only the listed roles should appear.`,
+    `2. WHITEBOARD: Shows "TOP ROLES" with exactly: ${expectedRoles}? Check SPELLING letter by letter. FAIL if misspelled or if filler text appears (e.g. "more roles coming soon"). Only the listed roles should appear. Text must be CENTERED on the whiteboard and FULLY VISIBLE (no truncation, no ellipses, no cut-off).`,
     data.logoImage
-      ? `3. LOGO: Company logo appears EXACTLY ONCE at the [COMPANY LOGO] position? Not duplicated elsewhere?`
+      ? `3. LOGO: Company logo appears EXACTLY ONCE at the COMPANY LOGO position? Not duplicated elsewhere?`
       : `3. LOGO: N/A`,
     `4. SCREENS: Show dashboard content?`,
     data.prospectImage
@@ -615,7 +617,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
       ? `6. PERSONS 2–${data.teamImages.length + 1} (SEATED): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM: N/A`,
     `7. PLACEHOLDER/SILHOUETTE CHECK — CRITICAL: Look at EVERY person in the image. FAIL if ANY person appears as a gray silhouette, shadow figure, dark outline, translucent shape, or placeholder. Every person must be a fully colored, detailed illustrated human with visible facial features, clothing, and skin tones. Gray/dark/featureless figures are NOT acceptable.`,
-    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any square-bracketed text like "[TOP ROLES]" or "[COMPANY LOGO]" appears — all bracket labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
     ``,
@@ -638,7 +640,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
   // Build image label list — maps each provided image to its labeled slot in the reference
   const imageLabels: string[] = ['Image 1 = reference template (follow this layout EXACTLY — it has labeled placeholder slots)'];
   let imgIdx = 2;
-  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces [COMPANY LOGO] slot`); imgIdx++; }
+  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces COMPANY LOGO slot`); imgIdx++; }
   if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo → replaces "Person 1" (center desk person)`); imgIdx++; }
   for (let i = 0; i < data.teamImages.length; i++) {
     imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo → replaces "Person ${i + 2}" (video tile)`);
@@ -694,21 +696,22 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     ``,
     `The reference template already defines the Zoom UI layout, desk, monitor, plants, toolbar, "Leave" button, etc. Keep ALL of that exactly as shown. Only fill in the labeled placeholder slots:`,
     ``,
-    `1. [TOP ROLES] whiteboard panel:`,
+    `1. TOP ROLES whiteboard panel:`,
     `   Replace the placeholder text with:`,
-    `   - Header: "Top Roles Hiring:" in bold`,
-    `   - Roles listed below in clean handwritten style:`,
+    `   - Header: "Top Roles Hiring:" in bold, CENTERED horizontally on the panel`,
+    `   - Roles listed below in clean handwritten style, CENTERED on the panel:`,
     data.rolesText,
     `   - Write ONLY these roles. No filler text. If fewer than 3, leave remaining space blank.`,
-    `   - Text must be legible and within the panel bounds.`,
+    `   - Each role title must be FULLY VISIBLE — no truncation, no ellipses, no cut-off text.`,
+    `   - Text must be legible, CENTERED, and within the panel bounds.`,
     ``,
     data.logoImage
       ? [
-          `2. [COMPANY LOGO] circle:`,
+          `2. COMPANY LOGO circle:`,
           `   Replace with the provided company logo. Same position, same size.`,
           `   The logo must appear EXACTLY ONCE in the entire image.`,
         ].join('\n')
-      : `2. [COMPANY LOGO]: No logo provided — draw a generic decorative circle.`,
+      : `2. COMPANY LOGO: No logo provided — draw a generic decorative circle.`,
     ``,
     `3. MONITOR SCREEN: Replace monitor content with the provided dashboard screenshot.`,
     ``,
@@ -736,6 +739,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `- Wide landscape output (3:2), not square or portrait`,
     `- Every person slot is a FULLY ILLUSTRATED colorful human — no gray silhouettes, no shadows, no placeholder outlines, no ghost figures`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
+    `- NEVER render square brackets in the image. No "[TOP ROLES]", "[COMPANY LOGO]", or any bracketed text. Write clean text only.`,
     `- Consistent illustration style — no photorealistic elements`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
@@ -749,7 +753,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     'Image 2 = generated output (the image being reviewed)',
   ];
   let idx = 3;
-  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace [COMPANY LOGO] slot, appear ONCE)`); idx++; }
+  if (data.logoImage) { labels.push(`Image ${idx} = company logo (should replace COMPANY LOGO slot, appear ONCE)`); idx++; }
   if (data.prospectImage) { labels.push(`Image ${idx} = prospect face photo (should replace "Person 1" — the center desk person)`); idx++; }
   for (let i = 0; i < data.teamImages.length; i++) {
     labels.push(`Image ${idx} = team member ${i + 1} face photo (should replace "Person ${i + 2}")`);
@@ -763,8 +767,8 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     ...labels.map((l) => `  ${l}`),
     ``,
     `WHAT WE ASKED:`,
-    `- Fill [TOP ROLES] whiteboard panel with: "Top Roles Hiring:" + ${expectedRoles}`,
-    data.logoImage ? `- Fill [COMPANY LOGO] with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
+    `- Fill TOP ROLES whiteboard panel with: "Top Roles Hiring:" + ${expectedRoles}`,
+    data.logoImage ? `- Fill COMPANY LOGO with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
     `- Fill monitor screen with the dashboard screenshot`,
     data.prospectImage ? `- Replace "Person 1" (center desk) with the prospect's facial features — intentional, should NOT match the gray silhouette` : ``,
     data.teamImages.length > 0 ? `- Replace "Person 2"–"Person ${data.teamImages.length + 1}" with team member faces` : ``,
@@ -775,9 +779,9 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `EVALUATE Image 2:`,
     ``,
     `1. LAYOUT: Does Image 2 preserve the Zoom UI layout from Image 1? (toolbar, "Leave" button, tiles on right, desk setup)`,
-    `2. WHITEBOARD: Shows "Top Roles Hiring:" with exactly: ${expectedRoles}? Check SPELLING letter by letter. FAIL if misspelled or if filler text appears (e.g. "more roles coming soon"). Only the listed roles should appear.`,
+    `2. WHITEBOARD: Shows "Top Roles Hiring:" with exactly: ${expectedRoles}? Check SPELLING letter by letter. FAIL if misspelled or if filler text appears (e.g. "more roles coming soon"). Only the listed roles should appear. Text must be CENTERED on the panel and FULLY VISIBLE (no truncation, no ellipses, no cut-off).`,
     data.logoImage
-      ? `3. LOGO: Company logo appears EXACTLY ONCE at the [COMPANY LOGO] position? Not duplicated elsewhere?`
+      ? `3. LOGO: Company logo appears EXACTLY ONCE at the COMPANY LOGO position? Not duplicated elsewhere?`
       : `3. LOGO: N/A`,
     `4. MONITOR: Shows dashboard content on desk screen?`,
     data.prospectImage
@@ -793,7 +797,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
       ? `6. PERSONS 2–${data.teamImages.length + 1} (VIDEO TILES): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM TILES: N/A`,
     `7. PLACEHOLDER/SILHOUETTE CHECK — CRITICAL: Look at EVERY person in the image. FAIL if ANY person appears as a gray silhouette, shadow figure, dark outline, translucent shape, or placeholder. Every person must be a fully colored, detailed illustrated human with visible facial features, clothing, and skin tones. Gray/dark/featureless figures are NOT acceptable.`,
-    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. FAIL if any person-slot labels are visible.`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any square-bracketed text like "[TOP ROLES]" or "[COMPANY LOGO]" appears — all bracket labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
     ``,

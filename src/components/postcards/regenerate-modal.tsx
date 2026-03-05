@@ -8,16 +8,23 @@ interface TeamPhoto {
   title?: string;
 }
 
+interface OpenRole {
+  title: string;
+  location?: string;
+}
+
 interface RegenerateModalProps {
   isOpen: boolean;
   onClose: () => void;
   contactId: string;
   contactName: string;
+  contactTitle: string | null;
   currentPostcardId: string;
   currentTemplate: string;
   currentContactPhoto: string | null;
   currentCompanyLogo: string | null;
   currentTeamPhotos: TeamPhoto[] | null;
+  currentOpenRoles: OpenRole[] | null;
   onRegenerated: (newPostcardId: string) => void;
 }
 
@@ -26,17 +33,20 @@ export default function RegenerateModal({
   onClose,
   contactId,
   contactName,
+  contactTitle,
   currentPostcardId,
   currentTemplate,
   currentContactPhoto,
   currentCompanyLogo,
   currentTeamPhotos,
+  currentOpenRoles,
   onRegenerated,
 }: RegenerateModalProps) {
   const [template, setTemplate] = useState(currentTemplate);
   const [contactPhoto, setContactPhoto] = useState(currentContactPhoto);
   const [companyLogo, setCompanyLogo] = useState(currentCompanyLogo);
   const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>(currentTeamPhotos ?? []);
+  const [openRoles, setOpenRoles] = useState<OpenRole[]>(currentOpenRoles ?? []);
   const [customPrompt, setCustomPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
@@ -113,6 +123,7 @@ export default function RegenerateModal({
           contactPhoto,
           teamPhotos: teamPhotos.length > 0 ? teamPhotos : undefined,
           companyLogo,
+          openRoles: openRoles.length > 0 ? openRoles : undefined,
           parentPostcardId: currentPostcardId,
         }),
       });
@@ -341,6 +352,71 @@ export default function RegenerateModal({
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* Contact Title */}
+          {contactTitle && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Contact Title
+              </label>
+              <p className="text-sm text-foreground">{contactTitle}</p>
+            </div>
+          )}
+
+          {/* Open Roles (Whiteboard) */}
+          {openRoles.length > 0 && (
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">
+                Whiteboard Roles
+              </label>
+              <div className="space-y-2">
+                {openRoles.map((role, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={role.title}
+                      onChange={(e) => {
+                        setOpenRoles((prev) => {
+                          const updated = [...prev];
+                          updated[i] = { ...updated[i], title: e.target.value };
+                          return updated;
+                        });
+                      }}
+                      className="flex-1 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition"
+                    />
+                    <input
+                      type="text"
+                      value={role.location || ""}
+                      onChange={(e) => {
+                        setOpenRoles((prev) => {
+                          const updated = [...prev];
+                          updated[i] = { ...updated[i], location: e.target.value };
+                          return updated;
+                        });
+                      }}
+                      placeholder="Location"
+                      className="w-32 bg-background border border-border rounded-lg px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition placeholder:text-muted-foreground/50"
+                    />
+                    <button
+                      onClick={() => setOpenRoles((prev) => prev.filter((_, j) => j !== i))}
+                      className="p-1.5 rounded-lg text-muted-foreground hover:text-danger hover:bg-danger/10 transition"
+                      title="Remove role"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+                <button
+                  onClick={() => setOpenRoles((prev) => [...prev, { title: "", location: "" }])}
+                  className="text-xs text-primary hover:text-primary-hover font-medium transition"
+                >
+                  + Add Role
+                </button>
               </div>
             </div>
           )}

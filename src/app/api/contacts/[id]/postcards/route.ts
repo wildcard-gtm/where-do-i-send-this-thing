@@ -42,6 +42,7 @@ export async function GET(
       companyLogo: true,
       contactName: true,
       contactTitle: true,
+      openRoles: true,
       customPrompt: true,
       backMessage: true,
       parentPostcardId: true,
