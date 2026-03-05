@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -79,7 +79,7 @@ export default function ReviewsPage() {
   }, []);
 
   // Load postcards
-  const loadPostcards = useCallback(() => {
+  const loadPostcards = () => {
     setLoading(true);
     const params = new URLSearchParams({ latestOnly: "true" });
     if (statusFilter !== "all") params.set("status", statusFilter);
@@ -90,11 +90,12 @@ export default function ReviewsPage() {
         setPostcards(data.postcards || []);
         setLoading(false);
       });
-  }, [statusFilter, campaignId]);
+  };
 
   useEffect(() => {
     loadPostcards();
-  }, [loadPostcards]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, campaignId]);
 
   // Filter + paginate
   const filtered = templateFilter === "all"
@@ -266,7 +267,7 @@ export default function ReviewsPage() {
         <div className="space-y-6">
           {paged.map((postcard) => (
             <ReviewCard
-              key={postcard.id}
+              key={`${postcard.id}-${postcard.status}`}
               postcard={postcard}
               isEditing={editingId === postcard.id}
               onToggleEdit={() => setEditingId(editingId === postcard.id ? null : postcard.id)}
@@ -341,6 +342,8 @@ function ReviewCard({
   onRegenerated,
   onReload,
 }: ReviewCardProps) {
+  // Use postcard.id as reset key — when the postcard changes (reload/regenerate),
+  // React remounts the component via the key={postcard.id} on the parent, resetting all state.
   const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>((postcard.teamPhotos as TeamPhoto[] | null) ?? []);
   const [openRoles, setOpenRoles] = useState<OpenRole[]>((postcard.openRoles as OpenRole[] | null) ?? []);
   const [contactPhoto, setContactPhoto] = useState(postcard.contactPhoto);
@@ -361,17 +364,6 @@ function ReviewCard({
   const prospectFileRef = useRef<HTMLInputElement>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
   const teamFileRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Reset state when postcard changes
-  useEffect(() => {
-    setTeamPhotos((postcard.teamPhotos as TeamPhoto[] | null) ?? []);
-    setOpenRoles((postcard.openRoles as OpenRole[] | null) ?? []);
-    setContactPhoto(postcard.contactPhoto);
-    setCompanyLogo(postcard.companyLogo);
-    setTemplate(postcard.template);
-    setCustomPrompt(postcard.customPrompt || "");
-    setBackMessage(postcard.backMessage || "");
-  }, [postcard]);
 
   // Poll for regeneration status
   useEffect(() => {
