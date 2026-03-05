@@ -367,8 +367,7 @@ export default function RegenerateModal({
           )}
 
           {/* Open Roles (Whiteboard) */}
-          {openRoles.length > 0 && (
-            <div>
+          <div>
               <label className="block text-xs font-medium text-muted-foreground mb-2">
                 Whiteboard Roles
               </label>
@@ -418,8 +417,7 @@ export default function RegenerateModal({
                   + Add Role
                 </button>
               </div>
-            </div>
-          )}
+          </div>
 
           {/* Template Selection */}
           <div>

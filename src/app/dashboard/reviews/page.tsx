@@ -29,8 +29,10 @@ interface PostcardFull {
   teamPhotos: TeamPhoto[] | null;
   openRoles: OpenRole[] | null;
   customPrompt: string | null;
+  backMessage: string | null;
   deliveryAddress: string | null;
   errorMessage: string | null;
+  parentPostcardId: string | null;
   createdAt: string;
   contact: { id: string; name: string; company: string | null; profileImageUrl?: string | null };
 }
@@ -345,11 +347,16 @@ function ReviewCard({
   const [companyLogo, setCompanyLogo] = useState(postcard.companyLogo);
   const [template, setTemplate] = useState(postcard.template);
   const [customPrompt, setCustomPrompt] = useState(postcard.customPrompt || "");
+  const [backMessage, setBackMessage] = useState(postcard.backMessage || "");
+  const [savingBackMessage, setSavingBackMessage] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<string | null>(null);
   const [pollingImageUrl, setPollingImageUrl] = useState<string | null>(null);
+  const [showVersions, setShowVersions] = useState(false);
+  const [olderVersions, setOlderVersions] = useState<PostcardFull[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const prospectFileRef = useRef<HTMLInputElement>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
@@ -363,6 +370,7 @@ function ReviewCard({
     setCompanyLogo(postcard.companyLogo);
     setTemplate(postcard.template);
     setCustomPrompt(postcard.customPrompt || "");
+    setBackMessage(postcard.backMessage || "");
   }, [postcard]);
 
   // Poll for regeneration status
@@ -423,6 +431,61 @@ function ReviewCard({
 
   function toggleTeamMember(index: number) {
     setTeamPhotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleSaveBackMessage() {
+    setSavingBackMessage(true);
+    await fetch(`/api/postcards/${postcard.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backMessage: backMessage.trim() }),
+    });
+    setSavingBackMessage(false);
+    onUpdated({ ...postcard, backMessage: backMessage.trim() });
+  }
+
+  async function handleDownload() {
+    if (!displayImageUrl) return;
+    const res = await fetch(displayImageUrl);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${postcard.contactName.replace(/[^a-z0-9]/gi, "_")}-postcard.png`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadVersions() {
+    setShowVersions(true);
+    setVersionsLoading(true);
+    const res = await fetch(`/api/postcards?contactId=${postcard.contactId}&includeAll=true`);
+    const data = res.ok ? await res.json() : { postcards: [] };
+    // Show all versions except the current one, only ready/approved
+    setOlderVersions(
+      (data.postcards || []).filter(
+        (p: PostcardFull) => p.id !== postcard.id && (p.status === "ready" || p.status === "approved")
+      )
+    );
+    setVersionsLoading(false);
+  }
+
+  async function handleRestore(oldId: string) {
+    // Approve the old version, demote current to ready
+    await fetch(`/api/postcards/${oldId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "approved" }),
+    });
+    if (postcard.id !== oldId) {
+      await fetch(`/api/postcards/${postcard.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "ready" }),
+      });
+    }
+    setShowVersions(false);
+    onReload();
   }
 
   async function handleRegenerate() {
@@ -518,6 +581,11 @@ function ReviewCard({
               <p className="text-sm text-muted-foreground">{postcard.contact.company}</p>
             )}
             <p className="text-xs text-muted-foreground mt-1 capitalize">{postcard.template} template</p>
+            {postcard.deliveryAddress && (
+              <p className="text-xs text-muted-foreground mt-1 truncate" title={postcard.deliveryAddress}>
+                {"\uD83D\uDCCD"} {postcard.deliveryAddress}
+              </p>
+            )}
           </div>
 
           {/* Quick info: photos available */}
@@ -583,9 +651,84 @@ function ReviewCard({
               </svg>
               {isEditing ? "Close Editor" : "Edit & Regenerate"}
             </button>
+            <div className="flex gap-2">
+              {displayImageUrl && (
+                <button
+                  onClick={handleDownload}
+                  className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground border border-border hover:text-foreground transition"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Download
+                </button>
+              )}
+              <button
+                onClick={loadVersions}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium text-muted-foreground border border-border hover:text-foreground transition"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Versions
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Versions modal */}
+      {showVersions && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowVersions(false)}>
+          <div className="bg-card rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-border flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-foreground">Versions — {postcard.contactName}</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Select an older version to restore it as current.</p>
+              </div>
+              <button onClick={() => setShowVersions(false)} className="text-muted-foreground hover:text-foreground transition text-xl">&times;</button>
+            </div>
+            <div className="p-5">
+              {versionsLoading ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : olderVersions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No older versions available.</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {olderVersions.map((v) => (
+                    <div key={v.id} className="border border-border rounded-xl overflow-hidden hover:border-primary/50 transition">
+                      {v.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={v.imageUrl} alt="Postcard version" className="w-full aspect-[3/2] object-cover" />
+                      ) : (
+                        <div className="w-full aspect-[3/2] bg-muted flex items-center justify-center text-muted-foreground text-xs">No image</div>
+                      )}
+                      <div className="p-3 flex items-center justify-between">
+                        <div>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full capitalize ${
+                            statusColors[v.status] ?? "text-muted-foreground bg-muted"
+                          }`}>{v.status}</span>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            {new Date(v.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleRestore(v.id)}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition"
+                        >
+                          Restore
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Expandable editor panel */}
       {isEditing && (
@@ -762,6 +905,21 @@ function ReviewCard({
                 placeholder='e.g. "Make colors more vibrant" or "Person should wear blue shirt"'
                 rows={2}
                 className="w-full bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition resize-none placeholder:text-muted-foreground/50" />
+            </div>
+          </div>
+
+          {/* Row 5: Back Message */}
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-2">Back of Card Message</label>
+            <div className="flex gap-2">
+              <textarea value={backMessage} onChange={(e) => setBackMessage(e.target.value)}
+                placeholder="Personalized message for the back of the postcard..."
+                rows={2}
+                className="flex-1 bg-background border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition resize-none placeholder:text-muted-foreground/50" />
+              <button onClick={handleSaveBackMessage} disabled={savingBackMessage || backMessage === (postcard.backMessage || "")}
+                className="self-end px-4 py-2 rounded-lg text-xs font-medium bg-muted hover:bg-muted/80 text-foreground border border-border transition disabled:opacity-30">
+                {savingBackMessage ? "Saving..." : "Save"}
+              </button>
             </div>
           </div>
 
