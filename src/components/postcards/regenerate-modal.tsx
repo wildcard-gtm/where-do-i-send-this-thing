@@ -6,6 +6,7 @@ interface TeamPhoto {
   name?: string;
   photoUrl: string;
   title?: string;
+  linkedinUrl?: string;
 }
 
 interface OpenRole {

@@ -38,6 +38,7 @@ export interface TeamPhoto {
   name?: string;
   photoUrl: string;
   title?: string;
+  linkedinUrl?: string;
 }
 
 export interface EnrichmentResult {
@@ -168,6 +169,7 @@ const ENRICHMENT_TOOLS = [
               name: { type: 'string' },
               photo_url: { type: 'string' },
               title: { type: 'string' },
+              linkedin_url: { type: 'string', description: 'LinkedIn profile URL of this team member' },
             },
             required: ['photo_url'],
           },
@@ -196,7 +198,7 @@ WORKFLOW:
 4. Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
 5. Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
 6. If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
-7. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs.
+7. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs. IMPORTANT: When submitting team_photos, include the linkedin_url for each person so we can link back to their profile.
 8. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
 
 Be efficient — you have a max of 18 tool calls. Don't repeat searches. Prioritize quality over quantity.
@@ -332,10 +334,11 @@ async function executeEnrichmentTool(
         companyMission: args.company_mission as string | undefined,
         officeLocations: args.office_locations as string[] | undefined,
         teamPhotos: args.team_photos
-          ? (args.team_photos as Array<{ name?: string; photo_url: string; title?: string }>).map(p => ({
+          ? (args.team_photos as Array<{ name?: string; photo_url: string; title?: string; linkedin_url?: string }>).map(p => ({
               name: p.name,
               photoUrl: p.photo_url,
               title: p.title,
+              linkedinUrl: p.linkedin_url,
             }))
           : undefined,
       };
