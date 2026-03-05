@@ -100,18 +100,29 @@ export async function POST(
       const refByLabel = (label: string) => refs.find((r) => r.label === label)?.imageUrl;
 
       // Generate the postcard scene — Nano Banana (Gemini) agentic generation
-      const teamPhotos = (existing?.teamPhotos as Array<{ photoUrl: string }> | null) ?? [];
+      const teamPhotos = (existing?.teamPhotos as Array<{ name?: string; photoUrl: string }> | null) ?? [];
       const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
       // Reference images override: prospect_photo, company_logo, team_photo
       const refTeamPhotos = refs.filter((r) => r.label === "team_photo").map((r) => r.imageUrl);
 
+      const prospectPhotoUrl = refByLabel("prospect_photo") ?? existing?.contactPhoto ?? undefined;
+
+      // Filter out the prospect from team photos to avoid duplicates
+      // (enrichment may include the prospect as a team member if they're in recruiting/talent)
+      const prospectName = existing?.contactName?.toLowerCase().trim();
+      const filteredTeamPhotos = teamPhotos.filter((p) => {
+        if (prospectPhotoUrl && p.photoUrl === prospectPhotoUrl) return false;
+        if (prospectName && p.name?.toLowerCase().trim() === prospectName) return false;
+        return true;
+      });
+
       const nanaBananaInput = {
-        prospectPhotoUrl: refByLabel("prospect_photo") ?? existing?.contactPhoto ?? undefined,
+        prospectPhotoUrl,
         companyLogoUrl: refByLabel("company_logo") ?? existing?.companyLogo ?? null,
         teamPhotoUrls: refTeamPhotos.length > 0
           ? refTeamPhotos
-          : teamPhotos.map((p) => p.photoUrl).filter(Boolean),
+          : filteredTeamPhotos.map((p) => p.photoUrl).filter(Boolean),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
         prospectName: existing?.contactName ?? undefined,
         customPrompt: existing?.customPrompt ?? undefined,

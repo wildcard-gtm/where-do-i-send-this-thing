@@ -277,15 +277,10 @@ export default function ReviewsPage() {
               onUpdated={(updated) => {
                 setPostcards((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
               }}
-              onRegenerated={(newId) => {
-                // Replace the old postcard with a pending stub
-                setPostcards((prev) =>
-                  prev.map((p) =>
-                    p.id === postcard.id
-                      ? { ...p, id: newId, status: "pending", imageUrl: null }
-                      : p
-                  )
-                );
+              onRegenerated={() => {
+                // Don't update postcard ID in parent state — that would change the key,
+                // remount the component, and lose the polling state.
+                // The ReviewCard handles polling internally and calls onReload when done.
                 setEditingId(null);
               }}
               onReload={loadPostcards}
@@ -329,7 +324,7 @@ interface ReviewCardProps {
   onApprove: () => void;
   onUnapprove: () => void;
   onUpdated: (postcard: PostcardFull) => void;
-  onRegenerated: (newPostcardId: string) => void;
+  onRegenerated: () => void;
   onReload: () => void;
 }
 
@@ -505,7 +500,7 @@ function ReviewCard({
         setPollingId(data.postcardId);
         setPollingStatus("generating");
         setPollingImageUrl(null);
-        onRegenerated(data.postcardId);
+        onRegenerated();
       } else {
         setRegenerating(false);
       }

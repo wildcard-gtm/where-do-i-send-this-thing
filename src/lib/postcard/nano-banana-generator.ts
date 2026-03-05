@@ -509,6 +509,8 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `The reference template (Image 1) shows a War Room scene with labeled placeholder slots.`,
     `Reproduce this scene EXACTLY, filling in the labeled slots with the provided images. Output a single wide landscape image.`,
     ``,
+    `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
+    ``,
     `IMAGE LABELS:`,
     ...imageLabels.map((l) => `  ${l}`),
     ``,
@@ -688,6 +690,8 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
   return [
     `The reference template (Image 1) shows a Zoom call scene with labeled placeholder slots.`,
     `Reproduce this scene EXACTLY, filling in the labeled slots with the provided images. Output a single wide landscape image.`,
+    ``,
+    `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
     ``,
     `IMAGE LABELS:`,
     ...imageLabels.map((l) => `  ${l}`),
