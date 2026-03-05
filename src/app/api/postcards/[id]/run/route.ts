@@ -35,7 +35,7 @@ export async function POST(
   }
 
   // Skip if already done or cancelled
-  if (postcard.status === "ready" || postcard.status === "approved" || postcard.status === "cancelled") {
+  if (["ready", "approved", "reviewed", "cancelled"].includes(postcard.status)) {
     return NextResponse.json({ status: postcard.status });
   }
 

@@ -33,7 +33,7 @@ export async function GET(request: Request) {
     where.status = status;
   } else if (!includeAll) {
     // By default, exclude failed/pending/generating/cancelled
-    where.status = { in: ["ready", "approved"] };
+    where.status = { in: ["ready", "approved", "reviewed"] };
   }
 
   if (contactId) where.contactId = contactId;

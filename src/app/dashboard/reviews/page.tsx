@@ -51,6 +51,7 @@ const PAGE_SIZE = 20;
 const statusColors: Record<string, string> = {
   ready: "text-accent bg-accent/10 border-accent/30",
   approved: "text-success bg-success/10 border-success/30",
+  reviewed: "text-primary bg-primary/10 border-primary/30",
   pending: "text-warning bg-warning/10 border-warning/30",
   generating: "text-primary bg-primary/10 border-primary/30",
   failed: "text-danger bg-danger/10 border-danger/30",
@@ -62,7 +63,7 @@ export default function ReviewsPage() {
   const [postcards, setPostcards] = useState<PostcardFull[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [tab, setTab] = useState<"to-review" | "reviewed">("to-review");
   const [templateFilter, setTemplateFilter] = useState<"all" | "warroom" | "zoom">("all");
   const [campaignId, setCampaignId] = useState("all");
   const [page, setPage] = useState(0);
@@ -83,7 +84,6 @@ export default function ReviewsPage() {
   const loadPostcards = () => {
     setLoading(true);
     const params = new URLSearchParams({ latestOnly: "true" });
-    if (statusFilter !== "all") params.set("status", statusFilter);
     if (campaignId !== "all") params.set("campaignId", campaignId);
     fetch(`/api/postcards?${params}`)
       .then((res) => (res.ok ? res.json() : { postcards: [] }))
@@ -96,12 +96,17 @@ export default function ReviewsPage() {
   useEffect(() => {
     loadPostcards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, campaignId]);
+  }, [campaignId]);
 
-  // Filter + paginate
+  // Split by tab: "to-review" shows ready+approved, "reviewed" shows reviewed
+  const toReviewCards = postcards.filter((p) => p.status === "ready" || p.status === "approved");
+  const reviewedCards = postcards.filter((p) => p.status === "reviewed");
+  const tabCards = tab === "to-review" ? toReviewCards : reviewedCards;
+
+  // Filter by template + paginate
   const filtered = templateFilter === "all"
-    ? postcards
-    : postcards.filter((p) => p.template === templateFilter);
+    ? tabCards
+    : tabCards.filter((p) => p.template === templateFilter);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -109,6 +114,7 @@ export default function ReviewsPage() {
     total: postcards.length,
     ready: postcards.filter((p) => p.status === "ready").length,
     approved: postcards.filter((p) => p.status === "approved").length,
+    reviewed: reviewedCards.length,
   };
 
   // ─── Actions ────────────────────────────────────────────────────────────
@@ -125,6 +131,28 @@ export default function ReviewsPage() {
   };
 
   const handleUnapprove = async (id: string) => {
+    await fetch(`/api/postcards/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "ready" }),
+    });
+    setPostcards((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "ready" } : p))
+    );
+  };
+
+  const handleMarkReviewed = async (id: string) => {
+    await fetch(`/api/postcards/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "reviewed" }),
+    });
+    setPostcards((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, status: "reviewed" } : p))
+    );
+  };
+
+  const handleUnreview = async (id: string) => {
     await fetch(`/api/postcards/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -172,12 +200,11 @@ export default function ReviewsPage() {
         <div>
           <h1 className="text-2xl font-bold text-foreground">Review Postcards</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            {counts.approved}/{counts.total} approved
-            {counts.ready > 0 && ` · ${counts.ready} ready for review`}
+            {counts.approved} approved · {counts.reviewed} reviewed · {counts.ready} to review
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {counts.ready > 0 && (
+          {tab === "to-review" && counts.ready > 0 && (
             <button
               onClick={handleApproveAll}
               className="flex items-center gap-2 bg-success/15 hover:bg-success/25 text-success px-4 py-2 rounded-lg font-medium transition text-sm border border-success/30"
@@ -192,36 +219,42 @@ export default function ReviewsPage() {
       <div className="mb-6">
         <div className="flex items-center justify-between text-xs text-muted-foreground mb-1.5">
           <span>Review progress</span>
-          <span>{counts.approved}/{counts.total}</span>
+          <span>{counts.reviewed + counts.approved}/{toReviewCards.length + reviewedCards.length}</span>
         </div>
         <div className="w-full h-2 bg-muted rounded-full overflow-hidden">
           <div
             className="h-full bg-success rounded-full transition-all duration-500"
-            style={{ width: `${counts.total > 0 ? (counts.approved / counts.total) * 100 : 0}%` }}
+            style={{ width: `${counts.total > 0 ? ((counts.reviewed + counts.approved) / counts.total) * 100 : 0}%` }}
           />
         </div>
       </div>
 
+      {/* Tabs */}
+      <div className="flex items-center gap-1 mb-4 border-b border-border">
+        <button
+          onClick={() => { setTab("to-review"); setPage(0); }}
+          className={`px-4 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
+            tab === "to-review"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          To Review {toReviewCards.length > 0 && <span className="ml-1.5 text-xs bg-muted px-2 py-0.5 rounded-full">{toReviewCards.length}</span>}
+        </button>
+        <button
+          onClick={() => { setTab("reviewed"); setPage(0); }}
+          className={`px-4 py-2.5 text-sm font-medium transition border-b-2 -mb-px ${
+            tab === "reviewed"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Reviewed {reviewedCards.length > 0 && <span className="ml-1.5 text-xs bg-muted px-2 py-0.5 rounded-full">{reviewedCards.length}</span>}
+        </button>
+      </div>
+
       {/* Filters */}
       <div className="flex items-center gap-3 mb-6 overflow-x-auto">
-        <div className="flex gap-1">
-          {(["all", "ready", "approved"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => { setStatusFilter(tab); setPage(0); }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap capitalize ${
-                statusFilter === tab
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:text-foreground hover:bg-card"
-              }`}
-            >
-              {tab === "all" ? "All" : tab}
-            </button>
-          ))}
-        </div>
-
-        <div className="h-5 w-px bg-border shrink-0" />
-
         <div className="flex gap-1">
           {([
             { key: "all", label: "All Types" },
@@ -274,6 +307,8 @@ export default function ReviewsPage() {
               onToggleEdit={() => setEditingId(editingId === postcard.id ? null : postcard.id)}
               onApprove={() => handleApprove(postcard.id)}
               onUnapprove={() => handleUnapprove(postcard.id)}
+              onMarkReviewed={() => handleMarkReviewed(postcard.id)}
+              onUnreview={() => handleUnreview(postcard.id)}
               onUpdated={(updated) => {
                 setPostcards((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
               }}
@@ -323,6 +358,8 @@ interface ReviewCardProps {
   onToggleEdit: () => void;
   onApprove: () => void;
   onUnapprove: () => void;
+  onMarkReviewed: () => void;
+  onUnreview: () => void;
   onUpdated: (postcard: PostcardFull) => void;
   onRegenerated: () => void;
   onReload: () => void;
@@ -334,6 +371,8 @@ function ReviewCard({
   onToggleEdit,
   onApprove,
   onUnapprove,
+  onMarkReviewed,
+  onUnreview,
   onUpdated,
   onRegenerated,
   onReload,
@@ -608,15 +647,27 @@ function ReviewCard({
           {/* Action buttons */}
           <div className="mt-auto space-y-2">
             {postcard.status === "ready" && (
-              <button
-                onClick={onApprove}
-                className="w-full flex items-center justify-center gap-2 bg-success/15 hover:bg-success/25 text-success px-4 py-2.5 rounded-lg font-medium transition text-sm border border-success/30"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Approve
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={onApprove}
+                  className="flex-1 flex items-center justify-center gap-2 bg-success/15 hover:bg-success/25 text-success px-4 py-2.5 rounded-lg font-medium transition text-sm border border-success/30"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Approve
+                </button>
+                <button
+                  onClick={onMarkReviewed}
+                  className="flex-1 flex items-center justify-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2.5 rounded-lg font-medium transition text-sm border border-primary/30"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  Reviewed
+                </button>
+              </div>
             )}
             {postcard.status === "approved" && (
               <button
@@ -625,6 +676,25 @@ function ReviewCard({
               >
                 Unapprove
               </button>
+            )}
+            {postcard.status === "reviewed" && (
+              <div className="flex gap-2">
+                <button
+                  onClick={onApprove}
+                  className="flex-1 flex items-center justify-center gap-2 bg-success/15 hover:bg-success/25 text-success px-4 py-2.5 rounded-lg font-medium transition text-sm border border-success/30"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  Approve
+                </button>
+                <button
+                  onClick={onUnreview}
+                  className="flex-1 flex items-center justify-center gap-2 bg-muted hover:bg-muted/80 text-muted-foreground px-4 py-2.5 rounded-lg font-medium transition text-sm border border-border"
+                >
+                  Move Back
+                </button>
+              </div>
             )}
             <button
               onClick={onToggleEdit}
