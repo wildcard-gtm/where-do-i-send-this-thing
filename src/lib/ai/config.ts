@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { parseModelConfig, createAIClient } from './index';
 import type { AIClient, AIProvider } from './types';
 
@@ -23,10 +23,7 @@ export async function getModelConfigForRole(
     'config_chat_model';
 
   try {
-    const prisma = new PrismaClient();
     const row = await prisma.systemPrompt.findUnique({ where: { key } });
-    await prisma.$disconnect();
-
     if (row?.content) {
       return parseModelConfig(row.content);
     }
@@ -55,9 +52,7 @@ export async function getGeminiModel(role: GeminiModelRole): Promise<string> {
   const fallback = role === 'image_gen' ? DEFAULT_IMAGE_GEN_MODEL : DEFAULT_IMAGE_ANALYSIS_MODEL;
 
   try {
-    const prisma = new PrismaClient();
     const row = await prisma.systemPrompt.findUnique({ where: { key } });
-    await prisma.$disconnect();
     if (row?.content) return row.content;
   } catch {
     // DB unavailable

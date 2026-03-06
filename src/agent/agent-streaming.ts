@@ -13,7 +13,7 @@ import type {
   AgentResult,
 } from './types';
 import { getToolDefinitions, executeTool } from './tools';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 import { getAIClientForRole, getModelConfigForRole } from '@/lib/ai/config';
 import { createAIClient } from '@/lib/ai/index';
 import fs from 'fs';
@@ -252,11 +252,9 @@ async function getAgentPrompts(): Promise<{ agentPrompt: string; initialMessageT
 
   // Fall back to DB if files not found
   try {
-    const prisma = new PrismaClient();
     const rows = await prisma.systemPrompt.findMany({
       where: { key: { in: ['agent_main', 'agent_initial_message'] } },
     });
-    await prisma.$disconnect();
 
     const agentPrompt = rows.find(r => r.key === 'agent_main')?.content ?? FALLBACK_AGENT_PROMPT;
     const initialMessageTemplate = rows.find(r => r.key === 'agent_initial_message')?.content ?? FALLBACK_INITIAL_MESSAGE;

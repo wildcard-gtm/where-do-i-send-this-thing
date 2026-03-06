@@ -15,7 +15,7 @@ import {
   enrichWithPDL,
   searchExaPerson,
 } from './services';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '@/lib/db';
 
 // ─── Fallback Tool Descriptions ─────────────────────────
 // Used when DB is unavailable or prompts haven't been seeded
@@ -220,11 +220,9 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = buildToolDefinitions(FALLBACK_
 
 export async function getToolDefinitions(): Promise<ToolDefinition[]> {
   try {
-    const prisma = new PrismaClient();
     const rows = await prisma.systemPrompt.findMany({
       where: { key: { startsWith: 'tool_' } },
     });
-    await prisma.$disconnect();
 
     if (rows.length === 0) return TOOL_DEFINITIONS;
 
