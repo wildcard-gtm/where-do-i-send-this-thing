@@ -229,10 +229,11 @@ export default function ContactDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postcard?.id]);
 
-  // Poll while postcard is generating
+  // Poll while postcard is generating (pause while regenerate modal is open to avoid resetting edits)
   useEffect(() => {
     if (!postcard) return;
     if (postcard.status !== "pending" && postcard.status !== "generating") return;
+    if (showRegenerateModal) return;
     const interval = setInterval(() => {
       fetch(`/api/postcards/${postcard.id}`)
         .then((res) => (res.ok ? res.json() : null))
@@ -243,7 +244,7 @@ export default function ContactDetailPage() {
         });
     }, 4000);
     return () => clearInterval(interval);
-  }, [postcard?.id, postcard?.status]);
+  }, [postcard?.id, postcard?.status, showRegenerateModal]);
 
   const handleGeneratePostcard = async () => {
     setPostcardGenerating(true);
