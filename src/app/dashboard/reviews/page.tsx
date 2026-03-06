@@ -385,7 +385,7 @@ function ReviewCard({
   // React remounts the component via the key={postcard.id} on the parent, resetting all state.
   const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>((postcard.teamPhotos as TeamPhoto[] | null) ?? []);
   const [openRoles, setOpenRoles] = useState<OpenRole[]>((postcard.openRoles as OpenRole[] | null) ?? []);
-  const [contactPhoto, setContactPhoto] = useState(postcard.contactPhoto);
+  const [contactPhoto, setContactPhoto] = useState(postcard.contactPhoto || postcard.contact?.profileImageUrl || null);
   const [companyLogo, setCompanyLogo] = useState(postcard.companyLogo);
   const [template, setTemplate] = useState(postcard.template);
   const [customPrompt, setCustomPrompt] = useState(postcard.customPrompt || "");
