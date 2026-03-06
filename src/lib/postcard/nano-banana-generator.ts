@@ -897,6 +897,9 @@ export async function generateNanaBananaWarRoom(
   const data = await prepareWarRoomData(input);
   let currentImage: string | null = null;
   let previousIssues: string[] = [];
+  // Track the best result across all attempts (fewest issues)
+  let bestImage: string | null = null;
+  let bestIssueCount = Infinity;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = buildWarRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
@@ -912,13 +915,7 @@ export async function generateNanaBananaWarRoom(
     currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `War Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
-    // Skip analysis on last attempt — use whatever we got
-    if (attempt === MAX_ATTEMPTS) {
-      console.log('[NanoBanana] War Room max attempts reached, using last output');
-      break;
-    }
-
-    // Analyze: pass all reference images so analyzer knows what to expect
+    // Analyze every attempt (including the last one)
     const analysisImages: ImageData[] = [
       data.reference,
       { data: currentImage, mimeType: 'image/png' },
@@ -932,11 +929,17 @@ export async function generateNanaBananaWarRoom(
     const analysis = await analyzeImage(analysisPrompt, analysisImages);
     const { pass, issues } = parseIssues(analysis);
 
+    // Track best result
+    if (issues.length < bestIssueCount) {
+      bestImage = currentImage;
+      bestIssueCount = issues.length;
+    }
+
     if (pass) {
       console.log(`[NanoBanana] War Room PASSED on attempt ${attempt}`);
       appLog('info', 'gemini', 'image_gen', `War Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
       onProgress?.(attempt, MAX_ATTEMPTS, `passed`);
-      break;
+      return currentImage;
     }
 
     console.log(`[NanoBanana] War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
@@ -945,8 +948,11 @@ export async function generateNanaBananaWarRoom(
     previousIssues = issues;
   }
 
-  if (!currentImage) throw new Error('War Room generation produced no image');
-  return currentImage;
+  // None passed — return the best attempt (fewest issues)
+  console.log(`[NanoBanana] War Room: no attempt passed, using best (${bestIssueCount} issues)`);
+  appLog('warn', 'gemini', 'image_gen', `War Room: no attempt passed after ${MAX_ATTEMPTS}, using best with ${bestIssueCount} issues`).catch(() => {});
+  if (!bestImage) throw new Error('War Room generation produced no image');
+  return bestImage;
 }
 
 /**
@@ -964,6 +970,8 @@ export async function generateNanaBananaZoomRoom(
   const data = await prepareZoomRoomData(input);
   let currentImage: string | null = null;
   let previousIssues: string[] = [];
+  let bestImage: string | null = null;
+  let bestIssueCount = Infinity;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     const prompt = buildZoomRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
@@ -979,13 +987,7 @@ export async function generateNanaBananaZoomRoom(
     currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `Zoom Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
-    // Skip analysis on last attempt
-    if (attempt === MAX_ATTEMPTS) {
-      console.log('[NanoBanana] Zoom Room max attempts reached, using last output');
-      break;
-    }
-
-    // Analyze with all reference images
+    // Analyze every attempt (including the last one)
     const analysisImages: ImageData[] = [
       data.reference,
       { data: currentImage, mimeType: 'image/png' },
@@ -999,11 +1001,16 @@ export async function generateNanaBananaZoomRoom(
     const analysis = await analyzeImage(analysisPrompt, analysisImages);
     const { pass, issues } = parseIssues(analysis);
 
+    if (issues.length < bestIssueCount) {
+      bestImage = currentImage;
+      bestIssueCount = issues.length;
+    }
+
     if (pass) {
       console.log(`[NanoBanana] Zoom Room PASSED on attempt ${attempt}`);
       appLog('info', 'gemini', 'image_gen', `Zoom Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
       onProgress?.(attempt, MAX_ATTEMPTS, 'passed');
-      break;
+      return currentImage;
     }
 
     console.log(`[NanoBanana] Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
@@ -1012,6 +1019,8 @@ export async function generateNanaBananaZoomRoom(
     previousIssues = issues;
   }
 
-  if (!currentImage) throw new Error('Zoom Room generation produced no image');
+  console.log(`[NanoBanana] Zoom Room: no attempt passed, using best (${bestIssueCount} issues)`);
+  appLog('warn', 'gemini', 'image_gen', `Zoom Room: no attempt passed after ${MAX_ATTEMPTS}, using best with ${bestIssueCount} issues`).catch(() => {});
+  if (!bestImage) throw new Error('Zoom Room generation produced no image');
   return currentImage;
 }
