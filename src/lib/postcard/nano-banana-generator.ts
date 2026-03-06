@@ -493,9 +493,7 @@ interface PreparedData {
 
 async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData> {
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
-  const reference = readLocalImageAsBase64(path.join(templatesDir, 'reference-pose.png'));
   const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
-  if (!reference) throw new Error('reference-pose.png not found in public/templates/');
 
   const [prospectImage, logoImage] = await Promise.all([
     input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
@@ -508,6 +506,16 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
     for (const img of fetched) { if (img) teamImages.push(img); }
   }
 
+  // Pick the template variant that matches the exact headcount
+  // (1 prospect + N team = totalPeople). Each variant has only the
+  // silhouette placeholders needed, so Gemini won't hallucinate extras.
+  const totalPeople = 1 + teamImages.length;
+  const clamped = Math.min(Math.max(totalPeople, 1), 6);
+  const templateFile = `reference-pose-${clamped}.png`;
+  const reference = readLocalImageAsBase64(path.join(templatesDir, templateFile))
+    ?? readLocalImageAsBase64(path.join(templatesDir, 'reference-pose.png'));
+  if (!reference) throw new Error('reference-pose template not found in public/templates/');
+
   const rolesText = input.openRoles?.length
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
     : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
@@ -517,9 +525,7 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
 
 async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData> {
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
-  const reference = readLocalImageAsBase64(path.join(templatesDir, 'zoom-room-reference.png'));
   const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
-  if (!reference) throw new Error('zoom-room-reference.png not found in public/templates/');
 
   const [prospectImage, logoImage] = await Promise.all([
     input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
@@ -531,6 +537,14 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
     const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
     for (const img of fetched) { if (img) teamImages.push(img); }
   }
+
+  // Pick the template variant that matches the exact headcount
+  const totalPeople = 1 + teamImages.length;
+  const clamped = Math.min(Math.max(totalPeople, 1), 5);
+  const templateFile = `zoom-room-reference-${clamped}.png`;
+  const reference = readLocalImageAsBase64(path.join(templatesDir, templateFile))
+    ?? readLocalImageAsBase64(path.join(templatesDir, 'zoom-room-reference.png'));
+  if (!reference) throw new Error('zoom-room-reference template not found in public/templates/');
 
   const rolesText = input.openRoles?.length
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
@@ -579,19 +593,13 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     );
   }
 
-  // List unused placeholder slots that must be removed
-  const unusedSlots: string[] = [];
-  for (let i = data.teamImages.length; i < 5; i++) {
-    unusedSlots.push(`"Person ${i + 2}"`);
-  }
-
   return [
     `EDIT the base image (the War Room template). Do NOT generate a new scene from scratch — modify the template directly.`,
     `Replace the placeholder silhouettes and text with the provided content while keeping EVERYTHING ELSE exactly the same — same room layout, camera angle, furniture, lighting, colors, perspective, walls, windows, banner, plants.`,
     ``,
-    `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
+    `⚠️ CRITICAL: The reference template contains placeholder labels like "Person 1", "Role 1", "COMPANY LOGO". These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce placeholder labels or square brackets in the output image.`,
     ``,
-    `⚠️ CRITICAL: The scene must contain EXACTLY ${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} — 1 STANDING presenter + ${data.teamImages.length} seated at the table. The reference template shows 6 placeholder silhouettes, but IGNORE the extras. Only render the ${totalPeople} people listed below.${unusedSlots.length > 0 ? ` REMOVE ${unusedSlots.join(', ')} — leave those seats/areas EMPTY (no silhouettes, no shadows, no figures). Replace them with empty chairs or open space.` : ''}`,
+    `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 standing + ${data.teamImages.length} seated = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
     ``,
     `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -627,15 +635,15 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `   - Person 1 MUST be STANDING. All other people MUST be SEATED.`,
     corrections,
     ``,
-    `FINAL CHECKS:`,
-    `- EXACTLY ${totalPeople} people in the scene — no more, no fewer. Empty chairs where unused placeholders were.`,
+    `FINAL CHECKS — verify before outputting:`,
+    `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
     `- Person 1 is STANDING (not seated). All others are SEATED.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
-    `- Wide landscape output (3:2), not square or portrait`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
-    `- NEVER render square brackets in the image. No "[TOP ROLES]", "[COMPANY LOGO]", or any bracketed text. Write clean text only.`,
+    `- No square brackets in the image. Write clean text only.`,
     `- Consistent illustration style — no photorealistic elements`,
+    `- Do NOT change the room layout, camera angle, or composition from the template`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -668,7 +676,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `- EXACTLY ${1 + data.teamImages.length} people total: 1 STANDING presenter + ${data.teamImages.length} SEATED at the table`,
     data.prospectImage ? `- Person 1 (STANDING) must match the prospect photo — this is the MAIN PROSPECT` : ``,
     data.teamImages.length > 0 ? `- Persons 2–${data.teamImages.length + 1} (SEATED) must match the ${data.teamImages.length} team member photo(s)` : ``,
-    `- Any unused placeholder silhouettes from the template must be REMOVED (empty chairs, no figures)`,
+    `- The template has exactly ${1 + data.teamImages.length} silhouette placeholders — there should be no extra people`,
     ``,
     `TARGET STYLE: Flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. No photorealistic faces.`,
     ``,
@@ -692,8 +700,8 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     data.teamImages.length > 0
       ? `6. PERSONS 2–${data.teamImages.length + 1} (SEATED): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style? All SEATED?`
       : `6. TEAM: N/A`,
-    `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. Extra silhouettes, shadows, or invented people count as extra. Empty chairs are fine.`,
-    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any square-bracketed text like "[TOP ROLES]" or "[COMPANY LOGO]" appears — all bracket labels must be replaced with clean text or graphics.`,
+    `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. The template had exactly ${1 + data.teamImages.length} silhouette placeholders — no extras should appear. Extra silhouettes, shadows, or invented people count as extra.`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any placeholder labels or square-bracketed text appears — all labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
     ``,
@@ -748,19 +756,13 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     );
   }
 
-  // List unused placeholder slots that must be removed
-  const unusedSlots: string[] = [];
-  for (let i = data.teamImages.length; i < 4; i++) {
-    unusedSlots.push(`"Person ${i + 2}"`);
-  }
-
   return [
     `EDIT the base image (the Zoom call template). Do NOT generate a new scene from scratch — modify the template directly.`,
     `Replace the placeholder silhouettes and text with the provided content while keeping EVERYTHING ELSE exactly the same — same Zoom UI layout, desk, monitor, plants, toolbar, "Leave" button, video tiles.`,
     ``,
-    `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
+    `⚠️ CRITICAL: The reference template contains placeholder labels like "Person 1", "Role 1", "COMPANY LOGO". These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce placeholder labels or square brackets in the output image.`,
     ``,
-    `⚠️ CRITICAL: The scene must contain EXACTLY ${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} — 1 center desk person + ${data.teamImages.length} in video tiles. The reference template shows 5 placeholder silhouettes, but IGNORE the extras. Only render the ${totalPeople} people listed below.${unusedSlots.length > 0 ? ` REMOVE ${unusedSlots.join(', ')} — leave those video tile slots EMPTY (blank/dark tiles, no silhouettes, no faces).` : ''}`,
+    `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 at desk + ${data.teamImages.length} in video tiles = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
     ``,
     `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -795,14 +797,14 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `   - NO gray silhouettes, shadows, outlines, or placeholder figures anywhere.`,
     corrections,
     ``,
-    `FINAL CHECKS:`,
-    `- EXACTLY ${totalPeople} people in the scene — no more, no fewer. Unused video tiles should be blank/dark.`,
+    `FINAL CHECKS — verify before outputting:`,
+    `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
-    `- Wide landscape output (3:2), not square or portrait`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
-    `- NEVER render square brackets in the image. No "[TOP ROLES]", "[COMPANY LOGO]", or any bracketed text. Write clean text only.`,
+    `- No square brackets in the image. Write clean text only.`,
     `- Consistent illustration style — no photorealistic elements`,
+    `- Do NOT change the Zoom UI layout or composition from the template`,
     data.customPrompt ? `\nADDITIONAL USER INSTRUCTIONS (follow these carefully):\n${data.customPrompt}` : '',
   ].filter(Boolean).join('\n');
 }
@@ -835,7 +837,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `- EXACTLY ${1 + data.teamImages.length} people total: 1 center desk person + ${data.teamImages.length} in video tiles`,
     data.prospectImage ? `- Person 1 (center desk) must match the prospect photo — this is the MAIN PROSPECT` : ``,
     data.teamImages.length > 0 ? `- Persons 2–${data.teamImages.length + 1} (video tiles) must match the ${data.teamImages.length} team member photo(s)` : ``,
-    `- Any unused placeholder silhouettes from the template must be REMOVED (blank/dark tiles, no figures)`,
+    `- The template has exactly ${1 + data.teamImages.length} silhouette placeholders — there should be no extra people`,
     ``,
     `TARGET STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. No photorealistic faces.`,
     ``,
@@ -859,8 +861,8 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     data.teamImages.length > 0
       ? `6. PERSONS 2–${data.teamImages.length + 1} (VIDEO TILES): Do they match the ${data.teamImages.length} team member photo(s)? All in illustration style?`
       : `6. TEAM TILES: N/A`,
-    `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. Extra silhouettes, shadows, or invented people count as extra. Empty/blank video tiles are fine.`,
-    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any square-bracketed text like "[TOP ROLES]" or "[COMPANY LOGO]" appears — all bracket labels must be replaced with clean text or graphics.`,
+    `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. The template had exactly ${1 + data.teamImages.length} silhouette placeholders — no extras should appear. Extra silhouettes, shadows, or invented people count as extra.`,
+    `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any placeholder labels or square-bracketed text appears — all labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
     `10. FORMAT: Wide landscape (3:2)?`,
     ``,
@@ -1022,5 +1024,5 @@ export async function generateNanaBananaZoomRoom(
   console.log(`[NanoBanana] Zoom Room: no attempt passed, using best (${bestIssueCount} issues)`);
   appLog('warn', 'gemini', 'image_gen', `Zoom Room: no attempt passed after ${MAX_ATTEMPTS}, using best with ${bestIssueCount} issues`).catch(() => {});
   if (!bestImage) throw new Error('Zoom Room generation produced no image');
-  return currentImage;
+  return bestImage;
 }
