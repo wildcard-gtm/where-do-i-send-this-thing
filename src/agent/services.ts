@@ -716,7 +716,12 @@ export async function fetchCompanyLogo(domain: string): Promise<ToolResult> {
       return { success: false, summary: `No logo found for ${domain} on Hunter.io` };
     }
 
-    // Hunter.io returns the logo image directly
+    // Validate that the returned image is actually usable (not a tiny redirect/placeholder)
+    const validation = await validateLogoUrl(url);
+    if (!validation.valid) {
+      return { success: false, summary: `Hunter.io logo unusable for ${domain}: ${validation.reason}` };
+    }
+
     return {
       success: true,
       data: { logoUrl: url },
@@ -764,13 +769,13 @@ export async function fetchBrandfetch(domain: string): Promise<ToolResult> {
     const data = res.data;
     if (!data) return { success: false, summary: 'Brandfetch returned no data' };
 
-    // Find best logo — prefer SVG logo type, then PNG icon, then any format
+    // Find best logo — prefer PNG/WebP (SVG excluded — Gemini can't process it)
     let logoUrl: string | undefined;
     const logos: BrandfetchLogo[] = data.logos ?? [];
 
-    // Priority: logo type SVG > logo type PNG/WebP > icon type SVG > any
+    // Priority: logo type PNG > logo type WebP > icon type PNG > any
     const logoTypes = ['logo', 'symbol', 'icon'];
-    const formatPriority = ['svg', 'webp', 'png'];
+    const formatPriority = ['png', 'webp'];
 
     outer:
     for (const logoType of logoTypes) {
@@ -822,10 +827,11 @@ export async function fetchLogoDev(domain: string): Promise<ToolResult> {
 
   try {
     const url = `https://img.logo.dev/${domain}?token=${token}&size=200&format=png`;
-    const res = await axios.head(url, { timeout: 10_000, validateStatus: (status) => status < 500 });
 
-    if (res.status === 404 || res.status === 400) {
-      return { success: false, summary: `Logo.dev: no logo found for ${domain}` };
+    // Full GET + validate instead of HEAD-only — ensures the image is actually usable
+    const validation = await validateLogoUrl(url);
+    if (!validation.valid) {
+      return { success: false, summary: `Logo.dev logo unusable for ${domain}: ${validation.reason}` };
     }
 
     return {
@@ -835,5 +841,42 @@ export async function fetchLogoDev(domain: string): Promise<ToolResult> {
     };
   } catch (err) {
     return { success: false, summary: `Logo.dev fetch failed: ${(err as Error).message}` };
+  }
+}
+
+// ─── Logo URL Validation ──────────────────────────────────
+
+/**
+ * Validates that a logo URL is actually usable by Gemini:
+ * - HTTP 200 response
+ * - Not SVG (Gemini can't process SVG)
+ * - Response body > 2KB (tiny images are usually placeholders)
+ */
+export async function validateLogoUrl(url: string): Promise<{ valid: boolean; reason?: string }> {
+  try {
+    const res = await axios.get(url, {
+      timeout: 10_000,
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; postcard-bot/1.0)' },
+    });
+
+    if (res.status !== 200) {
+      return { valid: false, reason: `HTTP ${res.status}` };
+    }
+
+    const contentType: string = (res.headers['content-type'] ?? '').split(';')[0].trim();
+    if (contentType === 'image/svg+xml') {
+      return { valid: false, reason: 'SVG format (unsupported by Gemini)' };
+    }
+
+    const size = (res.data as Buffer).length;
+    if (size < 2048) {
+      return { valid: false, reason: `Too small (${size} bytes) — likely a placeholder` };
+    }
+
+    return { valid: true };
+  } catch (err) {
+    return { valid: false, reason: `Fetch failed: ${(err as Error).message}` };
   }
 }

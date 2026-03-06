@@ -415,13 +415,22 @@ async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
         fetchImageAsBase64(res.headers.location).then(resolve);
         return;
       }
-      if (res.statusCode !== 200) { resolve(null); return; }
+      if (res.statusCode !== 200) {
+        appLog('warn', 'gemini', 'fetch_image_failed', `HTTP ${res.statusCode} fetching image`, { url: url.slice(0, 200) }).catch(() => {});
+        resolve(null);
+        return;
+      }
 
       const contentType: string = res.headers['content-type'] ?? 'image/jpeg';
       const mimeType = contentType.split(';')[0].trim();
 
       // Gemini does not support SVG — skip placeholder avatars and SVG logos
-      if (mimeType === 'image/svg+xml') { res.resume(); resolve(null); return; }
+      if (mimeType === 'image/svg+xml') {
+        appLog('warn', 'gemini', 'fetch_image_svg', `Skipping SVG image (unsupported by Gemini)`, { url: url.slice(0, 200) }).catch(() => {});
+        res.resume();
+        resolve(null);
+        return;
+      }
 
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
@@ -429,6 +438,7 @@ async function fetchImageAsBase64(url: string): Promise<ImageData | null> {
         const buffer = Buffer.concat(chunks);
         // Skip suspiciously small images (< 2KB) — likely generic icons, not real photos
         if (buffer.length < 2048) {
+          appLog('warn', 'gemini', 'fetch_image_tiny', `Skipping tiny image (${buffer.length} bytes)`, { url: url.slice(0, 200), size: buffer.length }).catch(() => {});
           console.log(`[NanoBanana] Skipping tiny image (${buffer.length} bytes): ${url.slice(0, 80)}...`);
           resolve(null);
           return;
