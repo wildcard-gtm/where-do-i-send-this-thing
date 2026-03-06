@@ -123,6 +123,53 @@ export async function POST(
       );
 
       if (result) {
+        // Dedup: remove prospect from teamPhotos to avoid duplicate in postcard
+        let cleanedTeamPhotos = result.teamPhotos;
+        if (cleanedTeamPhotos && cleanedTeamPhotos.length > 0) {
+          const prospectName = (contact.name || "").toLowerCase().trim();
+          const prospectNameParts = prospectName.split(/\s+/);
+          const prospectFirst = prospectNameParts[0];
+          const prospectLast = prospectNameParts[prospectNameParts.length - 1];
+
+          const isDuplicate = (tpName: string) => {
+            const n = tpName.toLowerCase().trim();
+            if (!n || !prospectName) return false;
+            if (n === prospectName) return true;
+            if (n.includes(prospectName) || prospectName.includes(n)) return true;
+            if (prospectNameParts.length >= 2) {
+              const parts = n.split(/\s+/);
+              if (parts[0] === prospectFirst && parts[parts.length - 1] === prospectLast) return true;
+            }
+            return false;
+          };
+
+          // Find if any dupe has a photo we should transfer to the prospect
+          const currentProfileImage = await prisma.contact.findUnique({
+            where: { id: contact.id },
+            select: { profileImageUrl: true },
+          });
+          const hasProfileImage = currentProfileImage?.profileImageUrl &&
+            !currentProfileImage.profileImageUrl.includes("default") &&
+            !currentProfileImage.profileImageUrl.includes("ghost") &&
+            !currentProfileImage.profileImageUrl.includes("static.licdn.com/aero");
+
+          let transferPhotoUrl: string | null = null;
+          const dupes = cleanedTeamPhotos.filter(tp => isDuplicate(tp.name ?? ""));
+          if (!hasProfileImage && dupes.length > 0) {
+            const dupeWithPhoto = dupes.find(d => d.photoUrl && !d.photoUrl.includes("ghost") && !d.photoUrl.includes("default"));
+            if (dupeWithPhoto) transferPhotoUrl = dupeWithPhoto.photoUrl;
+          }
+
+          cleanedTeamPhotos = cleanedTeamPhotos.filter(tp => !isDuplicate(tp.name ?? ""));
+
+          if (transferPhotoUrl) {
+            await prisma.contact.update({
+              where: { id: contact.id },
+              data: { profileImageUrl: transferPhotoUrl },
+            });
+          }
+        }
+
         await prisma.companyEnrichment.update({
           where: { id },
           data: {
@@ -137,7 +184,7 @@ export async function POST(
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             officeLocations: (result.officeLocations ?? undefined) as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            teamPhotos: (result.teamPhotos ?? undefined) as any,
+            teamPhotos: (cleanedTeamPhotos ?? undefined) as any,
             enrichmentStatus: "completed",
             currentStep: null,
             errorMessage: null,
