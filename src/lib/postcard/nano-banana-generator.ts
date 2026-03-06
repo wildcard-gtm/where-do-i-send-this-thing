@@ -888,7 +888,10 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
  *
  * Returns base64-encoded PNG (no data: prefix).
  */
-export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise<string> {
+export async function generateNanaBananaWarRoom(
+  input: NanoBananaInput,
+  onProgress?: (attempt: number, maxAttempts: number, status: string) => void,
+): Promise<string> {
   if (GEMINI_KEYS.length === 0) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const data = await prepareWarRoomData(input);
@@ -904,6 +907,7 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     );
 
     console.log(`[NanoBanana] War Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    onProgress?.(attempt, MAX_ATTEMPTS, 'generating');
     const genStart = Date.now();
     currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `War Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
@@ -923,6 +927,7 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     if (data.prospectImage) analysisImages.push(data.prospectImage);
     for (const tp of data.teamImages) analysisImages.push(tp);
 
+    onProgress?.(attempt, MAX_ATTEMPTS, 'analyzing');
     const analysisPrompt = buildWarRoomAnalysisPrompt(data);
     const analysis = await analyzeImage(analysisPrompt, analysisImages);
     const { pass, issues } = parseIssues(analysis);
@@ -930,11 +935,13 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
     if (pass) {
       console.log(`[NanoBanana] War Room PASSED on attempt ${attempt}`);
       appLog('info', 'gemini', 'image_gen', `War Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
+      onProgress?.(attempt, MAX_ATTEMPTS, `passed`);
       break;
     }
 
     console.log(`[NanoBanana] War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
     appLog('warn', 'gemini', 'image_gen', `War Room FAIL attempt ${attempt}: ${issues.length} issue(s)`, { attempt, issues }).catch(() => {});
+    onProgress?.(attempt, MAX_ATTEMPTS, `failed: ${issues.join('; ').slice(0, 200)}`);
     previousIssues = issues;
   }
 
@@ -948,7 +955,10 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
  * Same pattern as War Room but with Zoom-specific prompts and layout.
  * Returns base64-encoded PNG (no data: prefix).
  */
-export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promise<string> {
+export async function generateNanaBananaZoomRoom(
+  input: NanoBananaInput,
+  onProgress?: (attempt: number, maxAttempts: number, status: string) => void,
+): Promise<string> {
   if (GEMINI_KEYS.length === 0) throw new Error('No Gemini API key configured (set GEMINI_API_KEY or GOOGLE_AI_STUDIO)');
 
   const data = await prepareZoomRoomData(input);
@@ -964,6 +974,7 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     );
 
     console.log(`[NanoBanana] Zoom Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
+    onProgress?.(attempt, MAX_ATTEMPTS, 'generating');
     const genStart = Date.now();
     currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `Zoom Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
@@ -983,6 +994,7 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     if (data.prospectImage) analysisImages.push(data.prospectImage);
     for (const tp of data.teamImages) analysisImages.push(tp);
 
+    onProgress?.(attempt, MAX_ATTEMPTS, 'analyzing');
     const analysisPrompt = buildZoomRoomAnalysisPrompt(data);
     const analysis = await analyzeImage(analysisPrompt, analysisImages);
     const { pass, issues } = parseIssues(analysis);
@@ -990,11 +1002,13 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
     if (pass) {
       console.log(`[NanoBanana] Zoom Room PASSED on attempt ${attempt}`);
       appLog('info', 'gemini', 'image_gen', `Zoom Room PASSED on attempt ${attempt}`, { attempt }).catch(() => {});
+      onProgress?.(attempt, MAX_ATTEMPTS, 'passed');
       break;
     }
 
     console.log(`[NanoBanana] Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`);
     appLog('warn', 'gemini', 'image_gen', `Zoom Room FAIL attempt ${attempt}: ${issues.length} issue(s)`, { attempt, issues }).catch(() => {});
+    onProgress?.(attempt, MAX_ATTEMPTS, `failed: ${issues.join('; ').slice(0, 200)}`);
     previousIssues = issues;
   }
 

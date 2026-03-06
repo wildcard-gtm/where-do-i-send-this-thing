@@ -128,11 +128,21 @@ export async function POST(
         customPrompt: existing?.customPrompt ?? undefined,
       };
 
+      // Progress callback: write attempt status to DB so the frontend can poll it
+      const onProgress = async (genAttempt: number, maxAttempts: number, status: string) => {
+        await prisma.postcard.update({
+          where: { id },
+          data: {
+            errorMessage: `Attempt ${genAttempt}/${maxAttempts}: ${status}`,
+          },
+        }).catch(() => {});
+      };
+
       let bgBase64: string;
       if (existing?.template === "warroom") {
-        bgBase64 = await generateNanaBananaWarRoom(nanaBananaInput);
+        bgBase64 = await generateNanaBananaWarRoom(nanaBananaInput, onProgress);
       } else if (existing?.template === "zoom") {
-        bgBase64 = await generateNanaBananaZoomRoom(nanaBananaInput);
+        bgBase64 = await generateNanaBananaZoomRoom(nanaBananaInput, onProgress);
       } else {
         throw new Error("Unknown template: " + existing?.template);
       }

@@ -83,12 +83,16 @@ export default function ReviewsPage() {
   // Load postcards
   const loadPostcards = () => {
     setLoading(true);
-    const params = new URLSearchParams({ latestOnly: "true" });
+    const params = new URLSearchParams({ latestOnly: "true", includeAll: "true" });
     if (campaignId !== "all") params.set("campaignId", campaignId);
     fetch(`/api/postcards?${params}`)
       .then((res) => (res.ok ? res.json() : { postcards: [] }))
       .then((data) => {
-        setPostcards(data.postcards || []);
+        // Filter out cancelled/failed but keep generating/pending for progress display
+        const visible = (data.postcards || []).filter(
+          (p: PostcardFull) => ["ready", "approved", "reviewed", "generating", "pending"].includes(p.status)
+        );
+        setPostcards(visible);
         setLoading(false);
       });
   };
@@ -98,8 +102,8 @@ export default function ReviewsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaignId]);
 
-  // Split by tab: "to-review" shows ready+approved, "reviewed" shows reviewed
-  const toReviewCards = postcards.filter((p) => p.status === "ready" || p.status === "approved");
+  // Split by tab: "to-review" shows ready+approved+generating/pending, "reviewed" shows reviewed
+  const toReviewCards = postcards.filter((p) => ["ready", "approved", "generating", "pending"].includes(p.status));
   const reviewedCards = postcards.filter((p) => p.status === "reviewed");
   const tabCards = tab === "to-review" ? toReviewCards : reviewedCards;
 
@@ -392,6 +396,7 @@ function ReviewCard({
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<string | null>(null);
   const [pollingImageUrl, setPollingImageUrl] = useState<string | null>(null);
+  const [progressText, setProgressText] = useState<string | null>(null);
   const [showVersions, setShowVersions] = useState(false);
   const [olderVersions, setOlderVersions] = useState<PostcardFull[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
@@ -399,6 +404,18 @@ function ReviewCard({
   const prospectFileRef = useRef<HTMLInputElement>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
   const teamFileRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Resume polling on mount if the postcard has a child that's generating
+  useEffect(() => {
+    if (postcard.status === "generating" || postcard.status === "pending") {
+      // This postcard itself is generating (e.g. page reload during generation)
+      setPollingId(postcard.id);
+      setRegenerating(true);
+      setPollingStatus(postcard.status);
+      setProgressText(postcard.errorMessage || null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Poll for regeneration status
   useEffect(() => {
@@ -410,14 +427,19 @@ function ReviewCard({
       const p = data.postcard;
       if (!p) return;
       setPollingStatus(p.status);
-      if (p.status === "ready" || p.status === "approved") {
+      // Show progress from errorMessage (e.g. "Attempt 2/7: analyzing")
+      if (p.errorMessage && p.status === "generating") {
+        setProgressText(p.errorMessage);
+      }
+      if (p.status === "ready" || p.status === "approved" || p.status === "reviewed") {
         setPollingImageUrl(p.imageUrl);
+        setProgressText(null);
         clearInterval(interval);
         setPollingId(null);
         setRegenerating(false);
-        // Reload full list so the new postcard data is complete
         onReload();
       } else if (p.status === "failed") {
+        setProgressText(p.errorMessage || "Generation failed");
         clearInterval(interval);
         setPollingId(null);
         setRegenerating(false);
@@ -561,9 +583,14 @@ function ReviewCard({
         {/* Large postcard image */}
         <div className="lg:w-2/3 relative bg-muted">
           {isGenerating && !displayImageUrl ? (
-            <div className="w-full aspect-[3/2] flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-muted-foreground capitalize">{pollingStatus || postcard.status}...</p>
+            <div className="w-full aspect-[3/2] flex flex-col items-center justify-center gap-4 px-6">
+              <div className="w-10 h-10 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+              <div className="text-center space-y-1">
+                <p className="text-sm font-medium text-foreground capitalize">{pollingStatus || postcard.status}...</p>
+                {progressText && (
+                  <p className="text-xs text-muted-foreground max-w-md">{progressText}</p>
+                )}
+              </div>
             </div>
           ) : displayImageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
