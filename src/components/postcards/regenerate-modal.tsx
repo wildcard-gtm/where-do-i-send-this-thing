@@ -257,7 +257,7 @@ export default function RegenerateModal({
             {/* Company Logo */}
             <div>
               <label className="block text-xs font-medium text-muted-foreground mb-2">
-                Company Logo
+                Company Logo{contactCompany && <span className="font-normal text-muted-foreground/60"> — {contactCompany}</span>}
               </label>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden shrink-0 border border-border">
