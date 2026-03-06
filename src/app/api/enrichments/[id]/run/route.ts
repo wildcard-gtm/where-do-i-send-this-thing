@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { runEnrichmentAgent } from "@/agent/enrichment-agent";
 import { MAX_ATTEMPTS, STEP_LABELS } from "@/app/api/contacts/enrich-bulk/route";
 import { appLog } from "@/lib/app-log";
+import { findTeamLinkedInUrls } from "@/lib/enrichment/team-linkedin-finder";
 
 export const maxDuration = 600;
 
@@ -191,6 +192,13 @@ export async function POST(
           },
         });
         appLog("info", "system", "enrichment_complete", `Enrichment ${id} completed for ${contact.name}`, { enrichmentId: id, contactId: contact.id, attempt }).catch(() => {});
+
+        // Post-enrichment: find LinkedIn URLs for team members that don't have them
+        if (cleanedTeamPhotos && cleanedTeamPhotos.length > 0) {
+          const companyName = result.companyName || contact.company || "Unknown";
+          findTeamLinkedInUrls(id, cleanedTeamPhotos, companyName).catch(() => {});
+        }
+
         succeeded = true;
       } else {
         lastError = "Agent returned no data";

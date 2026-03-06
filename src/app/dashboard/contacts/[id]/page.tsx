@@ -1064,6 +1064,7 @@ export default function ContactDetailPage() {
               contactId={contactId}
               contactName={contact?.name || ""}
               contactTitle={contact?.title ?? postcard.contactTitle ?? null}
+              contactCompany={enrichment?.companyName ?? contact?.company}
               contactLinkedinUrl={contact?.linkedinUrl}
               currentPostcardId={postcard.id}
               currentTemplate={postcard.template}

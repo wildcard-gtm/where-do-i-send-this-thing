@@ -171,7 +171,7 @@ const ENRICHMENT_TOOLS = [
               title: { type: 'string' },
               linkedin_url: { type: 'string', description: 'LinkedIn profile URL of this team member' },
             },
-            required: ['photo_url'],
+            required: ['name', 'photo_url', 'linkedin_url'],
           },
         },
       },
