@@ -24,6 +24,8 @@ export interface NanoBananaInput {
   companyLogoUrl?: string | null;
   /** Up to 4 team member photo URLs — replace seated people */
   teamPhotoUrls?: string[];
+  /** Team member names/titles (parallel to teamPhotoUrls) — used to pick best standing presenter if prospect has no photo */
+  teamMembers?: Array<{ name?: string; title?: string }>;
   /** Top open roles to display on the whiteboard */
   openRoles?: Array<{ title: string; location: string }>;
   /** Prospect name for prompt context */
@@ -558,6 +560,33 @@ export function normalizeJobTitle(title: string): string {
   return t;
 }
 
+// ─── Presenter Selection ────────────────────────────────────────────────────
+
+/** Keywords that indicate someone responsible for hiring/recruiting */
+const HIRING_KEYWORDS = [
+  'recruit', 'talent', 'hiring', 'people', 'hr ', 'human resource',
+  'staffing', 'acquisition', 'head of people', 'vp people', 'chief people',
+];
+
+/**
+ * Pick the best team member to promote to standing presenter when the
+ * prospect has no photo. Prefers recruiting/hiring-related titles.
+ * Falls back to index 0 if no hiring-related title is found.
+ */
+function pickBestPresenterIndex(
+  teamMembers: Array<{ name?: string; title?: string }> | undefined,
+  teamCount: number,
+): number {
+  if (!teamMembers || teamMembers.length === 0) return 0;
+
+  for (let i = 0; i < Math.min(teamMembers.length, teamCount); i++) {
+    const title = teamMembers[i]?.title?.toLowerCase() ?? '';
+    if (HIRING_KEYWORDS.some((kw) => title.includes(kw))) return i;
+  }
+
+  return 0; // default: first team member
+}
+
 // ─── Data Loading ───────────────────────────────────────────────────────────
 
 interface PreparedData {
@@ -588,8 +617,19 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
   // Validate photos — filter out LinkedIn placeholders, gray icons, etc.
   // Must happen BEFORE template selection so headcount matches real photos only.
   const validated = await validatePhotos(fetchedProspect, teamImages);
-  const prospectImage = validated.prospectImage;
+  let prospectImage = validated.prospectImage;
   teamImages = validated.teamImages;
+
+  // If prospect has no photo, promote the best team member to standing presenter
+  // so the main slot isn't wasted on a generic illustrated person.
+  // Prefer recruiting/hiring-related titles, otherwise pick the first available.
+  if (!prospectImage && teamImages.length > 0) {
+    const promoteIdx = pickBestPresenterIndex(input.teamMembers, teamImages.length);
+    prospectImage = teamImages.splice(promoteIdx, 1)[0];
+    const who = input.teamMembers?.[promoteIdx]?.name ?? `team member ${promoteIdx + 1}`;
+    console.log(`[NanoBanana] No prospect photo — promoted ${who} to standing presenter`);
+    appLog('info', 'system', 'postcard_promote', `No prospect photo, promoted ${who} to standing presenter`).catch(() => {});
+  }
 
   // Pick the template variant that matches the exact headcount
   // (1 prospect + N team = totalPeople). Each variant has only the
@@ -625,8 +665,17 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
 
   // Validate photos — filter out LinkedIn placeholders, gray icons, etc.
   const validated = await validatePhotos(fetchedProspect, teamImages);
-  const prospectImage = validated.prospectImage;
+  let prospectImage = validated.prospectImage;
   teamImages = validated.teamImages;
+
+  // If prospect has no photo, promote the best team member to center desk
+  if (!prospectImage && teamImages.length > 0) {
+    const promoteIdx = pickBestPresenterIndex(input.teamMembers, teamImages.length);
+    prospectImage = teamImages.splice(promoteIdx, 1)[0];
+    const who = input.teamMembers?.[promoteIdx]?.name ?? `team member ${promoteIdx + 1}`;
+    console.log(`[NanoBanana] No prospect photo — promoted ${who} to center desk`);
+    appLog('info', 'system', 'postcard_promote', `No prospect photo, promoted ${who} to center desk`).catch(() => {});
+  }
 
   // Pick the template variant that matches the exact headcount
   const totalPeople = 1 + teamImages.length;

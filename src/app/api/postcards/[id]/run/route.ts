@@ -123,6 +123,10 @@ export async function POST(
         teamPhotoUrls: refTeamPhotos.length > 0
           ? refTeamPhotos
           : filteredTeamPhotos.map((p) => p.photoUrl).filter(Boolean),
+        teamMembers: filteredTeamPhotos.map((p) => ({
+          name: p.name,
+          title: (p as Record<string, unknown>).title as string | undefined,
+        })),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
         prospectName: existing?.contactName ?? undefined,
         customPrompt: existing?.customPrompt ?? undefined,
