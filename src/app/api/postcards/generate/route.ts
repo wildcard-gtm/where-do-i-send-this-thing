@@ -104,7 +104,9 @@ export async function POST(request: Request) {
       contactTitle: contact.title,
       contactPhoto: resolvedContactPhoto,
       deliveryAddress,
-      companyLogo: overrideCompanyLogo ?? enrichment?.companyLogo ?? null,
+      companyLogo: (overrideCompanyLogo && overrideCompanyLogo !== enrichment?.companyLogo)
+        ? overrideCompanyLogo   // User explicitly changed the logo (upload/paste)
+        : enrichment?.companyLogo ?? null,  // Always prefer latest enrichment
       openRoles: overrideOpenRoles ?? enrichment?.openRoles ?? undefined,
       companyValues: enrichment?.companyValues ?? undefined,
       companyMission: enrichment?.companyMission ?? null,
