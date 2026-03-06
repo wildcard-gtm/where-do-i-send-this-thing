@@ -5,7 +5,7 @@ import { getTeamUserIds } from "@/lib/team";
 
 export const maxDuration = 300;
 
-export const MAX_POSTCARD_ATTEMPTS = 5;
+export const MAX_POSTCARD_ATTEMPTS = 7;
 
 // POST /api/postcards/generate-bulk
 // Body: { contactIds: string[], scanBatchId?: string, backMessage?: string }

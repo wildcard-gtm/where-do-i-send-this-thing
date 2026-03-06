@@ -297,6 +297,85 @@ async function analyzeImage(prompt: string, images: ImageData[]): Promise<string
   }
 }
 
+// ─── Photo Validation ────────────────────────────────────────────────────────
+
+/**
+ * Validate photos in a single batch AI call to filter out LinkedIn gray
+ * placeholders, silhouettes, generic icons, etc. Returns only real human photos.
+ * If the AI call fails, returns all images unchanged (fail-open).
+ */
+async function validatePhotos(
+  prospectImage: ImageData | null,
+  teamImages: ImageData[],
+): Promise<{ prospectImage: ImageData | null; teamImages: ImageData[] }> {
+  const entries: { img: ImageData; label: string; isProspect: boolean; teamIdx: number }[] = [];
+  if (prospectImage) {
+    entries.push({ img: prospectImage, label: 'Prospect', isProspect: true, teamIdx: -1 });
+  }
+  teamImages.forEach((img, i) => {
+    entries.push({ img, label: `Team ${i + 1}`, isProspect: false, teamIdx: i });
+  });
+
+  if (entries.length === 0) return { prospectImage, teamImages };
+
+  const parts: object[] = [
+    { text: [
+      'Check each image below. Is it a real human photograph showing a recognizable person, or is it a placeholder/silhouette/generic avatar/gray icon/company logo/non-human image?',
+      'Reply with EXACTLY one line per image in this format:',
+      'Label: REAL or PLACEHOLDER',
+      'Example:',
+      'Prospect: REAL',
+      'Team 1: PLACEHOLDER',
+    ].join('\n') },
+  ];
+
+  for (const { img, label } of entries) {
+    parts.push(
+      { text: `\n${label}:` },
+      { inline_data: { mime_type: img.mimeType, data: img.data } },
+    );
+  }
+
+  try {
+    const analysisModel = await getGeminiModel('image_analysis');
+    const result = await callGeminiWithRetry(analysisModel, {
+      contents: [{ role: 'user', parts }],
+      generationConfig: { responseModalities: ['TEXT'] },
+    });
+
+    const response = result.text ?? '';
+    console.log(`[NanoBanana] Photo validation response: ${response.trim()}`);
+
+    let filteredProspect = prospectImage;
+    const keep = new Set(teamImages.map((_, i) => i));
+
+    for (const entry of entries) {
+      const regex = new RegExp(`${entry.label}.*PLACEHOLDER`, 'i');
+      if (regex.test(response)) {
+        if (entry.isProspect) {
+          filteredProspect = null;
+          console.log(`[NanoBanana] Prospect photo filtered as placeholder`);
+          appLog('info', 'gemini', 'photo_validate', 'Prospect photo filtered as placeholder').catch(() => {});
+        } else {
+          keep.delete(entry.teamIdx);
+          console.log(`[NanoBanana] Team member ${entry.teamIdx + 1} photo filtered as placeholder`);
+          appLog('info', 'gemini', 'photo_validate', `Team member ${entry.teamIdx + 1} photo filtered as placeholder`).catch(() => {});
+        }
+      }
+    }
+
+    return {
+      prospectImage: filteredProspect,
+      teamImages: teamImages.filter((_, i) => keep.has(i)),
+    };
+  } catch (err) {
+    // Fail-open: if validation fails, use all images as-is
+    console.log(`[NanoBanana] Photo validation failed, proceeding with all images: ${(err as Error).message}`);
+    appLog('warn', 'gemini', 'photo_validate', `Photo validation failed: ${(err as Error).message}`).catch(() => {});
+    return { prospectImage, teamImages };
+  }
+}
+
 // ─── Image Fetching ─────────────────────────────────────────────────────────
 
 /** Known generic/placeholder avatar URL patterns — these are NOT real photos */
@@ -495,16 +574,22 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
   const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
 
-  const [prospectImage, logoImage] = await Promise.all([
+  const [fetchedProspect, logoImage] = await Promise.all([
     input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
     input.companyLogoUrl ? fetchImageAsBase64(input.companyLogoUrl) : null,
   ]);
 
-  const teamImages: ImageData[] = [];
+  let teamImages: ImageData[] = [];
   if (input.teamPhotoUrls?.length) {
     const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 5).map(url => fetchImageAsBase64(url)));
     for (const img of fetched) { if (img) teamImages.push(img); }
   }
+
+  // Validate photos — filter out LinkedIn placeholders, gray icons, etc.
+  // Must happen BEFORE template selection so headcount matches real photos only.
+  const validated = await validatePhotos(fetchedProspect, teamImages);
+  const prospectImage = validated.prospectImage;
+  teamImages = validated.teamImages;
 
   // Pick the template variant that matches the exact headcount
   // (1 prospect + N team = totalPeople). Each variant has only the
@@ -527,16 +612,21 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
   const templatesDir = path.join(process.cwd(), 'public', 'templates');
   const screen = readLocalImageAsBase64(path.join(templatesDir, 'screen.png'));
 
-  const [prospectImage, logoImage] = await Promise.all([
+  const [fetchedProspect, logoImage] = await Promise.all([
     input.prospectPhotoUrl ? fetchImageAsBase64(input.prospectPhotoUrl) : null,
     input.companyLogoUrl ? fetchImageAsBase64(input.companyLogoUrl) : null,
   ]);
 
-  const teamImages: ImageData[] = [];
+  let teamImages: ImageData[] = [];
   if (input.teamPhotoUrls?.length) {
     const fetched = await Promise.all(input.teamPhotoUrls.slice(0, 4).map(url => fetchImageAsBase64(url)));
     for (const img of fetched) { if (img) teamImages.push(img); }
   }
+
+  // Validate photos — filter out LinkedIn placeholders, gray icons, etc.
+  const validated = await validatePhotos(fetchedProspect, teamImages);
+  const prospectImage = validated.prospectImage;
+  teamImages = validated.teamImages;
 
   // Pick the template variant that matches the exact headcount
   const totalPeople = 1 + teamImages.length;
