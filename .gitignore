@@ -75,3 +75,6 @@ prisma/dev.db-journal
 
 # backups (db + source snapshots)
 /backups/
+
+# Chrome extension (contains hardcoded keys)
+chrome-extension/
