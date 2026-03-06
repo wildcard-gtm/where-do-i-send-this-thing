@@ -1,38 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
 
 // POST /api/photos/upload
-// Body: { key, type, contactId, enrichmentId?, teamIndex?, photoUrl }
-// Downloads the photo from photoUrl, uploads to Supabase, updates DB
+// Body: { key, type, contactId, enrichmentId?, teamIndex?, imageBase64, contentType? }
+// Accepts base64 image data from the Chrome extension, uploads to Supabase Storage, updates DB
 export async function POST(request: Request) {
   const body = await request.json();
-  const { key, type, contactId, enrichmentId, teamIndex, photoUrl } = body;
+  const { key, type, contactId, enrichmentId, teamIndex, imageBase64, contentType: ct } = body;
 
   if (!key || key !== process.env.DEBUG_API_KEY) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!photoUrl || !contactId) {
-    return NextResponse.json({ error: "Missing photoUrl or contactId" }, { status: 400 });
-  }
-
-  // Verify it's not a placeholder
-  if (isPlaceholderUrl(photoUrl)) {
-    return NextResponse.json({ error: "Photo URL is a placeholder", photoUrl }, { status: 400 });
+  if (!imageBase64 || !contactId) {
+    return NextResponse.json({ error: "Missing imageBase64 or contactId" }, { status: 400 });
   }
 
   try {
-    // Download the image
-    const imgRes = await fetch(photoUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-    });
-    if (!imgRes.ok) {
-      return NextResponse.json({ error: `Failed to download: ${imgRes.status}` }, { status: 400 });
-    }
-
-    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const contentType = ct || "image/jpeg";
+    const buffer = Buffer.from(imageBase64, "base64");
 
     // Skip tiny images (likely placeholders)
     if (buffer.length < 3000) {
@@ -59,7 +45,8 @@ export async function POST(request: Request) {
     });
 
     if (!uploadRes.ok) {
-      return NextResponse.json({ error: `Supabase upload failed: ${uploadRes.status}` }, { status: 500 });
+      const errText = await uploadRes.text().catch(() => "");
+      return NextResponse.json({ error: `Supabase upload failed: ${uploadRes.status} ${errText}` }, { status: 500 });
     }
 
     const uploadedUrl = `${supabaseUrl}/storage/v1/object/public/postcards/${filename}`;
