@@ -66,6 +66,21 @@ interface Contact {
   chatMessages: ChatMessage[];
 }
 
+/** Client-side placeholder URL detection (mirrors server-side isPlaceholderUrl) */
+const PLACEHOLDER_PATTERNS = [
+  'static.licdn.com/aero-v1/sc/h/',
+  'static.licdn.com/sc/h/',
+  '/default-avatar',
+  'gravatar.com/avatar/',
+  'ui-avatars.com/',
+  '/ghost-',
+  '/blank-profile',
+];
+function isPlaceholder(url: string | null | undefined): boolean {
+  if (!url) return true;
+  return PLACEHOLDER_PATTERNS.some(p => url.includes(p));
+}
+
 const recommendationColors: Record<string, string> = {
   HOME: "text-success bg-success/15",
   OFFICE: "text-primary bg-primary/15",
@@ -821,7 +836,16 @@ export default function ContactDetailPage() {
                     </span>
                   )}
                   <button
-                    onClick={() => setShowRegenerateModal(true)}
+                    onClick={async () => {
+                      // Re-fetch latest enrichment + contact data (may have been updated by Chrome extension)
+                      const res = await fetch(`/api/contacts/${contactId}`);
+                      if (res.ok) {
+                        const data = await res.json();
+                        if (data.enrichment) setEnrichment(data.enrichment);
+                        if (data.contact) setContact(data.contact);
+                      }
+                      setShowRegenerateModal(true);
+                    }}
                     disabled={postcardActionLoading || postcard.status === "pending" || postcard.status === "generating"}
                     className="flex items-center gap-2 bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2.5 rounded-lg font-medium transition text-sm"
                   >
@@ -1068,9 +1092,28 @@ export default function ContactDetailPage() {
               contactLinkedinUrl={contact?.linkedinUrl}
               currentPostcardId={postcard.id}
               currentTemplate={postcard.template}
-              currentContactPhoto={postcard.contactPhoto ?? contact?.profileImageUrl ?? null}
-              currentCompanyLogo={postcard.companyLogo ?? enrichment?.companyLogo ?? null}
-              currentTeamPhotos={(postcard.teamPhotos as TeamPhoto[] | null) ?? enrichment?.teamPhotos ?? null}
+              currentContactPhoto={
+                isPlaceholder(postcard.contactPhoto) && contact?.profileImageUrl
+                  ? contact.profileImageUrl
+                  : postcard.contactPhoto ?? contact?.profileImageUrl ?? null
+              }
+              currentCompanyLogo={enrichment?.companyLogo ?? postcard.companyLogo ?? null}
+              currentTeamPhotos={(() => {
+                const postcardTeam = (postcard.teamPhotos as TeamPhoto[] | null) ?? [];
+                const enrichTeam = enrichment?.teamPhotos ?? [];
+                if (enrichTeam.length > 0) {
+                  // Merge: for each member, prefer enrichment photo if postcard has placeholder
+                  return enrichTeam.map((et, i) => {
+                    const pt = postcardTeam[i];
+                    if (!pt) return et;
+                    return {
+                      ...et,
+                      photoUrl: isPlaceholder(pt.photoUrl) ? et.photoUrl : pt.photoUrl,
+                    };
+                  });
+                }
+                return postcardTeam.length > 0 ? postcardTeam : null;
+              })()}
               currentOpenRoles={(postcard.openRoles as Array<{ title: string; location?: string }> | null) ?? (enrichment?.openRoles as Array<{ title: string; location?: string }> | null) ?? null}
               onRegenerated={handleRegenerated}
             />

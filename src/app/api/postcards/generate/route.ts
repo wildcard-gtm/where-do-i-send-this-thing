@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
+import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
 
 export const maxDuration = 300;
 
@@ -70,6 +71,28 @@ export async function POST(request: Request) {
       ? contact.officeAddress
       : contact.homeAddress || contact.officeAddress;
 
+  // Resolve contact photo: prefer non-placeholder from override, then contact DB, then enrichment
+  const resolvedContactPhoto =
+    (overrideContactPhoto && !isPlaceholderUrl(overrideContactPhoto))
+      ? overrideContactPhoto
+      : (!isPlaceholderUrl(contact.profileImageUrl) ? contact.profileImageUrl : overrideContactPhoto ?? contact.profileImageUrl);
+
+  // Resolve team photos: merge overrides with enrichment, replacing placeholders
+  const enrichTeam = (enrichment?.teamPhotos as Array<{ name?: string; photoUrl: string; title?: string; linkedinUrl?: string }>) ?? [];
+  let resolvedTeamPhotos: typeof enrichTeam | undefined;
+  if (overrideTeamPhotos && Array.isArray(overrideTeamPhotos) && overrideTeamPhotos.length > 0) {
+    resolvedTeamPhotos = overrideTeamPhotos.map((ot: { name?: string; photoUrl: string; title?: string; linkedinUrl?: string }, i: number) => {
+      const et = enrichTeam[i];
+      // If override has placeholder, substitute with enrichment photo
+      if (isPlaceholderUrl(ot.photoUrl) && et && !isPlaceholderUrl(et.photoUrl)) {
+        return { ...ot, photoUrl: et.photoUrl };
+      }
+      return ot;
+    });
+  } else if (enrichTeam.length > 0) {
+    resolvedTeamPhotos = enrichTeam;
+  }
+
   // Create Postcard record — caller dispatches /run to generate
   const postcard = await prisma.postcard.create({
     data: {
@@ -79,14 +102,14 @@ export async function POST(request: Request) {
       retryCount: 0,
       contactName: contact.name,
       contactTitle: contact.title,
-      contactPhoto: overrideContactPhoto ?? contact.profileImageUrl,
+      contactPhoto: resolvedContactPhoto,
       deliveryAddress,
       companyLogo: overrideCompanyLogo ?? enrichment?.companyLogo ?? null,
       openRoles: overrideOpenRoles ?? enrichment?.openRoles ?? undefined,
       companyValues: enrichment?.companyValues ?? undefined,
       companyMission: enrichment?.companyMission ?? null,
       officeLocations: enrichment?.officeLocations ?? undefined,
-      teamPhotos: overrideTeamPhotos ?? enrichment?.teamPhotos ?? undefined,
+      teamPhotos: resolvedTeamPhotos ?? undefined,
       customPrompt: customPrompt ?? null,
       parentPostcardId: parentPostcardId ?? null,
     },
