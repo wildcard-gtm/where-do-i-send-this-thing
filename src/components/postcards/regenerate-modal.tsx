@@ -53,6 +53,7 @@ export default function RegenerateModal({
   const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>(currentTeamPhotos ?? []);
   const [openRoles, setOpenRoles] = useState<OpenRole[]>(currentOpenRoles ?? []);
   const [customPrompt, setCustomPrompt] = useState("");
+  const [editingTeamIndex, setEditingTeamIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
 
@@ -321,9 +322,10 @@ export default function RegenerateModal({
                 {teamPhotos.map((tp, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-3 p-3 rounded-xl border border-border bg-muted/20"
+                    className="flex items-center gap-3 p-3 rounded-xl border border-border bg-muted/20 group/team"
                   >
-                    <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
+                    {/* Photo with upload overlay */}
+                    <div className="relative w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
                       {tp.photoUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
@@ -336,45 +338,6 @@ export default function RegenerateModal({
                           {(tp.name || "?")[0]?.toUpperCase()}
                         </span>
                       )}
-                    </div>
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <input
-                        type="text"
-                        value={tp.name || ""}
-                        onChange={(e) => handleEditTeamName(i, e.target.value)}
-                        placeholder="Name"
-                        className="w-full text-xs font-medium text-foreground bg-transparent border-none p-0 focus:outline-none focus:ring-0 placeholder:text-muted-foreground/50"
-                      />
-                      <input
-                        type="text"
-                        value={tp.title || ""}
-                        onChange={(e) => handleEditTeamTitle(i, e.target.value)}
-                        placeholder="Title"
-                        className="w-full text-[11px] text-muted-foreground bg-transparent border-none p-0 focus:outline-none focus:ring-0 placeholder:text-muted-foreground/50"
-                      />
-                      <div className="flex items-center gap-1">
-                        <svg className="w-3 h-3 shrink-0 text-muted-foreground/40" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                        <input
-                          type="text"
-                          value={tp.linkedinUrl || ""}
-                          onChange={(e) => handleEditTeamLinkedin(i, e.target.value)}
-                          placeholder="LinkedIn URL"
-                          className="flex-1 min-w-0 text-[11px] text-muted-foreground bg-transparent border-none p-0 focus:outline-none focus:ring-0 placeholder:text-muted-foreground/30"
-                        />
-                        {tp.linkedinUrl && (
-                          <a
-                            href={tp.linkedinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="shrink-0 text-muted-foreground/50 hover:text-[#0A66C2] transition"
-                            title="Open LinkedIn"
-                          >
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                    <div className="shrink-0">
                       <input
                         ref={(el) => { teamFileRefs.current[i] = el; }}
                         type="file"
@@ -388,16 +351,71 @@ export default function RegenerateModal({
                       <button
                         onClick={() => teamFileRefs.current[i]?.click()}
                         disabled={uploadingField === `team-${i}`}
-                        className="p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition disabled:opacity-50"
+                        className="absolute inset-0 bg-black/0 hover:bg-black/40 rounded-full flex items-center justify-center transition opacity-0 group-hover/team:opacity-100"
                         title="Change photo"
                       >
                         {uploadingField === `team-${i}` ? (
-                          <span className="w-3.5 h-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
+                          <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         ) : (
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                           </svg>
                         )}
+                      </button>
+                    </div>
+
+                    {/* Info — display or edit mode */}
+                    <div className="flex-1 min-w-0">
+                      {editingTeamIndex === i ? (
+                        <div className="space-y-1">
+                          <input
+                            type="text"
+                            value={tp.name || ""}
+                            onChange={(e) => handleEditTeamName(i, e.target.value)}
+                            placeholder="Name"
+                            className="w-full text-xs font-medium text-foreground bg-background border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                          />
+                          <input
+                            type="text"
+                            value={tp.title || ""}
+                            onChange={(e) => handleEditTeamTitle(i, e.target.value)}
+                            placeholder="Title"
+                            className="w-full text-[11px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                          />
+                          <input
+                            type="text"
+                            value={tp.linkedinUrl || ""}
+                            onChange={(e) => handleEditTeamLinkedin(i, e.target.value)}
+                            placeholder="LinkedIn URL"
+                            className="w-full text-[11px] text-muted-foreground bg-background border border-border rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                          />
+                        </div>
+                      ) : (
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-medium text-foreground truncate">{tp.name || "Unknown"}</p>
+                            {tp.linkedinUrl && (
+                              <a href={tp.linkedinUrl} target="_blank" rel="noopener noreferrer"
+                                className="shrink-0 text-muted-foreground/50 hover:text-[#0A66C2] transition" title="LinkedIn profile">
+                                <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+                              </a>
+                            )}
+                          </div>
+                          {tp.title && <p className="text-[11px] text-muted-foreground truncate">{tp.title}</p>}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Actions: edit toggle + delete */}
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        onClick={() => setEditingTeamIndex(editingTeamIndex === i ? null : i)}
+                        className={`p-1 rounded transition ${editingTeamIndex === i ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-0 group-hover/team:opacity-100"}`}
+                        title={editingTeamIndex === i ? "Done editing" : "Edit"}
+                      >
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
                       </button>
                     </div>
                   </div>
