@@ -40,7 +40,7 @@ const GEMINI_KEYS: string[] = [
   process.env.GOOGLE_AI_STUDIO,
 ].filter(Boolean) as string[];
 // Models loaded from DB at runtime via getGeminiModel() — configured in Admin → Models tab
-const MAX_ATTEMPTS = 4;
+const MAX_ATTEMPTS = 7;
 const RATE_LIMIT_BACKOFF_MS = [2000, 5000, 10000]; // backoff delays for 429 retries
 
 // ─── Gemini API ─────────────────────────────────────────────────────────────
@@ -139,23 +139,108 @@ async function callGeminiWithRetry(
   throw lastError ?? new Error('All Gemini API keys rate limited');
 }
 
-/** Generate an image from a prompt + input images */
-async function generateImage(prompt: string, images: ImageData[]): Promise<string> {
+/** Generate an image from interleaved text+image parts */
+async function generateImage(parts: object[]): Promise<string> {
   const imageModel = await getGeminiModel('image_gen');
-  const parts: object[] = [
-    { text: prompt },
-    ...images.map((img) => ({ inline_data: { mime_type: img.mimeType, data: img.data } })),
-  ];
 
   const result = await callGeminiWithRetry(imageModel, {
     contents: [{ role: 'user', parts }],
     generationConfig: {
       responseModalities: ['TEXT', 'IMAGE'],
+      imageConfig: { aspectRatio: '16:9', imageSize: '2K' },
     },
   });
 
   if (!result.image) throw new Error('No image in Gemini response');
   return result.image;
+}
+
+/** Build interleaved parts array: text label before each image so Gemini knows which is which */
+function buildInterleavedParts(
+  prompt: string,
+  data: PreparedData,
+  previousOutput?: string | null,
+): object[] {
+  const parts: object[] = [
+    { text: prompt },
+    { text: '\n\nHere is the base image to EDIT (the template with placeholder silhouettes):' },
+    { inline_data: { mime_type: data.reference.mimeType, data: data.reference.data } },
+  ];
+  if (data.logoImage) {
+    parts.push(
+      { text: '\nHere is the COMPANY LOGO to place on the wall:' },
+      { inline_data: { mime_type: data.logoImage.mimeType, data: data.logoImage.data } },
+    );
+  }
+  if (data.prospectImage) {
+    parts.push(
+      { text: '\nHere is the PROSPECT\'s face photo — this person replaces Person 1 (the STANDING presenter). Match their face, hair, skin tone, and gender:' },
+      { inline_data: { mime_type: data.prospectImage.mimeType, data: data.prospectImage.data } },
+    );
+  }
+  for (let i = 0; i < data.teamImages.length; i++) {
+    parts.push(
+      { text: `\nHere is TEAM MEMBER ${i + 1}'s face photo — this person replaces Person ${i + 2} (SEATED at the table):` },
+      { inline_data: { mime_type: data.teamImages[i].mimeType, data: data.teamImages[i].data } },
+    );
+  }
+  if (data.screen) {
+    parts.push(
+      { text: '\nHere is the DASHBOARD screenshot to place on the monitor:' },
+      { inline_data: { mime_type: data.screen.mimeType, data: data.screen.data } },
+    );
+  }
+  if (previousOutput) {
+    parts.push(
+      { text: '\nHere is your PREVIOUS ATTEMPT — study what went wrong and fix it:' },
+      { inline_data: { mime_type: 'image/png', data: previousOutput } },
+    );
+  }
+  return parts;
+}
+
+/** Build interleaved parts for Zoom Room (Person 1 is seated at desk, not standing) */
+function buildZoomInterleavedParts(
+  prompt: string,
+  data: PreparedData,
+  previousOutput?: string | null,
+): object[] {
+  const parts: object[] = [
+    { text: prompt },
+    { text: '\n\nHere is the base image to EDIT (the Zoom call template with placeholder silhouettes):' },
+    { inline_data: { mime_type: data.reference.mimeType, data: data.reference.data } },
+  ];
+  if (data.logoImage) {
+    parts.push(
+      { text: '\nHere is the COMPANY LOGO:' },
+      { inline_data: { mime_type: data.logoImage.mimeType, data: data.logoImage.data } },
+    );
+  }
+  if (data.prospectImage) {
+    parts.push(
+      { text: '\nHere is the PROSPECT\'s face photo — this person replaces Person 1 (center desk person). Match their face, hair, skin tone, and gender:' },
+      { inline_data: { mime_type: data.prospectImage.mimeType, data: data.prospectImage.data } },
+    );
+  }
+  for (let i = 0; i < data.teamImages.length; i++) {
+    parts.push(
+      { text: `\nHere is TEAM MEMBER ${i + 1}'s face photo — this person replaces Person ${i + 2} (video tile):` },
+      { inline_data: { mime_type: data.teamImages[i].mimeType, data: data.teamImages[i].data } },
+    );
+  }
+  if (data.screen) {
+    parts.push(
+      { text: '\nHere is the DASHBOARD screenshot for the monitor:' },
+      { inline_data: { mime_type: data.screen.mimeType, data: data.screen.data } },
+    );
+  }
+  if (previousOutput) {
+    parts.push(
+      { text: '\nHere is your PREVIOUS ATTEMPT — study what went wrong and fix it:' },
+      { inline_data: { mime_type: 'image/png', data: previousOutput } },
+    );
+  }
+  return parts;
 }
 
 /** Analyze an image via OpenAI vision (fallback when Gemini is rate-limited) */
@@ -457,17 +542,6 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
 // ─── War Room Prompts ───────────────────────────────────────────────────────
 
 function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: string[]): string {
-  // Build image label list — maps each provided image to its labeled slot in the reference
-  const imageLabels: string[] = ['Image 1 = reference template (follow this layout EXACTLY — it has labeled placeholder slots)'];
-  let imgIdx = 2;
-  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces COMPANY LOGO slot`); imgIdx++; }
-  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo → replaces "Person 1" (standing presenter)`); imgIdx++; }
-  for (let i = 0; i < data.teamImages.length; i++) {
-    imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo → replaces "Person ${i + 2}" (seated)`);
-    imgIdx++;
-  }
-  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard screenshot → replaces screen content`);
-
   const corrections = previousIssues?.length
     ? [
         '',
@@ -512,19 +586,16 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
   }
 
   return [
-    `The reference template (Image 1) shows a War Room scene with labeled placeholder slots.`,
-    `Reproduce this scene, filling in the labeled slots with the provided images. Output a single wide landscape image.`,
+    `EDIT the base image (the War Room template). Do NOT generate a new scene from scratch — modify the template directly.`,
+    `Replace the placeholder silhouettes and text with the provided content while keeping EVERYTHING ELSE exactly the same — same room layout, camera angle, furniture, lighting, colors, perspective, walls, windows, banner, plants.`,
     ``,
     `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
     ``,
     `⚠️ CRITICAL: The scene must contain EXACTLY ${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} — 1 STANDING presenter + ${data.teamImages.length} seated at the table. The reference template shows 6 placeholder silhouettes, but IGNORE the extras. Only render the ${totalPeople} people listed below.${unusedSlots.length > 0 ? ` REMOVE ${unusedSlots.join(', ')} — leave those seats/areas EMPTY (no silhouettes, no shadows, no figures). Replace them with empty chairs or open space.` : ''}`,
     ``,
-    `IMAGE LABELS:`,
-    ...imageLabels.map((l) => `  ${l}`),
-    ``,
     `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
-    `The reference template defines the room layout, furniture, lighting, windows, banner, plants, etc. Keep the room exactly as shown but ONLY populate the people slots listed below:`,
+    `EDITS TO MAKE (replace the labeled placeholder slots):`,
     ``,
     `1. TOP ROLES whiteboard:`,
     `   Replace the placeholder text with:`,
@@ -642,17 +713,6 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
 // ─── Zoom Room Prompts ──────────────────────────────────────────────────────
 
 function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: string[]): string {
-  // Build image label list — maps each provided image to its labeled slot in the reference
-  const imageLabels: string[] = ['Image 1 = reference template (follow this layout EXACTLY — it has labeled placeholder slots)'];
-  let imgIdx = 2;
-  if (data.logoImage) { imageLabels.push(`Image ${imgIdx} = company logo → replaces COMPANY LOGO slot`); imgIdx++; }
-  if (data.prospectImage) { imageLabels.push(`Image ${imgIdx} = prospect face photo → replaces "Person 1" (center desk person)`); imgIdx++; }
-  for (let i = 0; i < data.teamImages.length; i++) {
-    imageLabels.push(`Image ${imgIdx} = team member ${i + 1} face photo → replaces "Person ${i + 2}" (video tile)`);
-    imgIdx++;
-  }
-  if (data.screen) imageLabels.push(`Image ${imgIdx} = dashboard screenshot → replaces monitor screen content`);
-
   const corrections = previousIssues?.length
     ? [
         '',
@@ -695,19 +755,16 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
   }
 
   return [
-    `The reference template (Image 1) shows a Zoom call scene with labeled placeholder slots.`,
-    `Reproduce this scene, filling in the labeled slots with the provided images. Output a single wide landscape image.`,
+    `EDIT the base image (the Zoom call template). Do NOT generate a new scene from scratch — modify the template directly.`,
+    `Replace the placeholder silhouettes and text with the provided content while keeping EVERYTHING ELSE exactly the same — same Zoom UI layout, desk, monitor, plants, toolbar, "Leave" button, video tiles.`,
     ``,
     `⚠️ CRITICAL: The reference template contains square brackets like "[TOP ROLES]", "[Role 1]", "[COMPANY LOGO]" as placeholder labels. These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce square brackets in the output image.`,
     ``,
     `⚠️ CRITICAL: The scene must contain EXACTLY ${totalPeople} ${totalPeople === 1 ? 'person' : 'people'} — 1 center desk person + ${data.teamImages.length} in video tiles. The reference template shows 5 placeholder silhouettes, but IGNORE the extras. Only render the ${totalPeople} people listed below.${unusedSlots.length > 0 ? ` REMOVE ${unusedSlots.join(', ')} — leave those video tile slots EMPTY (blank/dark tiles, no silhouettes, no faces).` : ''}`,
     ``,
-    `IMAGE LABELS:`,
-    ...imageLabels.map((l) => `  ${l}`),
-    ``,
     `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
-    `The reference template defines the Zoom UI layout, desk, monitor, plants, toolbar, "Leave" button, etc. Keep the layout but ONLY populate the people slots listed below:`,
+    `EDITS TO MAKE (replace the labeled placeholder slots):`,
     ``,
     `1. TOP ROLES whiteboard panel:`,
     `   Replace the placeholder text with:`,
@@ -839,26 +896,16 @@ export async function generateNanaBananaWarRoom(input: NanoBananaInput): Promise
   let previousIssues: string[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    // Build image array: reference + logo + prospect + team + screen
-    const images: ImageData[] = [data.reference];
-    if (data.logoImage) images.push(data.logoImage);
-    if (data.prospectImage) images.push(data.prospectImage);
-    for (const tp of data.teamImages) images.push(tp);
-    if (data.screen) images.push(data.screen);
-
-    let prompt: string;
-    if (currentImage && previousIssues.length > 0) {
-      // Include the previous output so the model can see what went wrong
-      images.push({ data: currentImage, mimeType: 'image/png' });
-      prompt = buildWarRoomGenerationPrompt(data, previousIssues) +
-        '\n\nThe LAST image provided is your previous attempt — study what went wrong and fix it.';
-    } else {
-      prompt = buildWarRoomGenerationPrompt(data);
-    }
+    const prompt = buildWarRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
+    const parts = buildInterleavedParts(
+      prompt,
+      data,
+      currentImage && previousIssues.length > 0 ? currentImage : null,
+    );
 
     console.log(`[NanoBanana] War Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
     const genStart = Date.now();
-    currentImage = await generateImage(prompt, images);
+    currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `War Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
     // Skip analysis on last attempt — use whatever we got
@@ -909,24 +956,16 @@ export async function generateNanaBananaZoomRoom(input: NanoBananaInput): Promis
   let previousIssues: string[] = [];
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const images: ImageData[] = [data.reference];
-    if (data.logoImage) images.push(data.logoImage);
-    if (data.prospectImage) images.push(data.prospectImage);
-    for (const tp of data.teamImages) images.push(tp);
-    if (data.screen) images.push(data.screen);
-
-    let prompt: string;
-    if (currentImage && previousIssues.length > 0) {
-      images.push({ data: currentImage, mimeType: 'image/png' });
-      prompt = buildZoomRoomGenerationPrompt(data, previousIssues) +
-        '\n\nThe LAST image provided is your previous attempt — study what went wrong and fix it.';
-    } else {
-      prompt = buildZoomRoomGenerationPrompt(data);
-    }
+    const prompt = buildZoomRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
+    const parts = buildZoomInterleavedParts(
+      prompt,
+      data,
+      currentImage && previousIssues.length > 0 ? currentImage : null,
+    );
 
     console.log(`[NanoBanana] Zoom Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
     const genStart = Date.now();
-    currentImage = await generateImage(prompt, images);
+    currentImage = await generateImage(parts);
     appLog('info', 'gemini', 'image_gen', `Zoom Room image generated (attempt ${attempt}/${MAX_ATTEMPTS})`, { durationMs: Date.now() - genStart, attempt }).catch(() => {});
 
     // Skip analysis on last attempt
