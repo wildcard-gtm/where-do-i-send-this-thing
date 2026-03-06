@@ -399,7 +399,7 @@ export default function CampaignDetailPage() {
           c.postcardStatus === "pending"
       );
     if (!anyActive) return;
-    const t = setInterval(fetchData, 5000);
+    const t = setInterval(fetchData, 8000);
     return () => clearInterval(t);
   }, [data, fetchData]);
 
