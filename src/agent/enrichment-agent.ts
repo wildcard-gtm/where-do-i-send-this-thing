@@ -185,21 +185,34 @@ const ENRICHMENT_TOOLS = [
 const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Given a contact's name, company, and LinkedIn URL, your job is to research and collect the following data about their company:
 
 1. **Company logo** — Call fetch_company_logo with the company domain. It tries Hunter.io first (fast/free), then Brandfetch (may also return brand colors and company description). If both fail, use fetch_url on the company homepage and look for logo image tags in the HTML.
-2. **Top 3 open roles** — Find the 3 highest-level open positions (prioritize Director, VP, Staff, Principal, Senior roles). Include the location for each role. These should come from actual job postings.
+2. **Top 3 open roles** — Find the 3 highest-level UNIQUE open positions in the USA (prioritize Director, VP, Staff, Principal, Senior roles). The best source is the company's LinkedIn jobs page: search for "[company name] LinkedIn jobs" or use fetch_url on linkedin.com/company/[slug]/jobs/. DEDUPLICATION: If the same role title appears in multiple locations, include it ONLY ONCE (pick the most prominent US location). We want 3 DIFFERENT role titles, not the same title repeated across cities. Focus ONLY on US-based roles — exclude international positions.
 3. **Company values** — Find 3-6 core company values from their website or about page.
 4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
 5. **Office locations** — Find cities/regions where the company has offices.
 6. **Team photos** — Find up to 4 photos of people on the **Talent / People / Recruiting team** at the same company. Prioritize people with titles like: Talent Acquisition, TA, Head of Talent, VP of People, Recruiting Manager, Recruiter, Chief People Officer, People Operations, Head of Recruiting, Talent Partner. Do NOT default to random executives (CEO, CTO, CFO) — we want the target person's colleagues on the talent/recruiting team. Each photo must be a direct URL to a headshot. Aim for 4 people. If you find fewer than 4, submit what you have.
 
 WORKFLOW:
-1. First, determine the company domain from the company name (e.g. "Stripe" → "stripe.com")
-2. Call fetch_company_logo with that domain
-3. Use search_web to find: "[company] open jobs careers", "[company] company values mission", "[company] office locations"
-4. Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
-5. Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
-6. If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
-7. For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs. IMPORTANT: When submitting team_photos, include the linkedin_url for each person so we can link back to their profile.
-8. Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
+
+STEP 0 — VERIFY CURRENT COMPANY (CRITICAL — do this FIRST):
+→ The company name provided may be OUTDATED. People change jobs but data sources lag behind.
+→ Scrape the contact's LinkedIn profile using scrape_linkedin_profile to check their current role and company.
+→ Also search the web for "{person name} current company" to cross-reference.
+→ SIGNALS THAT THE COMPANY IS WRONG:
+  - LinkedIn experience shows a different current employer
+  - Email domain (from address records) doesn't match the stated company (e.g. @automationanywhere.com ≠ Yahoo)
+  - Web search shows the person at a different company
+  - LinkedIn profile is bare (no headline, no title, no experience) — treat company as UNVERIFIED
+→ If you determine the company is wrong, use the CORRECT company for ALL subsequent enrichment steps.
+→ Submit the corrected company name in submit_enrichment so it updates the database.
+
+STEP 1 — Determine the company domain from the (verified) company name (e.g. "Stripe" → "stripe.com")
+STEP 2 — Call fetch_company_logo with that domain
+STEP 3 — Use search_web to find: "[company] LinkedIn jobs" (best source for open roles — deduplicate by title, US only), "[company] company values mission", "[company] office locations"
+STEP 4 — Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
+STEP 5 — Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
+STEP 6 — If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
+STEP 7 — For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs. IMPORTANT: When submitting team_photos, include the linkedin_url for each person so we can link back to their profile.
+STEP 8 — Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
 
 Be efficient — you have a max of 18 tool calls. Don't repeat searches. Prioritize quality over quantity.
 If you can't find certain data, submit what you have with null for missing fields.
@@ -367,9 +380,12 @@ export async function runEnrichmentAgent(
   let aiClient = await getAIClientForRole('agent');
   let usingFallback = false;
 
+  const today = new Date().toISOString().split('T')[0];
   const userMessage = `${ENRICHMENT_SYSTEM_PROMPT}
 
 ---
+
+Today's date: ${today}
 
 Contact to enrich:
 - Name: ${input.name}
@@ -379,7 +395,9 @@ Contact to enrich:
 - LinkedIn URL: ${input.linkedinUrl}
 ${input.officeAddress ? `- Known Office Address: ${input.officeAddress}` : ''}
 
-Begin by determining the company domain, then follow the workflow above. Submit all findings using submit_enrichment.`;
+IMPORTANT: Before enriching, verify this person CURRENTLY works at "${input.company}" as of ${today}. Scrape their LinkedIn profile first. If the company appears outdated or incorrect, use the CORRECT current company for all enrichment.
+
+Begin by scraping the LinkedIn profile to verify the current company, then determine the company domain and follow the workflow above. Submit all findings using submit_enrichment.`;
 
   const messages: Message[] = [{ role: 'user', content: userMessage }];
 

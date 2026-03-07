@@ -228,9 +228,10 @@ const FALLBACK_INITIAL_MESSAGE = `{{agent_prompt}}
 
 ═══════════════════════════════════════════
 
+Today's date: {{current_date}}
 Target: {{input}}
 
-Begin now. Follow the workflow: 1) enrich_linkedin_profile, 1.5) enrich_with_pdl, 2) search_person_address (use PDL phones to confirm identity), 3) research_office_delivery, 4) verify_property + calculate_distance, 5) submit_decision. Be thorough — use each tool as many times as needed.`;
+Begin now. Follow the workflow: 1) enrich_linkedin_profile, 1.5) VERIFY current employer — do NOT skip this, 2) search_person_address, 3) research_office_delivery (using VERIFIED company only), 4) verify_property + calculate_distance, 5) submit_decision. Be thorough — use each tool as many times as needed.`;
 
 function loadPromptFile(filename: string): string | null {
   try {
@@ -266,9 +267,11 @@ async function getAgentPrompts(): Promise<{ agentPrompt: string; initialMessageT
 }
 
 function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string, input: string): Message {
+  const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const content = initialMessageTemplate
     .replace(/\{\{agent_prompt\}\}/g, agentPrompt)
-    .replace(/\{\{input\}\}/g, input);
+    .replace(/\{\{input\}\}/g, input)
+    .replace(/\{\{current_date\}\}/g, today);
 
   return { role: 'user', content };
 }
