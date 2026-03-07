@@ -82,6 +82,14 @@ export default function PostcardsPage() {
     });
   };
 
+  const toggleSelectAll = () => {
+    if (selected.size === filteredPostcards.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(filteredPostcards.map((p) => p.id)));
+    }
+  };
+
   const handleApprove = async (id: string) => {
     await fetch(`/api/postcards/${id}`, {
       method: "PATCH",
@@ -138,37 +146,41 @@ export default function PostcardsPage() {
     URL.revokeObjectURL(url);
   };
 
-  const handleDownloadZip = async () => {
-    const targets = postcards.filter(
+  const handleDownloadPrintPdf = async () => {
+    const targets = filteredPostcards.filter(
       (p) =>
         p.imageUrl &&
-        p.status === "approved" &&
         (selected.size === 0 || selected.has(p.id))
     );
     if (targets.length === 0) {
-      setActionMessage("No approved postcards with images to download.");
+      setActionMessage("No postcards with images to download.");
       return;
     }
-
-    setActionMessage(`Preparing ZIP with ${targets.length} postcard(s)...`);
-
-    const JSZip = (await import("jszip")).default;
-    const zip = new JSZip();
-
-    for (const p of targets) {
-      const res = await fetch(p.imageUrl!);
+    setPdfExporting(true);
+    setActionMessage(`Generating print-ready PDF for ${targets.length} postcard(s)...`);
+    try {
+      const res = await fetch("/api/postcards/print-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postcardIds: targets.map((p) => p.id) }),
+      });
+      if (!res.ok) {
+        setActionMessage("Failed to generate print PDF.");
+        return;
+      }
       const blob = await res.blob();
-      zip.file(`${p.contactName.replace(/[^a-z0-9]/gi, "_")}-postcard.png`, blob);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "postcards-print-ready.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionMessage(`Downloaded print-ready PDF with ${targets.length} postcard(s).`);
+    } catch {
+      setActionMessage("Print PDF generation failed.");
+    } finally {
+      setPdfExporting(false);
     }
-
-    const content = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(content);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "approved-postcards.zip";
-    a.click();
-    URL.revokeObjectURL(url);
-    setActionMessage(`Downloaded ${targets.length} postcard(s).`);
   };
 
   const handleExportPdf = async () => {
@@ -286,13 +298,14 @@ export default function PostcardsPage() {
             {pdfExporting ? "Exporting..." : "Export PDF"}
           </button>
           <button
-            onClick={handleDownloadZip}
-            className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg font-medium transition text-sm"
+            onClick={handleDownloadPrintPdf}
+            disabled={pdfExporting}
+            className="flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg font-medium transition text-sm disabled:opacity-50"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
-            Download Approved
+            {pdfExporting ? "Generating..." : "Download Print PDF"}
           </button>
         </div>
       </div>
@@ -381,6 +394,21 @@ export default function PostcardsPage() {
         </div>
       ) : (
         <div className="glass-card rounded-2xl overflow-hidden">
+          {/* Select All header */}
+          <div className="flex items-center gap-4 px-5 py-3 border-b border-border/50 bg-card/50">
+            <input
+              type="checkbox"
+              checked={selected.size === filteredPostcards.length && filteredPostcards.length > 0}
+              ref={(el) => { if (el) el.indeterminate = selected.size > 0 && selected.size < filteredPostcards.length; }}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded accent-primary cursor-pointer shrink-0"
+            />
+            <span className="text-xs text-muted-foreground">
+              {selected.size > 0
+                ? `${selected.size} of ${filteredPostcards.length} selected`
+                : "Select all"}
+            </span>
+          </div>
           <div className="divide-y divide-border/50">
             {filteredPostcards.map((postcard) => (
               <div

@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     teamPhotos: overrideTeamPhotos,
     companyLogo: overrideCompanyLogo,
     openRoles: overrideOpenRoles,
+    companyName: overrideCompanyName,
     parentPostcardId,
   } = await request.json();
 
@@ -116,6 +117,35 @@ export async function POST(request: Request) {
       parentPostcardId: parentPostcardId ?? null,
     },
   });
+
+  // Sync user edits back to CompanyEnrichment so it stays the source of truth.
+  // This ensures bulk regeneration and exports always use the corrected data.
+  if (enrichment) {
+    const enrichmentUpdates: Record<string, unknown> = {};
+    if (overrideCompanyLogo && overrideCompanyLogo !== enrichment.companyLogo) {
+      enrichmentUpdates.companyLogo = overrideCompanyLogo;
+    }
+    if (overrideOpenRoles) {
+      enrichmentUpdates.openRoles = overrideOpenRoles;
+    }
+    if (resolvedTeamPhotos && overrideTeamPhotos) {
+      enrichmentUpdates.teamPhotos = resolvedTeamPhotos;
+    }
+    if (overrideCompanyName && overrideCompanyName !== enrichment.companyName) {
+      enrichmentUpdates.companyName = overrideCompanyName;
+      // Also update the Contact.company field to keep them in sync
+      await prisma.contact.update({
+        where: { id: contactId },
+        data: { company: overrideCompanyName },
+      });
+    }
+    if (Object.keys(enrichmentUpdates).length > 0) {
+      await prisma.companyEnrichment.update({
+        where: { id: enrichment.id },
+        data: enrichmentUpdates,
+      });
+    }
+  }
 
   return NextResponse.json({
     postcardId: postcard.id,

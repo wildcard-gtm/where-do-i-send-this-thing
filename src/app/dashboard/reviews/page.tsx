@@ -388,6 +388,7 @@ function ReviewCard({
   const isPlaceholder = !postcard.contactPhoto || postcard.contactPhoto.includes('static.licdn.com') || postcard.contactPhoto.includes('ghost') || postcard.contactPhoto.includes('default-avatar');
   const [contactPhoto, setContactPhoto] = useState(isPlaceholder && postcard.contact?.profileImageUrl ? postcard.contact.profileImageUrl : postcard.contactPhoto);
   const [companyLogo, setCompanyLogo] = useState(postcard.companyLogo);
+  const [companyName, setCompanyName] = useState(postcard.contact.company || "");
   const [template, setTemplate] = useState(postcard.template);
   const [customPrompt, setCustomPrompt] = useState(postcard.customPrompt || "");
   const [backMessage, setBackMessage] = useState(postcard.backMessage || "");
@@ -552,6 +553,7 @@ function ReviewCard({
           teamPhotos: teamPhotos.length > 0 ? teamPhotos : undefined,
           companyLogo,
           openRoles: openRoles.length > 0 ? openRoles : undefined,
+          companyName: companyName.trim() || undefined,
           parentPostcardId: postcard.id,
         }),
       });
@@ -862,11 +864,18 @@ function ReviewCard({
               </div>
             </div>
 
-            {/* Company Logo */}
+            {/* Company Logo + Name */}
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-2">
-                Company Logo{postcard.contact.company && <span className="text-foreground font-semibold ml-1">— {postcard.contact.company}</span>}
-              </label>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Company Logo</label>
+              <div className="mb-2">
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Company name"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-1.5 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground/50"
+                />
+              </div>
               <div className="flex items-center gap-3">
                 <div className="w-14 h-14 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden shrink-0 border border-border">
                   {companyLogo ? (

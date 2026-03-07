@@ -50,6 +50,7 @@ export default function RegenerateModal({
   const [template, setTemplate] = useState(currentTemplate);
   const [contactPhoto, setContactPhoto] = useState(currentContactPhoto);
   const [companyLogo, setCompanyLogo] = useState(currentCompanyLogo);
+  const [companyName, setCompanyName] = useState(contactCompany || "");
   const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>(currentTeamPhotos ?? []);
   const [openRoles, setOpenRoles] = useState<OpenRole[]>(currentOpenRoles ?? []);
   const [customPrompt, setCustomPrompt] = useState("");
@@ -138,6 +139,7 @@ export default function RegenerateModal({
           teamPhotos: teamPhotos.length > 0 ? teamPhotos : undefined,
           companyLogo,
           openRoles: openRoles.length > 0 ? openRoles : undefined,
+          companyName: companyName.trim() || undefined,
           parentPostcardId: currentPostcardId,
         }),
       });
@@ -254,11 +256,18 @@ export default function RegenerateModal({
               </div>
             </div>
 
-            {/* Company Logo */}
+            {/* Company Logo + Name */}
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-2">
-                Company Logo{contactCompany && <span className="font-normal text-muted-foreground/60"> — {contactCompany}</span>}
-              </label>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">Company Logo</label>
+              <div className="mb-2">
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Company name"
+                  className="w-full bg-background border border-border rounded-lg px-3 py-1.5 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition placeholder:text-muted-foreground/50"
+                />
+              </div>
               <div className="flex items-center gap-3">
                 <div className="w-16 h-16 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden shrink-0 border border-border">
                   {companyLogo ? (
