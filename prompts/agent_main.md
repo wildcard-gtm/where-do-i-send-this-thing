@@ -73,6 +73,14 @@ STEP 2 — HOME ADDRESS DISCOVERY
     pick the one that matches the person's LinkedIn city/state — not necessarily the "current" one.
     The most recent entry in their DB may be stale. Prioritize addresses in the correct state.
     If Endato shows a LinkedIn-state address anywhere in the history, verify it with verify_property.
+  - ADDRESS RECENCY CHECK (CRITICAL): Every Endato address has firstReportedDate and lastReportedDate.
+    USE THESE DATES to filter:
+    → lastReportedDate within the past 2 years = CURRENT — good candidate
+    → lastReportedDate 2-4 years ago = POSSIBLY STALE — verify with verify_property before trusting
+    → lastReportedDate >4 years ago = LIKELY OUTDATED — do NOT use unless no better option exists
+    A person may have MOVED since that address was last reported. Always prefer the most recently
+    reported address in the correct state. If the most recent address is >3 years old, explicitly
+    note this in your report as a confidence risk.
   - MULTIPLE ENDATO PERSONS: Endato may return 2-3 matched persons for a name. Check the "persons"
     array — pick the one whose age, state, or phone matches your LinkedIn data. Do not blindly use
     the first person if a different one in the list better matches the known city/state.
@@ -198,6 +206,19 @@ IDENTITY VERIFICATION RULES:
   through to a wrong-state address. Accept that home is unknown and escalate to office research.
 - NEVER make up an address. If you cannot verify one with confidence, say so.
 - Flag if identity match is uncertain — do not guess
+
+MULTI-SOURCE ADDRESS CONFIRMATION:
+  search_person_address returns results from BOTH WhitePages and Endato. Use source agreement
+  to gauge confidence:
+  → BOTH sources show the same address → HIGH CONFIDENCE — strong confirmation, proceed
+  → Only ONE source has the address → MEDIUM CONFIDENCE — verify with verify_property before trusting
+  → Sources DISAGREE (different addresses in same state) → investigate both with verify_property,
+    prefer the one with more recent dates and/or ownership confirmation
+  → NEITHER source returns an address in the correct state → LOW CONFIDENCE — do NOT guess,
+    accept that home is unknown and rely on office address
+  When WhitePages returns a score of 100 and the address matches the LinkedIn city/state, that
+  alone is a strong signal even if Endato disagrees — WhitePages scores factor in recency and
+  identity matching. But always verify with verify_property when sources conflict.
 
 ═══════════════════════════════════════════
 REPORT FORMAT (for the "reasoning" field in submit_decision):
