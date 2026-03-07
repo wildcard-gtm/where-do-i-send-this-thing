@@ -143,6 +143,8 @@ export default function ContactDetailPage() {
   const [postcardReferences, setPostcardReferences] = useState<ReferenceImage[]>([]);
   const [showPreviousVersions, setShowPreviousVersions] = useState(false);
   const [editingTeamMember, setEditingTeamMember] = useState<number | null>(null);
+  const [editingCompanyName, setEditingCompanyName] = useState(false);
+  const [editCompanyName, setEditCompanyName] = useState("");
   const [editName, setEditName] = useState("");
   const [editTitle, setEditTitle] = useState("");
   const [editPhoto, setEditPhoto] = useState<File | null>(null);
@@ -181,6 +183,26 @@ export default function ContactDetailPage() {
         setEnrichment({ ...enrichment, teamPhotos: json.teamPhotos });
         setEditingTeamMember(null);
       }
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function saveCompanyName() {
+    if (!enrichment || !contact) return;
+    const trimmed = editCompanyName.trim();
+    if (!trimmed) return;
+    setEditSaving(true);
+    try {
+      // Update enrichment + contact
+      await fetch(`/api/contacts/${contact.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company: trimmed }),
+      });
+      setContact({ ...contact, company: trimmed });
+      setEnrichment({ ...enrichment, companyName: trimmed });
+      setEditingCompanyName(false);
     } finally {
       setEditSaving(false);
     }
@@ -654,7 +676,37 @@ export default function ContactDetailPage() {
           {enrichment && (enrichment.teamPhotos as TeamPhoto[] | null)?.length ? (
             <div className="space-y-6">
               <p className="text-sm text-muted-foreground">
-                Team members at <span className="font-medium text-foreground">{enrichment.companyName || contact.company || "this company"}</span> discovered during enrichment.
+                Team members at{" "}
+                {editingCompanyName ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={editCompanyName}
+                      onChange={(e) => setEditCompanyName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") saveCompanyName(); if (e.key === "Escape") setEditingCompanyName(false); }}
+                      className="px-2 py-0.5 rounded border border-border bg-background text-foreground text-sm font-medium w-48"
+                      autoFocus
+                    />
+                    <button onClick={saveCompanyName} disabled={editSaving} className="text-xs text-success hover:text-success/80 font-medium">
+                      {editSaving ? "..." : "Save"}
+                    </button>
+                    <button onClick={() => setEditingCompanyName(false)} className="text-xs text-muted-foreground hover:text-foreground">
+                      Cancel
+                    </button>
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => { setEditCompanyName(enrichment.companyName || contact.company || ""); setEditingCompanyName(true); }}
+                    className="font-medium text-foreground hover:text-primary transition inline-flex items-center gap-1 group/cname"
+                    title="Click to edit company name"
+                  >
+                    {enrichment.companyName || contact.company || "this company"}
+                    <svg className="w-3 h-3 text-muted-foreground/50 group-hover/cname:text-primary transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                )}{" "}
+                discovered during enrichment.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(enrichment.teamPhotos as TeamPhoto[]).map((tp, i) => (

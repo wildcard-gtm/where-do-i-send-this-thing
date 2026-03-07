@@ -100,6 +100,14 @@ export async function PATCH(
     data,
   });
 
+  // When company name changes, sync to latest CompanyEnrichment
+  if ("company" in data && data.company) {
+    await prisma.companyEnrichment.updateMany({
+      where: { contactId: id, isLatest: true },
+      data: { companyName: data.company as string },
+    });
+  }
+
   return NextResponse.json({ contact });
 }
 
