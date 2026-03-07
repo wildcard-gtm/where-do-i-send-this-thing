@@ -45,6 +45,7 @@ export default function PostcardsPage() {
   const [versionsContactId, setVersionsContactId] = useState<string | null>(null);
   const [olderVersions, setOlderVersions] = useState<Postcard[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
 
   useEffect(() => { document.title = "Postcards | WDISTT"; }, []);
 
@@ -170,6 +171,41 @@ export default function PostcardsPage() {
     setActionMessage(`Downloaded ${targets.length} postcard(s).`);
   };
 
+  const handleExportPdf = async () => {
+    const ids = selected.size > 0
+      ? Array.from(selected)
+      : filteredPostcards.filter((p) => p.imageUrl).map((p) => p.id);
+    if (ids.length === 0) {
+      setActionMessage("No postcards with images to export.");
+      return;
+    }
+    setPdfExporting(true);
+    setActionMessage(`Generating PDF for ${ids.length} postcard(s)...`);
+    try {
+      const res = await fetch("/api/postcards/export-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postcardIds: ids }),
+      });
+      if (!res.ok) {
+        setActionMessage("Failed to generate PDF.");
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "wdistt-postcard-export.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionMessage(`Exported ${ids.length} postcard(s) to PDF.`);
+    } catch {
+      setActionMessage("PDF export failed.");
+    } finally {
+      setPdfExporting(false);
+    }
+  };
+
   // Show older versions for a contact
   const openVersions = async (contactId: string) => {
     setVersionsContactId(contactId);
@@ -238,6 +274,16 @@ export default function PostcardsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             Shipping CSV
+          </button>
+          <button
+            onClick={handleExportPdf}
+            disabled={pdfExporting}
+            className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 transition disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+            {pdfExporting ? "Exporting..." : "Export PDF"}
           </button>
           <button
             onClick={handleDownloadZip}

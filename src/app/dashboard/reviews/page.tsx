@@ -864,7 +864,9 @@ function ReviewCard({
 
             {/* Company Logo */}
             <div>
-              <label className="block text-xs font-medium text-muted-foreground mb-2">Company Logo</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-2">
+                Company Logo{postcard.contact.company && <span className="text-foreground font-semibold ml-1">— {postcard.contact.company}</span>}
+              </label>
               <div className="flex items-center gap-3">
                 <div className="w-14 h-14 rounded-lg bg-muted/50 flex items-center justify-center overflow-hidden shrink-0 border border-border">
                   {companyLogo ? (
