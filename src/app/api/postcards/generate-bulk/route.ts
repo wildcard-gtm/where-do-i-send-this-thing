@@ -65,7 +65,14 @@ export async function POST(request: Request) {
       where: { contactId: contact.id, isLatest: true, enrichmentStatus: "completed" },
     });
 
-    // Auto-select template
+    // Load latest existing postcard — may contain user edits from the regenerate modal
+    // that should be preserved across force-regenerations
+    const latestPostcard = await prisma.postcard.findFirst({
+      where: { contactId: contact.id, status: { not: "failed" } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Auto-select template (prefer latest postcard's template if user changed it)
     const jobResult = contact.job?.result ? JSON.parse(contact.job.result) : null;
     const flags: string[] = jobResult?.decision?.flags ?? [];
     const isFullyRemote =
@@ -73,7 +80,8 @@ export async function POST(request: Request) {
         f.toLowerCase().includes("fully_remote") || f.toLowerCase().includes("no_local_office")
       ) ||
       (contact.recommendation === "HOME" && !contact.officeAddress);
-    const template: "warroom" | "zoom" = isFullyRemote ? "zoom" : "warroom";
+    const autoTemplate: "warroom" | "zoom" = isFullyRemote ? "zoom" : "warroom";
+    const template = (latestPostcard?.template as "warroom" | "zoom") ?? autoTemplate;
 
     const deliveryAddress =
       contact.recommendation === "HOME"
@@ -82,6 +90,8 @@ export async function POST(request: Request) {
         ? contact.officeAddress
         : contact.homeAddress || contact.officeAddress;
 
+    // Prefer latest postcard values (which include user edits from the modal)
+    // over raw enrichment data. If no postcard exists yet, fall back to enrichment.
     const postcard = await prisma.postcard.create({
       data: {
         contactId: contact.id,
@@ -91,14 +101,15 @@ export async function POST(request: Request) {
         retryCount: 0,
         contactName: contact.name,
         contactTitle: contact.title,
-        contactPhoto: contact.profileImageUrl,
+        contactPhoto: latestPostcard?.contactPhoto ?? contact.profileImageUrl,
         deliveryAddress,
-        companyLogo: enrichment?.companyLogo ?? null,
-        openRoles: enrichment?.openRoles ?? undefined,
-        companyValues: enrichment?.companyValues ?? undefined,
-        companyMission: enrichment?.companyMission ?? null,
-        officeLocations: enrichment?.officeLocations ?? undefined,
-        teamPhotos: enrichment?.teamPhotos ?? undefined,
+        companyLogo: latestPostcard?.companyLogo ?? enrichment?.companyLogo ?? null,
+        openRoles: (latestPostcard?.openRoles ?? enrichment?.openRoles ?? undefined) as string[] | undefined,
+        companyValues: (latestPostcard?.companyValues ?? enrichment?.companyValues ?? undefined) as string[] | undefined,
+        companyMission: latestPostcard?.companyMission ?? enrichment?.companyMission ?? null,
+        officeLocations: (latestPostcard?.officeLocations ?? enrichment?.officeLocations ?? undefined) as string[] | undefined,
+        teamPhotos: latestPostcard?.teamPhotos ?? enrichment?.teamPhotos ?? undefined,
+        customPrompt: latestPostcard?.customPrompt ?? null,
         ...(backMessage ? { backMessage } : {}),
       },
     });
