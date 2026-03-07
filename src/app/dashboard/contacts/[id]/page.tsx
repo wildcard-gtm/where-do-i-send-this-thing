@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -142,71 +142,10 @@ export default function ContactDetailPage() {
   const [postcardActionLoading, setPostcardActionLoading] = useState(false);
   const [postcardReferences, setPostcardReferences] = useState<ReferenceImage[]>([]);
   const [showPreviousVersions, setShowPreviousVersions] = useState(false);
-  const [editingTeamMember, setEditingTeamMember] = useState<number | null>(null);
-  const [editingCompanyName, setEditingCompanyName] = useState(false);
-  const [editCompanyName, setEditCompanyName] = useState("");
-  const [editName, setEditName] = useState("");
-  const [editTitle, setEditTitle] = useState("");
-  const [editPhoto, setEditPhoto] = useState<File | null>(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const teamFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.title = contact ? `${contact.name} | Contacts | WDISTT` : "Contact | WDISTT";
   }, [contact]);
-
-  function openTeamEdit(index: number) {
-    const photos = enrichment?.teamPhotos as TeamPhoto[] | null;
-    if (!photos?.[index]) return;
-    setEditName(photos[index].name || "");
-    setEditTitle(photos[index].title || "");
-    setEditPhoto(null);
-    setEditingTeamMember(index);
-  }
-
-  async function saveTeamMember() {
-    if (editingTeamMember === null || !enrichment) return;
-    setEditSaving(true);
-    try {
-      const formData = new FormData();
-      formData.append("index", String(editingTeamMember));
-      formData.append("name", editName);
-      formData.append("title", editTitle);
-      if (editPhoto) formData.append("photo", editPhoto);
-
-      const res = await fetch(`/api/enrichments/${enrichment.id}/team-member`, {
-        method: "PATCH",
-        body: formData,
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setEnrichment({ ...enrichment, teamPhotos: json.teamPhotos });
-        setEditingTeamMember(null);
-      }
-    } finally {
-      setEditSaving(false);
-    }
-  }
-
-  async function saveCompanyName() {
-    if (!enrichment || !contact) return;
-    const trimmed = editCompanyName.trim();
-    if (!trimmed) return;
-    setEditSaving(true);
-    try {
-      // Update enrichment + contact
-      await fetch(`/api/contacts/${contact.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ company: trimmed }),
-      });
-      setContact({ ...contact, company: trimmed });
-      setEnrichment({ ...enrichment, companyName: trimmed });
-      setEditingCompanyName(false);
-    } finally {
-      setEditSaving(false);
-    }
-  }
 
   useEffect(() => {
     fetch(`/api/contacts/${contactId}`)
@@ -676,41 +615,11 @@ export default function ContactDetailPage() {
           {enrichment && (enrichment.teamPhotos as TeamPhoto[] | null)?.length ? (
             <div className="space-y-6">
               <p className="text-sm text-muted-foreground">
-                Team members at{" "}
-                {editingCompanyName ? (
-                  <span className="inline-flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={editCompanyName}
-                      onChange={(e) => setEditCompanyName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") saveCompanyName(); if (e.key === "Escape") setEditingCompanyName(false); }}
-                      className="px-2 py-0.5 rounded border border-border bg-background text-foreground text-sm font-medium w-48"
-                      autoFocus
-                    />
-                    <button onClick={saveCompanyName} disabled={editSaving} className="text-xs text-success hover:text-success/80 font-medium">
-                      {editSaving ? "..." : "Save"}
-                    </button>
-                    <button onClick={() => setEditingCompanyName(false)} className="text-xs text-muted-foreground hover:text-foreground">
-                      Cancel
-                    </button>
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => { setEditCompanyName(enrichment.companyName || contact.company || ""); setEditingCompanyName(true); }}
-                    className="font-medium text-foreground hover:text-primary transition inline-flex items-center gap-1 group/cname"
-                    title="Click to edit company name"
-                  >
-                    {enrichment.companyName || contact.company || "this company"}
-                    <svg className="w-3 h-3 text-muted-foreground/50 group-hover/cname:text-primary transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </button>
-                )}{" "}
-                discovered during enrichment.
+                Team members at <span className="font-medium text-foreground">{enrichment.companyName || contact.company || "this company"}</span> discovered during enrichment.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {(enrichment.teamPhotos as TeamPhoto[]).map((tp, i) => (
-                  <div key={i} className="glass-card rounded-2xl p-4 flex items-center gap-4 group/card">
+                  <div key={i} className="glass-card rounded-2xl p-4 flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0 overflow-hidden">
                       {tp.photoUrl
                         ? <img src={tp.photoUrl} alt={tp.name || "Team member"} className="w-12 h-12 rounded-full object-cover" />
@@ -733,15 +642,6 @@ export default function ContactDetailPage() {
                       </div>
                       {tp.title && <p className="text-xs text-muted-foreground truncate">{tp.title}</p>}
                     </div>
-                    <button
-                      onClick={() => openTeamEdit(i)}
-                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground hover:text-primary hover:bg-primary/10 transition opacity-0 group-hover/card:opacity-100"
-                      title="Edit team member"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                      </svg>
-                    </button>
                   </div>
                 ))}
               </div>
@@ -1195,70 +1095,6 @@ export default function ContactDetailPage() {
           contactName={contact.name}
           initialMessages={contact.chatMessages}
         />
-      )}
-      {/* Team member edit modal */}
-      {editingTeamMember !== null && enrichment && (enrichment.teamPhotos as TeamPhoto[])?.[editingTeamMember] && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingTeamMember(null)}>
-          <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-foreground mb-4">Edit Team Member</h3>
-
-            <div className="flex items-center gap-4 mb-4">
-              <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center overflow-hidden shrink-0">
-                {editPhoto ? (
-                  <img src={URL.createObjectURL(editPhoto)} alt="Preview" className="w-16 h-16 rounded-full object-cover" />
-                ) : (enrichment.teamPhotos as TeamPhoto[])[editingTeamMember].photoUrl ? (
-                  <img src={(enrichment.teamPhotos as TeamPhoto[])[editingTeamMember].photoUrl} alt="Current" className="w-16 h-16 rounded-full object-cover" />
-                ) : (
-                  <span className="text-lg font-bold text-primary">{(editName || "?")[0]?.toUpperCase()}</span>
-                )}
-              </div>
-              <div>
-                <input ref={teamFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => setEditPhoto(e.target.files?.[0] || null)} />
-                <button
-                  onClick={() => teamFileRef.current?.click()}
-                  className="text-xs text-primary hover:underline"
-                >
-                  Upload new photo
-                </button>
-                {editPhoto && (
-                  <p className="text-xs text-muted-foreground mt-1 truncate max-w-[150px]">{editPhoto.name}</p>
-                )}
-              </div>
-            </div>
-
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Name</label>
-            <input
-              type="text"
-              value={editName}
-              onChange={(e) => setEditName(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm text-foreground mb-3 focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-
-            <label className="block text-xs font-medium text-muted-foreground mb-1">Title</label>
-            <input
-              type="text"
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-muted/50 border border-border text-sm text-foreground mb-4 focus:outline-none focus:ring-1 focus:ring-primary"
-            />
-
-            <div className="flex gap-2 justify-end">
-              <button
-                onClick={() => setEditingTeamMember(null)}
-                className="px-4 py-2 text-sm rounded-lg bg-muted text-muted-foreground hover:bg-muted/80 transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveTeamMember}
-                disabled={editSaving}
-                className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition disabled:opacity-50"
-              >
-                {editSaving ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
