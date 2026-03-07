@@ -47,11 +47,14 @@ export async function GET(request: Request) {
     },
   });
 
-  // Deduplicate: keep only the most recent postcard per contact
+  // Deduplicate: keep only the most recent non-cancelled/non-failed postcard per contact.
+  // Cancelled/failed postcards should never shadow a good (reviewed/approved/ready) one.
   if (latestOnly) {
     const seen = new Set<string>();
     postcards = postcards.filter((p) => {
       if (seen.has(p.contactId)) return false;
+      // Skip cancelled/failed so an older reviewed/ready postcard can be "latest"
+      if (p.status === "cancelled" || p.status === "failed") return false;
       seen.add(p.contactId);
       return true;
     });
