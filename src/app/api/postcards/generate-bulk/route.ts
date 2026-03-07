@@ -68,7 +68,7 @@ export async function POST(request: Request) {
     // Load latest existing postcard — may contain user edits from the regenerate modal
     // that should be preserved across force-regenerations
     const latestPostcard = await prisma.postcard.findFirst({
-      where: { contactId: contact.id, status: { not: "failed" } },
+      where: { contactId: contact.id, status: { notIn: ["failed", "cancelled"] } },
       orderBy: { createdAt: "desc" },
     });
 

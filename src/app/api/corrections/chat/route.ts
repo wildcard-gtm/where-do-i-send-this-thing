@@ -73,6 +73,7 @@ export async function POST(request: Request) {
         take: 1,
       },
       postcards: {
+        where: { status: { notIn: ["cancelled", "failed"] } },
         orderBy: { updatedAt: 'desc' as const },
         take: 1,
         include: { references: true },

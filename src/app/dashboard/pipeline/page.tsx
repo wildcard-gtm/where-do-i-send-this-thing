@@ -44,9 +44,10 @@ function getEnrichStage(contact: PipelineContact): StageState {
 }
 
 function getPostcardStage(contact: PipelineContact): StageState {
-  const p = contact.postcards[0];
+  // Skip cancelled/failed to find the best postcard
+  const p = contact.postcards.find((pc) => pc.status !== "cancelled" && pc.status !== "failed") ?? contact.postcards[0];
   if (!p) return "none";
-  if (p.status === "approved") return "done";
+  if (p.status === "approved" || p.status === "reviewed") return "done";
   if (p.status === "failed") return "failed";
   if (p.status === "ready") return "done";
   if (p.status === "pending" || p.status === "generating") return "running";

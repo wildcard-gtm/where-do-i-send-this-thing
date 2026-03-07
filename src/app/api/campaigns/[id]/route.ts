@@ -54,6 +54,7 @@ export async function GET(
                 },
               },
               postcards: {
+                where: { status: { notIn: ["cancelled", "failed"] } },
                 orderBy: { createdAt: "desc" },
                 take: 1,
                 select: {

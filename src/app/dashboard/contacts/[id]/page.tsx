@@ -204,7 +204,8 @@ export default function ContactDetailPage() {
       .then((data) => {
         const postcards = data?.postcards ?? [];
         setAllPostcards(postcards);
-        const latest = postcards[0] ?? null;
+        // Skip cancelled/failed when picking the "current" postcard
+        const latest = postcards.find((p: { status: string }) => p.status !== "cancelled" && p.status !== "failed") ?? postcards[0] ?? null;
         setPostcard(latest);
         if (latest?.backMessage !== undefined) {
           setEditBackMessage(latest.backMessage ?? "");

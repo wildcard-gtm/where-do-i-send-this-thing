@@ -167,7 +167,8 @@ function ContactModal({ contactId, onClose }: { contactId: string; onClose: () =
     fetch(`/api/contacts/${contactId}/postcards`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        setPostcard(data?.postcards?.[0] ?? null);
+        const all = data?.postcards ?? [];
+        setPostcard(all.find((p: { status: string }) => p.status !== "cancelled" && p.status !== "failed") ?? all[0] ?? null);
         setPostcardLoading(false);
       });
   }, [tab, contactId]);
@@ -903,7 +904,8 @@ function ContactsView({ batchId }: { batchId: string }) {
             {contacts.map((contact) => {
               const scanStatus = contact.job?.status ?? null;
               const enrichStatus = contact.companyEnrichments[0]?.enrichmentStatus ?? null;
-              const postcardStatus = contact.postcards[0]?.status ?? null;
+              const bestPostcard = contact.postcards.find((p: { status: string }) => p.status !== "cancelled" && p.status !== "failed") ?? contact.postcards[0];
+              const postcardStatus = bestPostcard?.status ?? null;
 
               return (
                 <div

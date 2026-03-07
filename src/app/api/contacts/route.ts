@@ -60,6 +60,7 @@ export async function GET(request: Request) {
           take: 1,
         },
         postcards: {
+          where: { status: { notIn: ["cancelled", "failed"] } },
           orderBy: { createdAt: "desc" },
           select: { status: true, template: true },
           take: 1,
