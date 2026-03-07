@@ -89,13 +89,13 @@ export async function POST(request: Request) {
   // Sort by company name A-Z
   const sorted = postcards.sort((a, b) => {
     const compA = (
-      a.contact.company ||
       a.contact.companyEnrichments[0]?.companyName ||
+      a.contact.company ||
       "ZZZ"
     ).toLowerCase();
     const compB = (
-      b.contact.company ||
       b.contact.companyEnrichments[0]?.companyName ||
+      b.contact.company ||
       "ZZZ"
     ).toLowerCase();
     return compA.localeCompare(compB);

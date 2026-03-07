@@ -35,7 +35,7 @@ interface PostcardFull {
   errorMessage: string | null;
   parentPostcardId: string | null;
   createdAt: string;
-  contact: { id: string; name: string; company: string | null; linkedinUrl: string; profileImageUrl?: string | null };
+  contact: { id: string; name: string; company: string | null; linkedinUrl: string; profileImageUrl?: string | null; companyEnrichments?: { companyName: string }[] };
 }
 
 interface Campaign {
@@ -388,7 +388,7 @@ function ReviewCard({
   const isPlaceholder = !postcard.contactPhoto || postcard.contactPhoto.includes('static.licdn.com') || postcard.contactPhoto.includes('ghost') || postcard.contactPhoto.includes('default-avatar');
   const [contactPhoto, setContactPhoto] = useState(isPlaceholder && postcard.contact?.profileImageUrl ? postcard.contact.profileImageUrl : postcard.contactPhoto);
   const [companyLogo, setCompanyLogo] = useState(postcard.companyLogo);
-  const [companyName, setCompanyName] = useState(postcard.contact.company || "");
+  const [companyName, setCompanyName] = useState(postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company || "");
   const [template, setTemplate] = useState(postcard.template);
   const [customPrompt, setCustomPrompt] = useState(postcard.customPrompt || "");
   const [backMessage, setBackMessage] = useState(postcard.backMessage || "");
@@ -646,8 +646,8 @@ function ReviewCard({
             {postcard.contactTitle && (
               <p className="text-sm text-muted-foreground mt-0.5">{postcard.contactTitle}</p>
             )}
-            {postcard.contact.company && (
-              <p className="text-sm text-muted-foreground">{postcard.contact.company}</p>
+            {(postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company) && (
+              <p className="text-sm text-muted-foreground">{postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company}</p>
             )}
             <p className="text-xs text-muted-foreground mt-1 capitalize">{postcard.template} template</p>
             {postcard.deliveryAddress && (

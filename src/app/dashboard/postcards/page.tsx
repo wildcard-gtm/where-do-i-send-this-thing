@@ -18,6 +18,7 @@ interface Postcard {
     name: string;
     company: string | null;
     linkedinUrl: string;
+    companyEnrichments?: { companyName: string }[];
   };
 }
 
@@ -130,7 +131,7 @@ export default function PostcardsPage() {
         .filter((p) => selected.size === 0 || selected.has(p.id))
         .map((p) => [
           p.contactName,
-          p.contact.company ?? "",
+          p.contact.companyEnrichments?.[0]?.companyName || p.contact.company || "",
           p.template,
           p.status,
           p.deliveryAddress ?? "",
@@ -459,7 +460,7 @@ export default function PostcardsPage() {
                     </a>
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {postcard.contact.company ?? ""}
+                    {postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company || ""}
                     {postcard.deliveryAddress ? ` · ${postcard.deliveryAddress}` : ""}
                   </p>
                 </div>

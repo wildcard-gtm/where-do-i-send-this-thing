@@ -43,7 +43,16 @@ export async function GET(request: Request) {
     where,
     orderBy: { createdAt: "desc" },
     include: {
-      contact: { select: { id: true, name: true, company: true, linkedinUrl: true, profileImageUrl: true } },
+      contact: {
+        select: {
+          id: true, name: true, company: true, linkedinUrl: true, profileImageUrl: true,
+          companyEnrichments: {
+            where: { isLatest: true },
+            take: 1,
+            select: { companyName: true },
+          },
+        },
+      },
     },
   });
 
