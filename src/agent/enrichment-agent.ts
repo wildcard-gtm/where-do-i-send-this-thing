@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, enrichWithPDL } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
 
@@ -127,6 +127,17 @@ const ENRICHMENT_TOOLS = [
     },
   },
   {
+    name: 'scrape_linkedin_company',
+    description: 'Scrape a LinkedIn company page via Bright Data. Returns company logo (LinkedIn CDN — most reliable logo source), office locations, about/specialties, headquarters, company size, and up to 4 featured employees with photos. Use this early to get logo + locations in one call.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company_url: { type: 'string', description: 'LinkedIn company URL, e.g. https://www.linkedin.com/company/stripe' },
+      },
+      required: ['company_url'],
+    },
+  },
+  {
     name: 'submit_enrichment',
     description: 'Submit the final enriched company data. Call this when you have gathered all available information.',
     input_schema: {
@@ -184,12 +195,12 @@ const ENRICHMENT_TOOLS = [
 
 const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Given a contact's name, company, and LinkedIn URL, your job is to research and collect the following data about their company:
 
-1. **Company logo** — Call fetch_company_logo with the company domain. It tries Hunter.io first (fast/free), then Brandfetch (may also return brand colors and company description). If both fail, use fetch_url on the company homepage and look for logo image tags in the HTML.
+1. **Company logo** — The LinkedIn company page logo (from scrape_linkedin_company) is the MOST RELIABLE source. Only fall back to fetch_company_logo if the company scrape had no logo.
 2. **Top 3 open roles** — Find the 3 highest-level UNIQUE open positions in the USA (prioritize Director, VP, Staff, Principal, Senior roles). The best source is the company's LinkedIn jobs page: search for "[company name] LinkedIn jobs" or use fetch_url on linkedin.com/company/[slug]/jobs/. DEDUPLICATION: If the same role title appears in multiple locations, include it ONLY ONCE (pick the most prominent US location). We want 3 DIFFERENT role titles, not the same title repeated across cities. Focus ONLY on US-based roles — exclude international positions.
 3. **Company values** — Find 3-6 core company values from their website or about page.
 4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
-5. **Office locations** — Find cities/regions where the company has offices.
-6. **Team photos** — Find up to 4 photos of people on the **Talent / People / Recruiting team** at the same company. Prioritize people with titles like: Talent Acquisition, TA, Head of Talent, VP of People, Recruiting Manager, Recruiter, Chief People Officer, People Operations, Head of Recruiting, Talent Partner. Do NOT default to random executives (CEO, CTO, CFO) — we want the target person's colleagues on the talent/recruiting team. Each photo must be a direct URL to a headshot. Aim for 4 people. If you find fewer than 4, submit what you have.
+5. **Office locations** — Use formatted_locations from the LinkedIn company scrape as the PRIMARY source. Supplement with web search only if the company scrape had no locations.
+6. **Team photos** — Find up to 4 photos of people on the **Talent / People / Recruiting team** at the same company. Prioritize people with titles like: Talent Acquisition, TA, Head of Talent, VP of People, Recruiting Manager, Recruiter, Chief People Officer, People Operations, Head of Recruiting, Talent Partner. Do NOT default to random executives (CEO, CTO, CFO) — we want the target person's colleagues on the talent/recruiting team. Each photo must be a direct URL to a headshot. Aim for 4 people. If you find fewer than 4, you can use featured_employees from the LinkedIn company scrape as a fallback — they already have photos, names, titles, and LinkedIn URLs.
 
 WORKFLOW:
 
@@ -207,13 +218,32 @@ STEP 0 — VERIFY CURRENT COMPANY (CRITICAL — do this FIRST):
 → If you determine the company is wrong, use the CORRECT company for ALL subsequent enrichment steps.
 → Submit the corrected company name in submit_enrichment so it updates the database.
 
-STEP 1 — Determine the company domain from the (verified) company name (e.g. "Stripe" → "stripe.com")
-STEP 2 — Call fetch_company_logo with that domain
-STEP 3 — Use search_web to find: "[company] LinkedIn jobs" (best source for open roles — deduplicate by title, US only), "[company] company values mission", "[company] office locations"
+STEP 1 — SCRAPE LINKEDIN COMPANY PAGE (do this right after verifying the company):
+→ Derive the company LinkedIn URL: https://www.linkedin.com/company/{slug}
+  - The slug is usually the lowercased company name with spaces replaced by hyphens (e.g. "Palo Alto Networks" → "palo-alto-networks")
+  - If the personal LinkedIn profile's experience section has a company link, use that instead
+→ Call scrape_linkedin_company with the company URL
+→ This returns: logo (LinkedIn CDN — most reliable), office_locations, about, specialties, headquarters, featured_employees with photos
+→ If logo is found: SKIP fetch_company_logo entirely — LinkedIn CDN logos are high quality
+→ If office_locations are found: use them as the primary office locations
+→ The about/specialties data gives you context for the values/mission search
+
+STEP 2 — LOGO FALLBACK (only if Step 1 had no logo):
+→ Call fetch_company_logo with the company domain
+→ This tries Hunter.io → Brandfetch → Logo.dev in sequence
+
+STEP 3 — Search web for: "[company] LinkedIn jobs" (for open roles — deduplicate by title, US only), "[company] company values mission"
+→ Use the about/specialties from Step 1 to inform your search if available
+
 STEP 4 — Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
+
 STEP 5 — Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
+
 STEP 6 — If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
+
 STEP 7 — For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs. IMPORTANT: When submitting team_photos, include the linkedin_url for each person so we can link back to their profile.
+→ FALLBACK: If you found fewer than 4 team photos via the Exa → scrape_linkedin_profile path, use the featured_employees from Step 1 to fill remaining slots. They already have photo URLs, names, titles, and LinkedIn URLs.
+
 STEP 8 — Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
 
 Be efficient — you have a max of 18 tool calls. Don't repeat searches. Prioritize quality over quantity.
@@ -336,6 +366,51 @@ async function executeEnrichmentTool(
         };
       } catch (err) {
         return { result: { success: false, summary: `LinkedIn scrape failed: ${(err as Error).message}` } };
+      }
+    }
+
+    case 'scrape_linkedin_company': {
+      const companyUrl = args.company_url as string;
+      try {
+        const companyData = await fetchBrightDataCompany(companyUrl);
+        if (!companyData) {
+          return { result: { success: false, summary: 'Could not scrape LinkedIn company page — timeout or not found' } };
+        }
+
+        // Validate logo if present
+        let logo = companyData.logo ?? null;
+        if (logo) {
+          const validation = await validateLogoUrl(logo);
+          if (!validation.valid) {
+            logo = null;
+          }
+        }
+
+        // Filter featured employees to only those with photos
+        const featuredEmployees = (companyData.employees ?? [])
+          .filter(e => e.img && e.img.trim() !== '')
+          .slice(0, 4)
+          .map(e => ({ name: e.name, title: e.title, linkedin_url: e.link, photo_url: e.img }));
+
+        return {
+          result: {
+            success: true,
+            company_name: companyData.name ?? null,
+            logo,
+            website: companyData.website ?? null,
+            about: companyData.about?.slice(0, 500) ?? null,
+            headquarters: companyData.headquarters ?? null,
+            company_size: companyData.company_size ?? null,
+            industries: companyData.industries ?? [],
+            specialties: companyData.specialties ?? [],
+            office_locations: companyData.formatted_locations ?? companyData.locations ?? [],
+            featured_employees: featuredEmployees,
+            founded: companyData.founded ?? null,
+            summary: `Company page scraped: ${companyData.name ?? companyUrl}${logo ? ' (logo found)' : ' (no logo)'}${(companyData.formatted_locations ?? []).length > 0 ? `, ${(companyData.formatted_locations ?? []).length} office location(s)` : ''}${featuredEmployees.length > 0 ? `, ${featuredEmployees.length} featured employee(s) with photos` : ''}`,
+          },
+        };
+      } catch (err) {
+        return { result: { success: false, summary: `LinkedIn company scrape failed: ${(err as Error).message}` } };
       }
     }
 

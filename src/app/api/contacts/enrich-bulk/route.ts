@@ -12,6 +12,7 @@ export const MAX_ATTEMPTS = 5; // per-contact retry limit before showing manual 
 // Map tool calls → human-readable step labels (shared with retry route)
 export const STEP_LABELS: Record<string, string> = {
   fetch_company_logo: "Fetching company logo",
+  scrape_linkedin_company: "Scraping company page",
   search_web: "Searching the web",
   fetch_url: "Reading company page",
   submit_enrichment: "Finalising enrichment",

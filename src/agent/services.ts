@@ -117,6 +117,7 @@ export async function searchExaPerson(
 // ─── Bright Data LinkedIn Enrichment ─────────────────────
 
 const LINKEDIN_DATASET_ID = 'gd_l1viktl72bvl7bjuj0';
+const LINKEDIN_COMPANY_DATASET_ID = 'gd_l1vikfnt1wgvvqz95w';
 
 export async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProfile | null> {
   const apiKey = process.env.BRIGHT_DATA_API_KEY;
@@ -144,6 +145,60 @@ export async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProf
       );
       if (Array.isArray(res.data) && res.data.length > 0) {
         return res.data[0] as LinkedInProfile;
+      }
+    } catch (err) {
+      const status = (err as AxiosError).response?.status;
+      if (status !== 404) return null;
+    }
+  }
+  return null;
+}
+
+// ─── Bright Data LinkedIn Company Scraping ────────────────
+
+export interface LinkedInCompanyData {
+  name?: string;
+  logo?: string;
+  website?: string;
+  about?: string;
+  headquarters?: string;
+  company_size?: string;
+  employees_in_linkedin?: number;
+  industries?: string[];
+  specialties?: string[];
+  founded?: string;
+  locations?: string[];
+  formatted_locations?: string[];
+  employees?: Array<{ name?: string; link?: string; title?: string; img?: string }>;
+}
+
+export async function fetchBrightDataCompany(url: string): Promise<LinkedInCompanyData | null> {
+  const apiKey = process.env.BRIGHT_DATA_API_KEY;
+  if (!apiKey) return null;
+
+  const trigger = await axios.post(
+    `https://api.brightdata.com/datasets/v3/trigger?dataset_id=${LINKEDIN_COMPANY_DATASET_ID}&include_errors=true`,
+    [{ url }],
+    {
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      timeout: TIMEOUT,
+    },
+  );
+
+  const snapshotId: string | undefined = trigger.data?.snapshot_id;
+  if (!snapshotId) return null;
+
+  // Poll for results (up to ~20 seconds)
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise(r => setTimeout(r, 2000));
+    try {
+      const res = await axios.get(
+        `https://api.brightdata.com/datasets/v3/snapshot/${snapshotId}?format=json`,
+        { headers: { Authorization: `Bearer ${apiKey}` }, timeout: TIMEOUT },
+      );
+      if (Array.isArray(res.data) && res.data.length > 0) {
+        appLog('info', 'bright_data', 'company_scrape', `Company page scraped: ${url}`, { url, hasLogo: !!res.data[0]?.logo }).catch(() => {});
+        return res.data[0] as LinkedInCompanyData;
       }
     } catch (err) {
       const status = (err as AxiosError).response?.status;

@@ -78,8 +78,22 @@ Batch (Campaign)
 
 ### Enrichment Flow (Enrich)
 - `POST /api/contacts/enrich-bulk` → creates `EnrichmentBatch`, CONCURRENCY=3, fire-and-forget
-- `src/agent/enrichment-agent.ts` — Bedrock Claude, falls back to OpenAI on rate limit
+- `src/agent/enrichment-agent.ts` — Bedrock Claude (max 22 iterations), falls back to OpenAI on rate limit
 - Contacts with no `company` use `"Unknown"` — agent discovers from LinkedIn
+- **Revision-based**: Always creates a NEW `CompanyEnrichment` record (never overwrites). Old revisions get `isLatest: false` but are preserved.
+- **6 tools**: `fetch_company_logo` (Hunter→Brandfetch→Logo.dev), `search_web` (Exa), `search_people` (Exa people), `fetch_url`, `scrape_linkedin_profile` (Bright Data + PDL fallback), `submit_enrichment`
+- **Agent workflow**: Step 0 verify company via LinkedIn → Step 1-2 logo → Step 3-4 roles/values/mission → Step 5-7 team photos → Step 8 submit
+- **Logo chain**: Hunter.io → Brandfetch → Logo.dev → manual HTML scraping (4 tiers)
+- **Team photos**: `search_people` (Exa) → fallback `search_web` site:linkedin.com → `scrape_linkedin_profile` for headshots
+- **Open roles**: `search_web` for LinkedIn jobs page → `fetch_url` to scrape → top 3 US-only highest-level unique titles
+
+### Reviews Page (Postcard QA)
+- `/dashboard/reviews` — review, approve, edit & regenerate postcards
+- **No dedicated DB table** — uses `Postcard.status` (`ready` → `approved` / `reviewed`)
+- **Edit & Regenerate**: inline editor for prospect photo, company logo, company name, team members, roles, template, custom prompt, back message
+- **Sync-back to enrichment**: `POST /api/postcards/generate` syncs overrides (logo, roles, team photos, company name) back to the `isLatest` CompanyEnrichment record AND `Contact.company` — so enrichment stays source of truth
+- **Postcard versioning**: each regeneration creates a new `Postcard` with `parentPostcardId` → forms linked-list revision chain. "Versions" modal shows all versions per contact with "Restore" button
+- **No enrichment versioning UI**: CompanyEnrichment has revisions in DB but no user-facing timeline/revert in the reviews page
 
 ### Postcard Generation — Nano Banana (Gemini)
 - `src/lib/postcard/nano-banana-generator.ts` — **agentic generate→analyze→correct loop**
@@ -124,7 +138,11 @@ Batch (Campaign)
 | `src/lib/supabase-storage.ts` | Upload/delete images in Supabase Storage |
 | `src/agent/agent-streaming.ts` | Address lookup agent (Scan) |
 | `src/agent/enrichment-agent.ts` | Company enrichment agent (Enrich) |
-| `src/agent/services.ts` | External API calls (Endato, Bright Data, PropMix, Exa) |
+| `src/agent/services.ts` | External API calls (Endato, Bright Data, PropMix, Exa, Hunter, Brandfetch, Logo.dev, PDL) |
+| `src/app/dashboard/reviews/page.tsx` | Reviews page — postcard QA, edit & regenerate, versions |
+| `src/app/api/postcards/generate/route.ts` | Creates Postcard record + syncs overrides back to CompanyEnrichment |
+| `src/app/api/contacts/enrich-bulk/route.ts` | Bulk enrichment — creates batch + revision records, CONCURRENCY=3 |
+| `src/app/api/contacts/[id]/enrich/route.ts` | Single contact enrichment + GET revisions + DELETE revision |
 | `src/app/api/campaigns/route.ts` | GET — aggregates all 3 stages |
 | `src/app/api/campaigns/[id]/route.ts` | GET — per-contact view with all data |
 | `src/app/dashboard/batches/[id]/page.tsx` | Unified campaign page — CONCURRENCY=5 dispatcher |
@@ -149,7 +167,8 @@ Batch (Campaign)
 - **Job** → **Contact** (1:1)
 - **Batch** → **EnrichmentBatch** (`scanBatchId`) → **CompanyEnrichment**
 - **Batch** → **PostcardBatch** (`scanBatchId`) → **Postcard**
-- **Contact** → **CompanyEnrichment** (`isLatest` + `revisionNumber`)
+- **Contact** → **CompanyEnrichment** (`isLatest` + `revisionNumber`) — revision-based, old revisions preserved
+- **Contact** → **ContactRevision** (`isLatest` + `revisionNumber`) — snapshots of contact data (name, company, address, etc.)
 - **Contact** → **Postcard** (1:many, `parentPostcardId` for revision chain)
 - **Postcard** → **PostcardReference** (input images used)
 - **Team** → **TeamMember**, **PostcardTemplate**
@@ -189,9 +208,26 @@ CRON_SECRET                                               # Vercel cron auth (au
 
 ---
 
+## External APIs Used by Enrichment
+
+| Service | Purpose | Env Var | Notes |
+|---|---|---|---|
+| Hunter.io | Logo (primary) | — | Free, uses `logos.hunter.io/{domain}` |
+| Brandfetch | Logo + brand data (fallback) | `BRANDFETCH_API_KEY` | Also returns colors, description |
+| Logo.dev | Logo (tertiary) | `LOGO_DEV_TOKEN` | Simple image URL |
+| Exa AI | Web search + people search | `EXA_AI_KEY` | Used for roles, values, team members, LinkedIn fallback |
+| Bright Data | LinkedIn scraping | `BRIGHT_DATA_API_KEY` | Profile data + headshots |
+| PDL | People enrichment | — | Fallback for photos; **credits exhausted** (HTTP 402) |
+| Vetric | LinkedIn posts/mentions | `LI_API_KEY` | `api.vetric.io` — tested, not yet integrated |
+
+---
+
 ## Known Issues / TODO
 
 - `@sparticuz/chromium` and `playwright-core` still in `dependencies` but unused — safe to remove.
 - `/postcard-render/[postcardId]` page still exists but unused (legacy Playwright approach).
 - `src/agent/experimental/` contains a newer agent iteration — may be for testing.
 - Notes: `notes/shane-convo-2026-02-20.md` has product decisions from Shane.
+- PDL credits exhausted (HTTP 402) — avatar fallback still tries PDL but always fails.
+- Katie Burner appears as a duplicate contact under Aledade — needs deduplication.
+- `Postcard.status` schema comment is missing `"reviewed"` but code uses it actively.
