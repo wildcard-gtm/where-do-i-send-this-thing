@@ -186,7 +186,7 @@ export async function GET(
               data: {
                 userId: user.id,
                 teamId: user.teamId ?? null,
-                linkedinUrl: job.linkedinUrl,
+                linkedinUrl: decision.corrected_linkedin_url || job.linkedinUrl,
                 name: personName || "Unknown",
                 recommendation: decision.recommendation,
                 confidence: decision.confidence,

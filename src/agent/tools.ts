@@ -205,6 +205,10 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
             type: 'string',
             description: 'URL of the person\'s profile picture from LinkedIn enrichment (the avatar field)',
           },
+          corrected_linkedin_url: {
+            type: 'string',
+            description: 'If the original LinkedIn URL was broken/outdated and you found the correct one via search, include it here so the contact record gets updated.',
+          },
         },
         required: ['recommendation', 'confidence', 'reasoning'],
       },

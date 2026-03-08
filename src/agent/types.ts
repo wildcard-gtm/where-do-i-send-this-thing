@@ -21,6 +21,7 @@ export interface AgentDecision {
   flags?: string[];
   career_summary?: string;
   profile_image_url?: string;
+  corrected_linkedin_url?: string;
 }
 
 export interface AgentResult {

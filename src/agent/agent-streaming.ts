@@ -64,8 +64,17 @@ STEP 1 — PROFILE ENRICHMENT (required first step)
 → Tool: enrich_linkedin_profile
 → Extract: full name, current company, job title, location, work history
 → This gives you the foundation for all subsequent searches
-→ PRIVATE/EMPTY PROFILE FALLBACK: If enrich_linkedin_profile returns no company, no headline, or no
-  experience (private profile), use search_web with: site:linkedin.com "{person name from URL slug}"
+→ BROKEN/OUTDATED URL FALLBACK: If enrich_linkedin_profile returns no data or fails entirely
+  (the LinkedIn URL may be 404, outdated, or the person changed their profile slug):
+  1. Extract the person's likely name from the URL slug (e.g. "katie-gochenour" → "Katie Gochenour")
+  2. Use search_person_linkedin with the name (and company if available from CSV data) to find
+     their current LinkedIn profile URL
+  3. If a matching LinkedIn URL is found, call enrich_linkedin_profile AGAIN with the corrected URL
+  4. Include the corrected URL as corrected_linkedin_url in your submit_decision call so the
+     contact record gets updated
+→ PRIVATE/EMPTY PROFILE FALLBACK: If enrich_linkedin_profile returns a profile but with no company,
+  no headline, or no experience (private profile), use search_web with:
+  site:linkedin.com "{person name from URL slug}"
   Exa often has a cached version of LinkedIn pages with company, title, and headline even when
   Bright Data cannot scrape them. Parse the company and title from the cached page text.
   Also try: "{person name} {city} {state} company" to find them on other sites.
