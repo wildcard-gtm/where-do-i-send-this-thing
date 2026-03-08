@@ -192,6 +192,14 @@ export async function POST(
             errorMessage: null,
           },
         });
+        // Sync discovered company name back to Contact record
+        if (result.companyName && result.companyName !== "Unknown") {
+          await prisma.contact.update({
+            where: { id: contact.id },
+            data: { company: result.companyName },
+          });
+        }
+
         appLog("info", "system", "enrichment_complete", `Enrichment ${id} completed for ${contact.name}`, { enrichmentId: id, contactId: contact.id, attempt }).catch(() => {});
 
         // Post-enrichment: find LinkedIn URLs for team members that don't have them

@@ -22,6 +22,9 @@ export interface AgentDecision {
   career_summary?: string;
   profile_image_url?: string;
   corrected_linkedin_url?: string;
+  company?: string;
+  job_title?: string;
+  email?: string;
 }
 
 export interface AgentResult {

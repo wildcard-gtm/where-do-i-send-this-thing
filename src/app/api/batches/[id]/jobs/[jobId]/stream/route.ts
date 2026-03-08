@@ -185,12 +185,33 @@ export async function GET(
 
             // Each job always creates a fresh Contact — campaigns are fully isolated
             const savedImageUrl = decision.profile_image_url || null;
+
+            // Parse CSV row data for fallback field values
+            let csvFields: Record<string, string> = {};
+            if (job.csvRowData) {
+              try { csvFields = JSON.parse(job.csvRowData); } catch { /* ignore */ }
+            }
+            // Helper: find a CSV value by checking common column name variations
+            const csvVal = (...keys: string[]): string | null => {
+              for (const k of keys) {
+                for (const [ck, cv] of Object.entries(csvFields)) {
+                  if (ck.toLowerCase().replace(/[^a-z]/g, '') === k.toLowerCase().replace(/[^a-z]/g, '') && cv?.trim()) {
+                    return cv.trim();
+                  }
+                }
+              }
+              return null;
+            };
+
             const contact = await prisma.contact.create({
               data: {
                 userId: user.id,
                 teamId: user.teamId ?? null,
                 linkedinUrl: decision.corrected_linkedin_url || job.linkedinUrl,
                 name: personName || "Unknown",
+                company: decision.company || csvVal('company', 'companyname', 'employer', 'organization') || null,
+                title: decision.job_title || csvVal('title', 'jobtitle', 'role', 'position') || null,
+                email: decision.email || csvVal('email', 'emailaddress', 'workemail') || null,
                 recommendation: decision.recommendation,
                 confidence: decision.confidence,
                 homeAddress: decision.home_address?.address || null,

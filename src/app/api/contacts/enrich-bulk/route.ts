@@ -113,6 +113,15 @@ export async function runWithRetry({
             errorMessage: null,
           },
         });
+
+        // Sync discovered company name back to Contact record
+        if (result.companyName && result.companyName !== "Unknown") {
+          await prisma.contact.update({
+            where: { id: contact.id },
+            data: { company: result.companyName },
+          });
+        }
+
         succeeded = true;
       } else {
         lastError = "Agent returned no data";

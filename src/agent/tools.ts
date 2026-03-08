@@ -209,6 +209,18 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
             type: 'string',
             description: 'If the original LinkedIn URL was broken/outdated and you found the correct one via search, include it here so the contact record gets updated.',
           },
+          company: {
+            type: 'string',
+            description: 'The person\'s current company/employer name as discovered from LinkedIn, CSV data, or other sources.',
+          },
+          job_title: {
+            type: 'string',
+            description: 'The person\'s current job title as discovered from LinkedIn, CSV data, or other sources.',
+          },
+          email: {
+            type: 'string',
+            description: 'The person\'s email address if discovered from any source (LinkedIn, PDL, CSV data, etc.).',
+          },
         },
         required: ['recommendation', 'confidence', 'reasoning'],
       },

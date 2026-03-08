@@ -163,6 +163,10 @@ STEP 5 — DECISION
   - Reasoning must be written as a CLIENT-FACING REPORT (see below)
   - Include career_summary: 2-3 sentence summary of person's career and current role
   - Include profile_image_url: avatar URL from LinkedIn enrichment step (if available)
+  - Include company: the person's current employer/company name
+  - Include job_title: the person's current job title
+  - Include email: the person's email address if discovered from any source
+  - These fields (company, job_title, email) are critical — they feed into the next enrichment stage. Extract them from LinkedIn data, CSV data, or any other source you find during research.
 
 ═══════════════════════════════════════════
 DECISION LOGIC — ALWAYS CHOOSE BY DELIVERABILITY:
