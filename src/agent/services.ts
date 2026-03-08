@@ -18,6 +18,163 @@ import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
 const TIMEOUT = 30_000;
 const MAX_TEXT_PER_RESULT = 1500; // Truncate Exa text to avoid burning context
 
+// ─── LinkedIn MCP Server ──────────────────────────────────
+
+const LINKEDIN_MCP_URL = process.env.LINKEDIN_MCP_URL ?? 'http://5.9.70.211:7777/mcp';
+const LINKEDIN_MCP_API_KEY = process.env.LINKEDIN_MCP_API_KEY ?? 'bWcwEc_cI91Dc1DMLJY_Ljyl1ITjaZC_KxEqoCUBM08';
+
+/**
+ * Call a tool on the LinkedIn MCP server (streamable-http transport).
+ * Handles session initialization + tool invocation in sequence.
+ */
+export async function callLinkedInMCP(
+  toolName: string,
+  args: Record<string, unknown>,
+): Promise<ToolResult> {
+  try {
+    // Common auth header
+    const authHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+      ...(LINKEDIN_MCP_API_KEY ? { Authorization: `Bearer ${LINKEDIN_MCP_API_KEY}` } : {}),
+    };
+
+    // Step 1: Initialize session
+    const initRes = await axios.post(
+      LINKEDIN_MCP_URL,
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2024-11-05',
+          capabilities: {},
+          clientInfo: { name: 'wdistt-agent', version: '1.0' },
+        },
+      },
+      {
+        headers: authHeaders,
+        timeout: TIMEOUT,
+        // Response is SSE — parse the session ID from headers
+        responseType: 'text',
+      },
+    );
+
+    // Extract session ID from response headers
+    const sessionId = initRes.headers['mcp-session-id'] as string | undefined;
+    if (!sessionId) {
+      return { success: false, summary: 'LinkedIn MCP: failed to get session ID' };
+    }
+
+    // Step 2: Send initialized notification
+    await axios.post(
+      LINKEDIN_MCP_URL,
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      {
+        headers: { ...authHeaders, 'Mcp-Session-Id': sessionId },
+        timeout: 10_000,
+        validateStatus: () => true,
+      },
+    );
+
+    // Step 3: Call the tool
+    const toolRes = await axios.post(
+      LINKEDIN_MCP_URL,
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: toolName, arguments: args },
+      },
+      {
+        headers: { ...authHeaders, 'Mcp-Session-Id': sessionId },
+        timeout: 60_000, // LinkedIn scraping can be slow
+        responseType: 'text',
+      },
+    );
+
+    // Parse SSE response — extract the JSON data line
+    const raw = typeof toolRes.data === 'string' ? toolRes.data : JSON.stringify(toolRes.data);
+    let result: unknown;
+    const dataMatch = raw.match(/^data:\s*(.+)$/m);
+    if (dataMatch) {
+      const parsed = JSON.parse(dataMatch[1]);
+      result = parsed.result ?? parsed;
+    } else {
+      // Try parsing as plain JSON
+      const parsed = JSON.parse(raw);
+      result = parsed.result ?? parsed;
+    }
+
+    // MCP tool results have content array with text parts
+    const content = (result as Record<string, unknown>)?.content;
+    if (Array.isArray(content)) {
+      const textParts = content
+        .filter((c: Record<string, unknown>) => c.type === 'text')
+        .map((c: Record<string, unknown>) => c.text as string);
+      const combined = textParts.join('\n');
+
+      // Try to parse as JSON for structured data
+      try {
+        const data = JSON.parse(combined);
+        return {
+          success: true,
+          data,
+          summary: `LinkedIn MCP ${toolName}: data retrieved`,
+        };
+      } catch {
+        return {
+          success: true,
+          data: { text: combined.slice(0, 8000) },
+          summary: `LinkedIn MCP ${toolName}: ${combined.slice(0, 200)}`,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      data: result,
+      summary: `LinkedIn MCP ${toolName}: response received`,
+    };
+  } catch (err) {
+    const axErr = err as AxiosError;
+    const status = axErr.response?.status;
+    const detail = status ? ` (HTTP ${status})` : '';
+    appLog('error', 'linkedin_mcp', toolName, `LinkedIn MCP call failed${detail}: ${(err as Error).message}`, { toolName, args }).catch(() => {});
+    return { success: false, summary: `LinkedIn MCP ${toolName} failed${detail}: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Get a person's LinkedIn profile via the MCP server.
+ */
+export async function getLinkedInProfileViaMCP(linkedinUrl: string): Promise<ToolResult> {
+  return callLinkedInMCP('get_person_profile', { url: linkedinUrl });
+}
+
+/**
+ * Get a company's LinkedIn profile via the MCP server.
+ */
+export async function getLinkedInCompanyViaMCP(companyUrl: string): Promise<ToolResult> {
+  return callLinkedInMCP('get_company_profile', { url: companyUrl });
+}
+
+/**
+ * Search for people on LinkedIn via the MCP server.
+ */
+export async function searchLinkedInPeopleViaMCP(keywords: string): Promise<ToolResult> {
+  return callLinkedInMCP('search_people', { keywords });
+}
+
+/**
+ * Search for jobs on LinkedIn via the MCP server.
+ */
+export async function searchLinkedInJobsViaMCP(keywords: string, location?: string): Promise<ToolResult> {
+  const args: Record<string, unknown> = { keywords };
+  if (location) args.location = location;
+  return callLinkedInMCP('search_jobs', args);
+}
+
 // ─── People Data Labs (PDL) Enrichment ───────────────────
 
 export async function enrichWithPDL(linkedinUrl: string): Promise<ToolResult> {

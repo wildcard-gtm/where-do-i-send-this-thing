@@ -15,6 +15,8 @@ import {
   enrichWithPDL,
   searchExaPerson,
   scrapeWithFirecrawl,
+  getLinkedInProfileViaMCP,
+  searchLinkedInPeopleViaMCP,
 } from './services';
 import { prisma } from '@/lib/db';
 
@@ -42,6 +44,10 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
     'Fetch and read the contents of any URL. Returns clean markdown text via Firecrawl (with raw HTTP fallback). Use to scrape company pages, news articles, or any web page for more context about the person or their company.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
+  linkedin_mcp_profile:
+    'Scrape a LinkedIn profile via the LinkedIn MCP server (authenticated browser session). Returns rich profile data including experience, education, skills, and about section. Use as a fallback when Bright Data scraping fails or returns incomplete data.',
+  linkedin_mcp_search:
+    'Search for people on LinkedIn via the LinkedIn MCP server (authenticated browser session). Returns matching LinkedIn profiles. Use when you need to find someone\'s LinkedIn URL by name/company, especially when Exa search returns no results.',
 };
 
 // ─── Tool Schema Builder ────────────────────────────────
@@ -167,6 +173,28 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
           url: { type: 'string', description: 'URL to fetch and read' },
         },
         required: ['url'],
+      },
+    },
+    {
+      name: 'linkedin_mcp_profile',
+      description: descriptions.linkedin_mcp_profile,
+      input_schema: {
+        type: 'object',
+        properties: {
+          linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL (https://www.linkedin.com/in/...)' },
+        },
+        required: ['linkedin_url'],
+      },
+    },
+    {
+      name: 'linkedin_mcp_search',
+      description: descriptions.linkedin_mcp_search,
+      input_schema: {
+        type: 'object',
+        properties: {
+          keywords: { type: 'string', description: 'Search keywords — person name, company, title, etc.' },
+        },
+        required: ['keywords'],
       },
     },
     {
@@ -354,6 +382,12 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
         },
       };
     }
+
+    case 'linkedin_mcp_profile':
+      return { toolResult: await getLinkedInProfileViaMCP(args.linkedin_url as string) };
+
+    case 'linkedin_mcp_search':
+      return { toolResult: await searchLinkedInPeopleViaMCP(args.keywords as string) };
 
     case 'submit_decision': {
       // Sanitize address fields — model occasionally passes a raw string instead of an object

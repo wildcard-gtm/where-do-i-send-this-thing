@@ -12,6 +12,7 @@ export type LogSource =
   | "propmix"
   | "exa_ai"
   | "firecrawl"
+  | "linkedin_mcp"
   | "supabase"
   | "system";
 

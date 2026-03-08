@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl, scrapeWithFirecrawl } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl, scrapeWithFirecrawl, getLinkedInProfileViaMCP, getLinkedInCompanyViaMCP, searchLinkedInPeopleViaMCP, searchLinkedInJobsViaMCP } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
 import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
@@ -137,6 +137,51 @@ const ENRICHMENT_TOOLS = [
         company_url: { type: 'string', description: 'LinkedIn company URL, e.g. https://www.linkedin.com/company/stripe' },
       },
       required: ['company_url'],
+    },
+  },
+  {
+    name: 'linkedin_mcp_profile',
+    description: 'Scrape a LinkedIn profile via the LinkedIn MCP server (authenticated browser session). Returns rich profile data including experience, education, skills, and about section. Use as a fallback when scrape_linkedin_profile (Bright Data) fails or returns incomplete data.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL (https://www.linkedin.com/in/...)' },
+      },
+      required: ['linkedin_url'],
+    },
+  },
+  {
+    name: 'linkedin_mcp_company',
+    description: 'Scrape a LinkedIn company page via the LinkedIn MCP server (authenticated browser session). Returns company info, posts, and details. Use as a fallback when scrape_linkedin_company (Bright Data) fails or returns incomplete data.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company_url: { type: 'string', description: 'LinkedIn company URL (https://www.linkedin.com/company/...)' },
+      },
+      required: ['company_url'],
+    },
+  },
+  {
+    name: 'linkedin_mcp_search_people',
+    description: 'Search for people on LinkedIn via the LinkedIn MCP server (authenticated browser session). Use to find team members, recruiters, or talent acquisition staff when other search methods fail.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keywords: { type: 'string', description: 'Search keywords — person name, company, title, etc.' },
+      },
+      required: ['keywords'],
+    },
+  },
+  {
+    name: 'linkedin_mcp_search_jobs',
+    description: 'Search for job postings on LinkedIn via the LinkedIn MCP server (authenticated browser session). Returns real-time job listings. Use to find open roles at a company when web search does not return good results.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keywords: { type: 'string', description: 'Job search keywords — company name, role title, etc.' },
+        location: { type: 'string', description: 'Location filter (e.g. "United States", "New York")' },
+      },
+      required: ['keywords'],
     },
   },
   {
@@ -404,6 +449,29 @@ async function executeEnrichmentTool(
       } catch (err) {
         return { result: { success: false, summary: `LinkedIn company scrape failed: ${(err as Error).message}` } };
       }
+    }
+
+    case 'linkedin_mcp_profile': {
+      const res = await getLinkedInProfileViaMCP(args.linkedin_url as string);
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'linkedin_mcp_company': {
+      const res = await getLinkedInCompanyViaMCP(args.company_url as string);
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'linkedin_mcp_search_people': {
+      const res = await searchLinkedInPeopleViaMCP(args.keywords as string);
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'linkedin_mcp_search_jobs': {
+      const res = await searchLinkedInJobsViaMCP(
+        args.keywords as string,
+        args.location as string | undefined,
+      );
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
     }
 
     case 'submit_enrichment': {
