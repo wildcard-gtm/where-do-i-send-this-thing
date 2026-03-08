@@ -156,7 +156,7 @@ export async function GET(
         // Use enriched name if available, otherwise fall back to URL-based extraction
         const personName = enrichedName || extractPersonName(result);
 
-        // Update job with result
+        // Update job with result (+ corrected LinkedIn URL if agent found one)
         await prisma.job.update({
           where: { id: jobId },
           data: {
@@ -165,6 +165,9 @@ export async function GET(
             recommendation: result.decision?.recommendation ?? null,
             confidence: result.decision?.confidence ?? null,
             result: JSON.stringify(result),
+            ...(result.decision?.corrected_linkedin_url
+              ? { linkedinUrl: result.decision.corrected_linkedin_url }
+              : {}),
           },
         });
 

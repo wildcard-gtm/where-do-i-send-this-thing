@@ -69,8 +69,15 @@ STEP 1 — PROFILE ENRICHMENT (required first step)
   1. Extract the person's likely name from the URL slug (e.g. "katie-gochenour" → "Katie Gochenour")
   2. Use search_person_linkedin with the name (and company if available from CSV data) to find
      their current LinkedIn profile URL
-  3. If a matching LinkedIn URL is found, call enrich_linkedin_profile AGAIN with the corrected URL
-  4. Include the corrected URL as corrected_linkedin_url in your submit_decision call so the
+  3. IDENTITY VERIFICATION (CRITICAL): Before using a candidate URL, confirm it's the RIGHT person —
+     not just a name match. Cross-check AT LEAST ONE of these signals:
+     - Company name matches (current or recent employer)
+     - Job title/role is consistent with what we expect
+     - Location/city/state aligns
+     - The URL slug contains parts of the expected name
+     If you only have a name match with no supporting evidence, DO NOT use that URL.
+  4. If a verified matching LinkedIn URL is found, call enrich_linkedin_profile AGAIN with the corrected URL
+  5. Include the corrected URL as corrected_linkedin_url in your submit_decision call so the
      contact record gets updated
 → PRIVATE/EMPTY PROFILE FALLBACK: If enrich_linkedin_profile returns a profile but with no company,
   no headline, or no experience (private profile), use search_web with:
