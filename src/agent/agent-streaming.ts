@@ -93,6 +93,15 @@ STEP 1.5 — PDL CONTACT ENRICHMENT (run immediately after Step 1)
 → Save the phones/emails — use them in Step 2 to confirm identity (phone match = high confidence)
 → If PDL returns a location that differs from LinkedIn, note the discrepancy
 
+STEP 1.75 — CSV-AUGMENTED WEB SEARCH (when CSV data is available)
+→ If uploaded CSV data includes a name and company (or other identifying fields like title, city),
+  use search_web with "{person name} {company name}" to find additional context: news mentions,
+  conference talks, press releases, personal websites, or any public info about this person.
+→ This is especially important when LinkedIn scraping returns incomplete data (private profile,
+  missing headline, no experience) — the CSV fields give you a head start.
+→ Extract any useful details: current role confirmation, location, email, company changes.
+→ Skip this step ONLY if Step 1 already returned a complete profile with company, title, and location.
+
 STEP 2 — HOME ADDRESS DISCOVERY
 → Tool: search_person_address
   - Search with first name + last name from Step 1
@@ -320,7 +329,7 @@ function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string
     .replace(/\{\{current_date\}\}/g, today);
 
   if (csvContext) {
-    content += `\n\nUPLOADED CSV DATA (possibly related — use as a starting hint, but always verify via tools):\n${csvContext}`;
+    content += `\n\nUPLOADED CSV DATA (use these fields actively — they contain known info about this person such as name, company, title, email, etc. Use them to guide your searches, especially with search_web to find more about this person. Always verify via tools but treat this as reliable starting context):\n${csvContext}`;
   }
 
   return { role: 'user', content };
