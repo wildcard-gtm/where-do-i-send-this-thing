@@ -21,6 +21,11 @@ STEP 1 — PROFILE ENRICHMENT (required first step)
   employer. Cross-check the "experience" array (look for entries with is_current=true or no end_date).
   The experience list is ground truth. PDL may show a stale employer. Confirm before proceeding.
 → If enrich_linkedin_profile fails or times out, THEN call enrich_with_pdl as a standalone fallback
+→ PRIVATE/EMPTY PROFILE FALLBACK: If enrich_linkedin_profile returns no company, no headline, or no
+  experience (private profile), use search_web with: site:linkedin.com "{person name from URL slug}"
+  Exa often has a cached version of LinkedIn pages with company, title, and headline even when
+  Bright Data cannot scrape them. Parse the company and title from the cached page text.
+  Also try: "{person name} {city} {state} company" to find them on other sites (Wiza, ZoomInfo, etc.)
 
 STEP 1.5 — VERIFY CURRENT EMPLOYER (CRITICAL — never skip)
 → LinkedIn data is frequently OUTDATED. People change jobs but don't update their profiles for months or years.

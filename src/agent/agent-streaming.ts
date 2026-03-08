@@ -64,6 +64,11 @@ STEP 1 — PROFILE ENRICHMENT (required first step)
 → Tool: enrich_linkedin_profile
 → Extract: full name, current company, job title, location, work history
 → This gives you the foundation for all subsequent searches
+→ PRIVATE/EMPTY PROFILE FALLBACK: If enrich_linkedin_profile returns no company, no headline, or no
+  experience (private profile), use search_web with: site:linkedin.com "{person name from URL slug}"
+  Exa often has a cached version of LinkedIn pages with company, title, and headline even when
+  Bright Data cannot scrape them. Parse the company and title from the cached page text.
+  Also try: "{person name} {city} {state} company" to find them on other sites.
 
 STEP 1.5 — PDL CONTACT ENRICHMENT (run immediately after Step 1)
 → Tool: enrich_with_pdl

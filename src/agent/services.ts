@@ -154,25 +154,58 @@ export async function fetchBrightDataLinkedIn(url: string): Promise<LinkedInProf
 }
 
 export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
-  // Run Bright Data and PDL in parallel — get everything in one shot
-  const [profile, pdlResult] = await Promise.allSettled([
+  // Run Bright Data, PDL, and Exa in parallel — get everything in one shot
+  // Extract person name from LinkedIn URL slug for Exa search
+  const slugMatch = url.match(/linkedin\.com\/in\/([^/?]+)/);
+  const urlSlug = slugMatch ? slugMatch[1].replace(/-/g, ' ').replace(/\d+$/g, '').trim() : '';
+
+  const [profile, pdlResult, exaResult] = await Promise.allSettled([
     fetchBrightDataLinkedIn(url),
     enrichWithPDL(url),
+    urlSlug ? searchExaAI(`site:linkedin.com "${urlSlug}"`, 'auto', 2) : Promise.resolve({ success: false, summary: 'no slug' } as ToolResult),
   ]);
 
   const bdProfile = profile.status === 'fulfilled' ? profile.value : null;
   const pdl = pdlResult.status === 'fulfilled' && pdlResult.value.success ? pdlResult.value.data as Record<string, unknown> : null;
 
-  if (!bdProfile && !pdl) {
-    appLog('error', 'bright_data', 'linkedin_scrape', `LinkedIn scrape failed for ${url}`, { url }).catch(() => {});
-    return { success: false, summary: 'Timeout waiting for LinkedIn profile data' };
+  // Parse Exa cached LinkedIn data — extract company/title from text
+  let exaCompany: string | undefined;
+  let exaTitle: string | undefined;
+  let exaName: string | undefined;
+  if (exaResult.status === 'fulfilled' && exaResult.value.success && exaResult.value.data) {
+    const exaResults = exaResult.value.data as Array<{ title?: string; text?: string; url?: string }>;
+    // ONLY use the result that matches our exact LinkedIn URL — never a different profile
+    const match = exaResults.find(r => r.url === url);
+    if (match?.text) {
+      // Exa returns cached LinkedIn text like: "# Name\nTitle at Company\n..."
+      const lines = match.text.split('\n').map(l => l.replace(/^#+\s*/, '').trim()).filter(Boolean);
+      if (lines[0]) exaName = lines[0];
+      // Look for "at Company" pattern in title/headline
+      for (const line of lines.slice(0, 5)) {
+        const atMatch = line.match(/(?:at|@)\s+(.+?)(?:\s*\(|$)/i);
+        if (atMatch) {
+          exaCompany = atMatch[1].trim();
+          // Clean up company name — remove trailing certifications, emojis, badges
+          exaCompany = exaCompany.replace(/\s*[-–—]\s*(Workday|Certified|Pro|☁️|🏆|⭐|💡).*$/i, '').trim();
+          // Title is the part before "at"
+          const titlePart = line.split(/\s+(?:at|@)\s+/i)[0];
+          if (titlePart && titlePart !== exaName) exaTitle = titlePart;
+          break;
+        }
+      }
+    }
   }
-  appLog('info', 'bright_data', 'linkedin_scrape', `LinkedIn profile scraped: ${url}`, { url, hasAvatar: !!(bdProfile as Record<string, unknown> | null)?.avatar }).catch(() => {});
 
-  // Build combined enrichment — LinkedIn is ground truth for current role, PDL fills in contact points
-  const name = bdProfile?.name ?? (pdl?.name as string | undefined) ?? 'Unknown';
-  const company = bdProfile?.current_company_name ?? (pdl?.company as string | undefined) ?? 'N/A';
-  const position = bdProfile?.current_company_position ?? (pdl?.jobTitle as string | undefined) ?? '';
+  if (!bdProfile && !pdl && !exaCompany) {
+    appLog('error', 'bright_data', 'linkedin_scrape', `LinkedIn scrape failed for ${url} (BD + PDL + Exa all failed)`, { url }).catch(() => {});
+    return { success: false, summary: 'All sources failed — could not retrieve LinkedIn profile data' };
+  }
+  appLog('info', 'bright_data', 'linkedin_scrape', `LinkedIn profile scraped: ${url}`, { url, hasAvatar: !!(bdProfile as Record<string, unknown> | null)?.avatar, exaFallback: !!exaCompany }).catch(() => {});
+
+  // Build combined enrichment — LinkedIn is ground truth for current role, PDL fills in contact points, Exa is fallback
+  const name = bdProfile?.name ?? (pdl?.name as string | undefined) ?? exaName ?? 'Unknown';
+  const company = bdProfile?.current_company_name ?? (pdl?.company as string | undefined) ?? exaCompany ?? 'N/A';
+  const position = bdProfile?.current_company_position ?? (pdl?.jobTitle as string | undefined) ?? exaTitle ?? '';
   const city = bdProfile?.city ?? '';
   const state = bdProfile?.state ?? '';
 

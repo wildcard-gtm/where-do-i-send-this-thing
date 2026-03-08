@@ -196,7 +196,9 @@ WORKFLOW:
 STEP 0 — VERIFY CURRENT COMPANY (CRITICAL — do this FIRST):
 → The company name provided may be OUTDATED. People change jobs but data sources lag behind.
 → Scrape the contact's LinkedIn profile using scrape_linkedin_profile to check their current role and company.
-→ Also search the web for "{person name} current company" to cross-reference.
+→ PRIVATE PROFILE FALLBACK: If scrape_linkedin_profile returns no data (private profile), use search_web
+  with: site:linkedin.com "{person name}" — Exa often has a cached LinkedIn page with company/title.
+  Also try: "{person name} {company} current" to cross-reference on other sites.
 → SIGNALS THAT THE COMPANY IS WRONG:
   - LinkedIn experience shows a different current employer
   - Email domain (from address records) doesn't match the stated company (e.g. @automationanywhere.com ≠ Yahoo)
