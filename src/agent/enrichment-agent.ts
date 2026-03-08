@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl, scrapeWithFirecrawl } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
 import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
@@ -298,20 +298,8 @@ async function executeEnrichmentTool(
     }
 
     case 'fetch_url': {
-      try {
-        const res = await axios.get(args.url as string, {
-          timeout: 15_000,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; enrichment-bot/1.0)' },
-          validateStatus: (s) => s < 500,
-        });
-        // Truncate to avoid burning context
-        const text = typeof res.data === 'string'
-          ? res.data.slice(0, 8000)
-          : JSON.stringify(res.data).slice(0, 8000);
-        return { result: { success: true, content: text, url: args.url } };
-      } catch (err) {
-        return { result: { success: false, error: (err as AxiosError).message } };
-      }
+      const scraped = await scrapeWithFirecrawl(args.url as string);
+      return { result: scraped };
     }
 
     case 'scrape_linkedin_profile': {

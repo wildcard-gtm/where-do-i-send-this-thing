@@ -14,6 +14,7 @@ import {
   researchOfficeDelivery,
   enrichWithPDL,
   searchExaPerson,
+  scrapeWithFirecrawl,
 } from './services';
 import { prisma } from '@/lib/db';
 
@@ -37,6 +38,8 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
     'Enriches a LinkedIn profile URL via People Data Labs (PDL). Returns verified phone numbers, emails, location history, job title, and company. Use IMMEDIATELY after enrich_linkedin_profile to get contact points that can be used with search_person_address.',
   search_person_linkedin:
     'Searches for a person\'s LinkedIn profile by name and company using Exa AI people search. Returns matching LinkedIn URLs. Use when you need to find or confirm a LinkedIn profile URL.',
+  fetch_url:
+    'Fetch and read the contents of any URL. Returns clean markdown text via Firecrawl (with raw HTTP fallback). Use to scrape company pages, news articles, or any web page for more context about the person or their company.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
 };
@@ -153,6 +156,17 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
           num_results: { type: 'number', description: 'Number of results to return, 1-10 (default: 5)' },
         },
         required: ['person_name'],
+      },
+    },
+    {
+      name: 'fetch_url',
+      description: descriptions.fetch_url,
+      input_schema: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'URL to fetch and read' },
+        },
+        required: ['url'],
       },
     },
     {
@@ -329,6 +343,17 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
           (args.num_results as number | undefined) ?? 5,
         ),
       };
+
+    case 'fetch_url': {
+      const scraped = await scrapeWithFirecrawl(args.url as string);
+      return {
+        toolResult: {
+          success: scraped.success,
+          data: { content: scraped.content, url: scraped.url },
+          summary: scraped.success ? `Fetched ${(args.url as string).slice(0, 80)}` : `Failed: ${scraped.error}`,
+        },
+      };
+    }
 
     case 'submit_decision': {
       // Sanitize address fields — model occasionally passes a raw string instead of an object

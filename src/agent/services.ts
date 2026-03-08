@@ -969,3 +969,50 @@ export async function validateLogoUrl(url: string): Promise<{ valid: boolean; re
     return { valid: false, reason: `Fetch failed: ${(err as Error).message}` };
   }
 }
+
+// ─── Firecrawl Web Scraping (with axios fallback) ─────────
+
+export async function scrapeWithFirecrawl(url: string): Promise<{ success: boolean; content: string; url: string; error?: string }> {
+  const apiKey = process.env.FIRECRAWL_API_KEY;
+
+  // Try Firecrawl first
+  if (apiKey) {
+    try {
+      const res = await axios.post<{ success: boolean; data?: { markdown?: string } }>(
+        'https://api.firecrawl.dev/v1/scrape',
+        { url, formats: ['markdown'] },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`,
+          },
+          timeout: 20_000,
+        },
+      );
+
+      if (res.data.success && res.data.data?.markdown) {
+        const markdown = res.data.data.markdown.slice(0, 12000);
+        appLog('info', 'firecrawl', 'scrape', `Firecrawl scraped ${url} (${markdown.length} chars)`, { url }).catch(() => {});
+        return { success: true, content: markdown, url };
+      }
+    } catch (err) {
+      appLog('warn', 'firecrawl', 'scrape_fail', `Firecrawl failed for ${url}: ${(err as Error).message}`, { url, error: (err as Error).message }).catch(() => {});
+      // Fall through to axios
+    }
+  }
+
+  // Fallback: raw axios fetch
+  try {
+    const res = await axios.get(url, {
+      timeout: 15_000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; enrichment-bot/1.0)' },
+      validateStatus: (s) => s < 500,
+    });
+    const text = typeof res.data === 'string'
+      ? res.data.slice(0, 8000)
+      : JSON.stringify(res.data).slice(0, 8000);
+    return { success: true, content: text, url };
+  } catch (err) {
+    return { success: false, content: '', url, error: (err as Error).message };
+  }
+}

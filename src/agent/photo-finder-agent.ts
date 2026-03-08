@@ -10,7 +10,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchBrightDataLinkedIn, enrichWithPDL, searchExaAI } from './services';
+import { fetchBrightDataLinkedIn, enrichWithPDL, searchExaAI, scrapeWithFirecrawl } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
 

@@ -15,6 +15,7 @@ import {
   fetchBrandfetch,
   fetchLogoDev,
   fetchBrightDataLinkedIn,
+  scrapeWithFirecrawl,
 } from './services';
 import axios from 'axios';
 import { prisma } from '@/lib/db';
@@ -314,23 +315,14 @@ export async function executeCorrectionTool(
     }
 
     case 'fetch_url': {
-      try {
-        const res = await axios.get(args.url as string, {
-          timeout: 15000,
-          maxRedirects: 3,
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; postcard-bot/1.0)' },
-        });
-        const text = typeof res.data === 'string'
-          ? res.data.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '').replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 8000)
-          : JSON.stringify(res.data).slice(0, 8000);
-        return {
-          result: { success: true, data: { text }, summary: `Fetched ${(args.url as string).slice(0, 80)}` },
-        };
-      } catch (e) {
-        return {
-          result: { success: false, summary: `Failed to fetch URL: ${(e as Error).message}` },
-        };
-      }
+      const scraped = await scrapeWithFirecrawl(args.url as string);
+      return {
+        result: {
+          success: scraped.success,
+          data: { text: scraped.content },
+          summary: scraped.success ? `Fetched ${(args.url as string).slice(0, 80)}` : `Failed to fetch URL: ${scraped.error}`,
+        },
+      };
     }
 
     case 'scrape_linkedin_profile': {

@@ -11,6 +11,7 @@ export type LogSource =
   | "endato"
   | "propmix"
   | "exa_ai"
+  | "firecrawl"
   | "supabase"
   | "system";
 
