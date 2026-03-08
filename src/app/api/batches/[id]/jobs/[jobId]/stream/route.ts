@@ -4,6 +4,8 @@ import { runAgentStreaming } from "@/agent/agent-streaming";
 import type { AgentStreamEvent } from "@/agent/agent-streaming";
 import { getTeamUserIds } from "@/lib/team";
 import { appLog } from "@/lib/app-log";
+import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
+import { fetchBrightDataLinkedIn, enrichWithPDL, searchExaPerson } from "@/agent/services";
 
 export const maxDuration = 600; // 10 minutes for thorough investigation
 
@@ -179,7 +181,8 @@ export async function GET(
             const researchLog = buildResearchLog(events);
 
             // Each job always creates a fresh Contact — campaigns are fully isolated
-            await prisma.contact.create({
+            const savedImageUrl = decision.profile_image_url || null;
+            const contact = await prisma.contact.create({
               data: {
                 userId: user.id,
                 teamId: user.teamId ?? null,
@@ -189,7 +192,7 @@ export async function GET(
                 confidence: decision.confidence,
                 homeAddress: decision.home_address?.address || null,
                 officeAddress: decision.office_address?.address || null,
-                profileImageUrl: decision.profile_image_url || null,
+                profileImageUrl: savedImageUrl,
                 careerSummary: decision.career_summary || null,
                 lastScannedAt: new Date(),
                 jobId,
@@ -197,6 +200,51 @@ export async function GET(
                 notes: researchLog,
               },
             });
+
+            // Post-scan photo fix: if profile image is missing or a placeholder,
+            // attempt a lightweight refresh (same logic as /api/contacts/[id]/refresh-photo)
+            if (!savedImageUrl || isPlaceholderUrl(savedImageUrl)) {
+              try {
+                let photoUrl: string | null = null;
+
+                // 1. Bright Data scrape
+                const profile = await fetchBrightDataLinkedIn(job.linkedinUrl);
+                const avatar = profile ? (profile as Record<string, unknown>).avatar as string | undefined : undefined;
+                if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
+
+                // 2. PDL fallback
+                if (!photoUrl) {
+                  const pdlResult = await enrichWithPDL(job.linkedinUrl);
+                  if (pdlResult.success && pdlResult.data) {
+                    const pic = (pdlResult.data as Record<string, unknown>).profile_pic_url as string | undefined;
+                    if (pic && !isPlaceholderUrl(pic)) photoUrl = pic;
+                  }
+                }
+
+                // 3. Exa person search → Bright Data scrape
+                if (!photoUrl && personName) {
+                  const exaResult = await searchExaPerson(personName, '', 3);
+                  if (exaResult.success && Array.isArray(exaResult.data)) {
+                    for (const r of exaResult.data as Array<{ url?: string }>) {
+                      if (!r.url?.includes('linkedin.com/in/')) continue;
+                      if (r.url === job.linkedinUrl) continue;
+                      const p = await fetchBrightDataLinkedIn(r.url);
+                      const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
+                      if (a && !isPlaceholderUrl(a)) { photoUrl = a; break; }
+                    }
+                  }
+                }
+
+                if (photoUrl) {
+                  await prisma.contact.update({
+                    where: { id: contact.id },
+                    data: { profileImageUrl: photoUrl },
+                  });
+                }
+              } catch {
+                // Photo refresh is best-effort — don't fail the scan
+              }
+            }
           }
         } catch (contactErr) {
           console.error(`Failed to create contact for job ${jobId}:`, contactErr);

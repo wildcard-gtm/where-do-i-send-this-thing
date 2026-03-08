@@ -7,6 +7,7 @@ import {
   enrichWithPDL,
   searchExaPerson,
 } from "@/agent/services";
+import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
 
 // POST /api/contacts/[id]/refresh-photo
 // Lightweight photo-only refresh: tries Bright Data → PDL → Exa+Bright Data
@@ -38,7 +39,7 @@ export async function POST(
     const avatar = profile
       ? ((profile as Record<string, unknown>).avatar as string | undefined)
       : undefined;
-    if (avatar) photoUrl = avatar;
+    if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
   } catch {
     // continue to next fallback
   }
@@ -50,7 +51,7 @@ export async function POST(
       if (pdlResult.success && pdlResult.data) {
         const pic = (pdlResult.data as Record<string, unknown>)
           .profile_pic_url as string | undefined;
-        if (pic) photoUrl = pic;
+        if (pic && !isPlaceholderUrl(pic)) photoUrl = pic;
       }
     } catch {
       // continue to next fallback
@@ -78,7 +79,7 @@ export async function POST(
                   | string
                   | undefined)
               : undefined;
-            if (avatar) {
+            if (avatar && !isPlaceholderUrl(avatar)) {
               photoUrl = avatar;
               break;
             }

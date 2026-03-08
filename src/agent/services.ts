@@ -13,6 +13,7 @@ import type {
   DistanceMatrixResponse,
 } from './types';
 import { appLog } from '@/lib/app-log';
+import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
 
 const TIMEOUT = 30_000;
 const MAX_TEXT_PER_RESULT = 1500; // Truncate Exa text to avoid burning context
@@ -294,12 +295,12 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
     country: bdProfile?.country ?? '',
     about: bdProfile?.about?.slice(0, 500) ?? '',
     avatar: await (async () => {
-      // 1. Bright Data avatar
+      // 1. Bright Data avatar (reject placeholders)
       const bdAvatar = (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined;
-      if (bdAvatar) return bdAvatar;
-      // 2. PDL profile_pic_url
+      if (bdAvatar && !isPlaceholderUrl(bdAvatar)) return bdAvatar;
+      // 2. PDL profile_pic_url (reject placeholders)
       const pdlPic = pdl?.profile_pic_url as string | undefined;
-      if (pdlPic) return pdlPic;
+      if (pdlPic && !isPlaceholderUrl(pdlPic)) return pdlPic;
       // 3. Exa person search → Bright Data scrape
       if (name && name !== 'Unknown' && company && company !== 'N/A') {
         try {
@@ -311,7 +312,7 @@ export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
               try {
                 const p = await fetchBrightDataLinkedIn(r.url);
                 const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
-                if (a) return a;
+                if (a && !isPlaceholderUrl(a)) return a;
               } catch { continue; }
             }
           }

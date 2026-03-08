@@ -14,6 +14,7 @@ import { getAIClientForRole } from '@/lib/ai/config';
 import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
+import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
 
 // ─── Types ───────────────────────────────────────────────
 
@@ -321,6 +322,8 @@ async function executeEnrichmentTool(
           return { result: { success: false, summary: 'Could not scrape LinkedIn profile — timeout or not found' } };
         }
         let avatar = (profile as Record<string, unknown>).avatar as string | undefined;
+        // Reject placeholder/default avatar URLs
+        if (avatar && isPlaceholderUrl(avatar)) avatar = undefined;
         const name = profile.name;
         const title = profile.current_company_position ?? profile.headline;
 
@@ -330,7 +333,7 @@ async function executeEnrichmentTool(
             const pdl = await enrichWithPDL(linkedinUrl);
             if (pdl.success && pdl.data) {
               const pic = (pdl.data as Record<string, unknown>).profile_pic_url as string | undefined;
-              if (pic) avatar = pic;
+              if (pic && !isPlaceholderUrl(pic)) avatar = pic;
             }
           } catch { /* continue */ }
         }
@@ -347,7 +350,7 @@ async function executeEnrichmentTool(
                 try {
                   const p = await fetchBrightDataLinkedIn(r.url);
                   const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
-                  if (a) { avatar = a; break; }
+                  if (a && !isPlaceholderUrl(a)) { avatar = a; break; }
                 } catch { continue; }
               }
             }
