@@ -33,6 +33,7 @@ export async function runWithRetry({
     linkedinUrl: string;
     title: string | null;
     officeAddress: string | null;
+    csvRowData: string | null;
   };
   batchId: string;
 }): Promise<void> {
@@ -69,6 +70,7 @@ export async function runWithRetry({
           linkedinUrl: contact.linkedinUrl,
           title: contact.title ?? undefined,
           officeAddress: contact.officeAddress ?? undefined,
+          csvRowData: contact.csvRowData ?? undefined,
         },
         async (event) => {
           if (event.type === "tool_call") {
@@ -182,7 +184,7 @@ export async function POST(request: Request) {
   const teamUserIds = await getTeamUserIds(user);
   const contacts = await prisma.contact.findMany({
     where: { id: { in: contactIds }, userId: { in: teamUserIds } },
-    select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true },
+    select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true, csvRowData: true },
   });
 
   const valid = contacts;

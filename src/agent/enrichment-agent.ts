@@ -25,6 +25,7 @@ export interface EnrichmentInput {
   title?: string;
   location?: string;
   officeAddress?: string;
+  csvRowData?: string;
 }
 
 export interface OpenRole {
@@ -458,6 +459,10 @@ export async function runEnrichmentAgent(
   let usingFallback = false;
 
   const today = new Date().toISOString().split('T')[0];
+  const csvBlock = input.csvRowData
+    ? `\n\nUPLOADED CSV DATA (may contain useful context — verify before relying on it):\n${input.csvRowData}`
+    : '';
+
   const userMessage = `${ENRICHMENT_SYSTEM_PROMPT}
 
 ---
@@ -470,7 +475,7 @@ Contact to enrich:
 - Job Title: ${input.title ?? 'Unknown'}
 - Location: ${input.location ?? 'Unknown'}
 - LinkedIn URL: ${input.linkedinUrl}
-${input.officeAddress ? `- Known Office Address: ${input.officeAddress}` : ''}
+${input.officeAddress ? `- Known Office Address: ${input.officeAddress}` : ''}${csvBlock}
 
 IMPORTANT: Before enriching, verify this person CURRENTLY works at "${input.company}" as of ${today}. Scrape their LinkedIn profile first. If the company appears outdated or incorrect, use the CORRECT current company for all enrichment.
 

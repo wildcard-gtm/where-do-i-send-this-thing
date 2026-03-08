@@ -2,8 +2,13 @@
 
 import { useCallback, useState } from "react";
 
+interface CsvEntry {
+  url: string;
+  csvRowData?: Record<string, string>;
+}
+
 interface CsvUploadProps {
-  onUrlsParsed: (urls: string[]) => void;
+  onUrlsParsed: (entries: CsvEntry[]) => void;
 }
 
 export default function CsvUpload({ onUrlsParsed }: CsvUploadProps) {
@@ -18,16 +23,91 @@ export default function CsvUpload({ onUrlsParsed }: CsvUploadProps) {
         const text = e.target?.result as string;
         const lines = text.split(/[\n\r]+/).filter((l) => l.trim());
 
-        const urls: string[] = [];
-        for (const line of lines) {
-          const cells = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
-          for (const cell of cells) {
-            if (cell.includes("linkedin.com/in/")) {
-              urls.push(cell);
+        if (lines.length === 0) return;
+
+        // Split a CSV line respecting quoted fields
+        const splitRow = (line: string): string[] => {
+          const cells: string[] = [];
+          let current = "";
+          let inQuotes = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+              inQuotes = !inQuotes;
+            } else if (ch === "," && !inQuotes) {
+              cells.push(current.trim().replace(/^"|"$/g, ""));
+              current = "";
+            } else {
+              current += ch;
             }
           }
+          cells.push(current.trim().replace(/^"|"$/g, ""));
+          return cells;
+        };
+
+        // Check if first line looks like a header (any cell contains "linkedin")
+        const firstLineCells = splitRow(lines[0]);
+        const hasHeader = firstLineCells.some((c) =>
+          c.toLowerCase().includes("linkedin")
+        );
+
+        if (hasHeader && lines.length > 1) {
+          // Header-based parsing
+          const headers = firstLineCells;
+          const linkedinColIndex = headers.findIndex((h) =>
+            h.toLowerCase().includes("linkedin")
+          );
+
+          const entries: CsvEntry[] = [];
+          for (let i = 1; i < lines.length; i++) {
+            const cells = splitRow(lines[i]);
+            // Find LinkedIn URL in this row
+            let url = "";
+            if (linkedinColIndex >= 0 && cells[linkedinColIndex]) {
+              const cell = cells[linkedinColIndex];
+              if (cell.includes("linkedin.com/in/")) url = cell;
+            }
+            // Fallback: scan all cells for a LinkedIn URL
+            if (!url) {
+              for (const cell of cells) {
+                if (cell.includes("linkedin.com/in/")) {
+                  url = cell;
+                  break;
+                }
+              }
+            }
+            if (!url) continue;
+
+            // Build rowData from header→cell pairs, excluding the LinkedIn URL column and empty cells
+            const rowData: Record<string, string> = {};
+            for (let j = 0; j < headers.length; j++) {
+              if (j === linkedinColIndex) continue;
+              const header = headers[j]?.trim();
+              const value = cells[j]?.trim();
+              if (header && value) {
+                rowData[header] = value;
+              }
+            }
+
+            entries.push({
+              url,
+              csvRowData: Object.keys(rowData).length > 0 ? rowData : undefined,
+            });
+          }
+          onUrlsParsed(entries);
+        } else {
+          // No header — fallback to URL-only extraction
+          const entries: CsvEntry[] = [];
+          for (const line of lines) {
+            const cells = splitRow(line);
+            for (const cell of cells) {
+              if (cell.includes("linkedin.com/in/")) {
+                entries.push({ url: cell });
+              }
+            }
+          }
+          onUrlsParsed(entries);
         }
-        onUrlsParsed(urls);
       };
       reader.readAsText(file);
     },

@@ -149,7 +149,7 @@ export async function GET(
       appLog("info", "system", "scan_start", `Scan started for job ${jobId}: ${job.linkedinUrl}`, { jobId, batchId: id }).catch(() => {});
 
       try {
-        const result = await runAgentStreaming(job.linkedinUrl, sendEvent);
+        const result = await runAgentStreaming(job.linkedinUrl, sendEvent, job.csvRowData ?? undefined);
 
         // Use enriched name if available, otherwise fall back to URL-based extraction
         const personName = enrichedName || extractPersonName(result);
@@ -193,6 +193,7 @@ export async function GET(
                 careerSummary: decision.career_summary || null,
                 lastScannedAt: new Date(),
                 jobId,
+                csvRowData: job.csvRowData ?? null,
                 notes: researchLog,
               },
             });

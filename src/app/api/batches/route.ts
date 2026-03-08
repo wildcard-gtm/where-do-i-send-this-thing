@@ -10,9 +10,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { urls, name, autoProcess } = await request.json();
+    const body = await request.json();
+    const { name, autoProcess } = body;
 
-    if (!Array.isArray(urls) || urls.length === 0) {
+    // Support both formats:
+    // { urls: string[] }                                         — backward compat
+    // { entries: Array<{ url: string; csvRowData?: object }> }   — new format with CSV row data
+    type Entry = { url: string; csvRowData?: Record<string, string> };
+    let entries: Entry[];
+
+    if (Array.isArray(body.entries) && body.entries.length > 0) {
+      entries = body.entries;
+    } else if (Array.isArray(body.urls) && body.urls.length > 0) {
+      entries = body.urls.map((url: string) => ({ url }));
+    } else {
       return NextResponse.json(
         { error: "At least one URL is required" },
         { status: 400 }
@@ -27,8 +38,9 @@ export async function POST(request: Request) {
         teamId: user.teamId ?? null,
         name: name || null,
         jobs: {
-          create: urls.map((url: string) => ({
-            linkedinUrl: url.trim(),
+          create: entries.map((entry) => ({
+            linkedinUrl: entry.url.trim(),
+            csvRowData: entry.csvRowData ? JSON.stringify(entry.csvRowData) : null,
           })),
         },
       },

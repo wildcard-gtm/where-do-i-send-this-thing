@@ -6,9 +6,14 @@ import UrlPasteInput from "@/components/upload/url-paste-input";
 import CsvUpload from "@/components/upload/csv-upload";
 import UrlPreviewList from "@/components/upload/url-preview-list";
 
+interface UploadEntry {
+  url: string;
+  csvRowData?: Record<string, string>;
+}
+
 export default function UploadPage() {
   const router = useRouter();
-  const [urls, setUrls] = useState<string[]>([]);
+  const [entries, setEntries] = useState<UploadEntry[]>([]);
   const [batchName, setBatchName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -28,15 +33,28 @@ export default function UploadPage() {
       });
   }, []);
 
-  function handleUrlsParsed(parsed: string[]) {
-    setUrls((prev) => {
-      const combined = [...prev, ...parsed];
-      return [...new Set(combined)];
+  function handleUrlsParsed(parsed: Array<{ url: string; csvRowData?: Record<string, string> }> | string[]) {
+    setEntries((prev) => {
+      // Normalize: if plain strings, wrap as { url }
+      const incoming: UploadEntry[] = parsed.map((p) =>
+        typeof p === "string" ? { url: p } : p
+      );
+      const combined = [...prev];
+      for (const entry of incoming) {
+        const existing = combined.find((e) => e.url === entry.url);
+        if (!existing) {
+          combined.push(entry);
+        } else if (!existing.csvRowData && entry.csvRowData) {
+          // Merge row data if new entry has it and existing doesn't
+          existing.csvRowData = entry.csvRowData;
+        }
+      }
+      return combined;
     });
   }
 
   function handleRemove(index: number) {
-    setUrls((prev) => prev.filter((_, i) => i !== index));
+    setEntries((prev) => prev.filter((_, i) => i !== index));
   }
 
   async function handleToggleAutoProcess() {
@@ -50,11 +68,14 @@ export default function UploadPage() {
   }
 
   async function handleSubmit() {
-    const validUrls = urls
-      .filter((url) => /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?(\?.*)?$/i.test(url))
-      .map((url) => url.split("?")[0].replace(/\/$/, ""));
+    const validEntries = entries
+      .filter((e) => /^https?:\/\/(www\.)?linkedin\.com\/in\/[\w-]+\/?(\?.*)?$/i.test(e.url))
+      .map((e) => ({
+        ...e,
+        url: e.url.split("?")[0].replace(/\/$/, ""),
+      }));
 
-    if (validUrls.length === 0) {
+    if (validEntries.length === 0) {
       setError("No valid LinkedIn URLs found. Please add at least one.");
       return;
     }
@@ -67,7 +88,7 @@ export default function UploadPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          urls: validUrls,
+          entries: validEntries,
           name: batchName || undefined,
           autoProcess,
         }),
@@ -111,7 +132,7 @@ export default function UploadPage() {
 
         <UrlPasteInput onUrlsParsed={handleUrlsParsed} />
         <CsvUpload onUrlsParsed={handleUrlsParsed} />
-        <UrlPreviewList urls={urls} onRemove={handleRemove} />
+        <UrlPreviewList urls={entries.map((e) => e.url)} onRemove={handleRemove} />
 
         {error && (
           <div className="bg-danger/10 border border-danger/30 text-danger px-4 py-3 rounded-lg text-sm">
@@ -122,8 +143,8 @@ export default function UploadPage() {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between pt-4 gap-4">
           <div className="flex items-center gap-4">
             <span className="text-sm text-muted-foreground">
-              {urls.length > 0
-                ? `${urls.length} URL${urls.length !== 1 ? "s" : ""} ready`
+              {entries.length > 0
+                ? `${entries.length} URL${entries.length !== 1 ? "s" : ""} ready`
                 : "Add LinkedIn URLs above"}
             </span>
           </div>
@@ -152,7 +173,7 @@ export default function UploadPage() {
             )}
             <button
               onClick={handleSubmit}
-              disabled={urls.length === 0 || loading}
+              disabled={entries.length === 0 || loading}
               className="bg-primary hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed text-white px-8 py-2.5 rounded-lg font-medium transition text-sm"
             >
               {loading ? "Creating scan..." : "Create Scan"}

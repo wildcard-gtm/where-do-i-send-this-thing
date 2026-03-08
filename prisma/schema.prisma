@@ -89,6 +89,7 @@ model Job {
   recommendation String?
   confidence     Int?
   result         String?
+  csvRowData     String?      // JSON of CSV row headers→values, excluding LinkedIn URL column
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
   events         AgentEvent[]
@@ -123,6 +124,7 @@ model Contact {
   confidence          Int?
   lastScannedAt       DateTime?
   notes               String?
+  csvRowData          String?              // Copied from Job on contact creation
   jobId               String?              @unique
   job                 Job?                 @relation(fields: [jobId], references: [id])
   chatMessages        ChatMessage[]

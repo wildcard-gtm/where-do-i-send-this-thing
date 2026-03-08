@@ -28,7 +28,7 @@ export async function POST(
     where: { id },
     include: {
       contact: {
-        select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true, userId: true },
+        select: { id: true, name: true, company: true, linkedinUrl: true, title: true, officeAddress: true, csvRowData: true, userId: true },
       },
     },
   });
@@ -93,6 +93,7 @@ export async function POST(
           linkedinUrl: contact.linkedinUrl,
           title: contact.title ?? undefined,
           officeAddress: contact.officeAddress ?? undefined,
+          csvRowData: contact.csvRowData ?? undefined,
         },
         async (event) => {
           // Check cancellation on each tool call

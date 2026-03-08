@@ -292,12 +292,16 @@ async function getAgentPrompts(): Promise<{ agentPrompt: string; initialMessageT
   }
 }
 
-function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string, input: string): Message {
+function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string, input: string, csvContext?: string): Message {
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const content = initialMessageTemplate
+  let content = initialMessageTemplate
     .replace(/\{\{agent_prompt\}\}/g, agentPrompt)
     .replace(/\{\{input\}\}/g, input)
     .replace(/\{\{current_date\}\}/g, today);
+
+  if (csvContext) {
+    content += `\n\nUPLOADED CSV DATA (possibly related — use as a starting hint, but always verify via tools):\n${csvContext}`;
+  }
 
   return { role: 'user', content };
 }
@@ -307,6 +311,7 @@ function buildInitialMessage(agentPrompt: string, initialMessageTemplate: string
 export async function runAgentStreaming(
   input: string,
   onEvent: (event: AgentStreamEvent) => void,
+  csvContext?: string,
 ): Promise<AgentResult> {
   const emit = (type: AgentEventType, data: Record<string, unknown>, iteration?: number) => {
     onEvent({
@@ -324,7 +329,7 @@ export async function runAgentStreaming(
     getAgentPrompts(),
     getToolDefinitions(),
   ]);
-  const messages: Message[] = [buildInitialMessage(agentPrompt, initialMessageTemplate, input)];
+  const messages: Message[] = [buildInitialMessage(agentPrompt, initialMessageTemplate, input, csvContext)];
 
   let iteration = 0;
   let decision: AgentDecision | null = null;
