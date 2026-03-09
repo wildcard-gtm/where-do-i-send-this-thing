@@ -13,6 +13,11 @@ export type LogSource =
   | "exa_ai"
   | "firecrawl"
   | "linkedin_mcp"
+  | "pdl"
+  | "google_maps"
+  | "hunter_io"
+  | "brandfetch"
+  | "logo_dev"
   | "supabase"
   | "system";
 

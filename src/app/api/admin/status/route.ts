@@ -10,6 +10,13 @@ const SERVICES = [
   "endato",
   "propmix",
   "exa_ai",
+  "firecrawl",
+  "linkedin_mcp",
+  "pdl",
+  "google_maps",
+  "hunter_io",
+  "brandfetch",
+  "logo_dev",
   "supabase",
   "system",
 ] as const;

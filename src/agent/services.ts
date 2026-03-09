@@ -106,6 +106,8 @@ export async function callLinkedInMCP(
       result = parsed.result ?? parsed;
     }
 
+    appLog('info', 'linkedin_mcp', toolName, `LinkedIn MCP ${toolName} succeeded`, { toolName, args }).catch(() => {});
+
     // MCP tool results have content array with text parts
     const content = (result as Record<string, unknown>)?.content;
     if (Array.isArray(content)) {
@@ -205,6 +207,7 @@ export async function enrichWithPDL(linkedinUrl: string): Promise<ToolResult> {
     const company: string = person.job_company_name ?? '';
     const name: string = person.full_name ?? '';
 
+    appLog('info', 'pdl', 'enrich', `PDL enrichment: ${name}${company ? ` at ${company}` : ''}`, { linkedinUrl, name, company }).catch(() => {});
     return {
       success: true,
       data: {
@@ -224,6 +227,7 @@ export async function enrichWithPDL(linkedinUrl: string): Promise<ToolResult> {
   } catch (err) {
     const status = (err as AxiosError).response?.status;
     if (status === 404) return { success: false, summary: 'PDL: person not found' };
+    appLog('error', 'pdl', 'enrich', `PDL enrichment failed: ${(err as Error).message}`, { linkedinUrl, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `PDL error: ${(err as Error).message}` };
   }
 }
@@ -262,12 +266,14 @@ export async function searchExaPerson(
       return { success: false, summary: `No LinkedIn profiles found for "${query}"` };
     }
 
+    appLog('info', 'exa_ai', 'person_search', `Exa person search: ${profiles.length} profile(s) for "${query}"`, { query, numResults: profiles.length }).catch(() => {});
     return {
       success: true,
       data: profiles.map(r => ({ name: r.title ?? '', url: r.url ?? '', score: r.score })),
       summary: `Found ${profiles.length} LinkedIn profile(s) for "${query}": ${profiles.map(r => r.url).join(', ')}`,
     };
   } catch (err) {
+    appLog('error', 'exa_ai', 'person_search', `Exa person search failed: ${(err as Error).message}`, { query, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Exa person search error: ${(err as Error).message}` };
   }
 }
@@ -828,6 +834,7 @@ FedEx label: Output a complete, copy-pasteable FedEx shipping label for the best
       return { success: false, summary: 'No response from office research sub-call' };
     }
 
+    appLog('info', 'openai', 'office_research', `Office research complete for ${companyName || fullName}`, { fullName, companyName }).catch(() => {});
     return {
       success: true,
       data: { analysis: text },
@@ -837,6 +844,7 @@ FedEx label: Output a complete, copy-pasteable FedEx shipping label for the best
     const axiosErr = err as AxiosError;
     const status = axiosErr.response?.status;
     const detail = status ? ` (HTTP ${status})` : '';
+    appLog('error', 'openai', 'office_research', `Office research failed${detail}: ${(err as Error).message}`, { fullName, companyName, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Office research failed${detail}: ${(err as Error).message}` };
   }
 }
@@ -936,6 +944,7 @@ export async function calculateDistance(
       };
     }
 
+    appLog('info', 'google_maps', 'distance', `Distance: ${origin} → ${destination}: ${element.distance?.text ?? '?'}`, { origin, destination }).catch(() => {});
     return {
       success: true,
       data: {
@@ -947,6 +956,7 @@ export async function calculateDistance(
       summary: `${element.distance?.text ?? '?'}, ${element.duration?.text ?? '?'}`,
     };
   } catch (err) {
+    appLog('error', 'google_maps', 'distance', `Distance calculation failed: ${(err as Error).message}`, { origin, destination, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Distance calculation failed: ${(err as Error).message}` };
   }
 }
@@ -968,12 +978,14 @@ export async function fetchCompanyLogo(domain: string): Promise<ToolResult> {
       return { success: false, summary: `Hunter.io logo unusable for ${domain}: ${validation.reason}` };
     }
 
+    appLog('info', 'hunter_io', 'logo_fetch', `Logo found for ${domain}`, { domain, logoUrl: url }).catch(() => {});
     return {
       success: true,
       data: { logoUrl: url },
       summary: `Logo found: ${url}`,
     };
   } catch (err) {
+    appLog('error', 'hunter_io', 'logo_fetch', `Hunter.io logo fetch failed for ${domain}: ${(err as Error).message}`, { domain, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Hunter.io logo fetch failed: ${(err as Error).message}` };
   }
 }
@@ -1053,6 +1065,7 @@ export async function fetchBrandfetch(domain: string): Promise<ToolResult> {
     if (result.colors?.length) parts.push(`colors: ${result.colors.map(c => c.hex).join(', ')}`);
     if (result.description) parts.push(`desc: ${result.description.slice(0, 100)}`);
 
+    appLog('info', 'brandfetch', 'brand_lookup', `Brandfetch for ${domain}: ${parts.join(' | ') || 'data found'}`, { domain, hasLogo: !!logoUrl }).catch(() => {});
     return {
       success: true,
       data: result,
@@ -1061,6 +1074,7 @@ export async function fetchBrandfetch(domain: string): Promise<ToolResult> {
   } catch (err) {
     const status = (err as AxiosError).response?.status;
     if (status === 404) return { success: false, summary: `Brandfetch: no data found for ${domain}` };
+    appLog('error', 'brandfetch', 'brand_lookup', `Brandfetch failed for ${domain}: ${(err as Error).message}`, { domain, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Brandfetch fetch failed: ${(err as Error).message}` };
   }
 }
@@ -1080,12 +1094,14 @@ export async function fetchLogoDev(domain: string): Promise<ToolResult> {
       return { success: false, summary: `Logo.dev logo unusable for ${domain}: ${validation.reason}` };
     }
 
+    appLog('info', 'logo_dev', 'logo_fetch', `Logo.dev logo found for ${domain}`, { domain }).catch(() => {});
     return {
       success: true,
       data: { logoUrl: url },
       summary: `Logo found via Logo.dev: ${url}`,
     };
   } catch (err) {
+    appLog('error', 'logo_dev', 'logo_fetch', `Logo.dev fetch failed for ${domain}: ${(err as Error).message}`, { domain, error: (err as Error).message }).catch(() => {});
     return { success: false, summary: `Logo.dev fetch failed: ${(err as Error).message}` };
   }
 }
