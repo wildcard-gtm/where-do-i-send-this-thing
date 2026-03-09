@@ -508,6 +508,7 @@ function parseIssues(analysis: string): { pass: boolean; issues: string[] } {
 
 /** Normalize a job title to be short, clean, and easy for AI to render without spelling errors */
 export function normalizeJobTitle(title: string): string {
+  if (!title) return '';
   let t = title.trim();
 
   // Strip location/level suffixes after commas, dashes, pipes, parens
