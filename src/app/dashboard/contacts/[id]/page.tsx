@@ -823,16 +823,7 @@ export default function ContactDetailPage() {
                       Download PNG
                     </button>
                   )}
-                  <button
-                    onClick={() => setShowCorrectionModal(true)}
-                    disabled={postcard.status === "pending" || postcard.status === "generating"}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-warning/50 text-warning hover:bg-warning/10 disabled:opacity-50 transition text-sm font-medium"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                    </svg>
-                    Correct with AI
-                  </button>
+                  {/* "Correct with AI" button hidden — kept internally */}
                   <button
                     onClick={handleDeletePostcard}
                     className="px-4 py-2.5 rounded-lg border border-border text-danger hover:bg-danger/10 transition text-sm font-medium"

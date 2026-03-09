@@ -199,7 +199,7 @@ function ScanPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact; o
             c.confidence >= 85 ? "text-success" : c.confidence >= 75 ? "text-primary" : "text-warning"
           }`}>{c.confidence}%</span>
         )}
-        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
+        {/* onCorrect hidden — kept internally */}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -258,7 +258,7 @@ function EnrichPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact;
           </svg>
           Done
         </span>
-        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
+        {/* onCorrect hidden — kept internally */}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -310,7 +310,7 @@ function PostcardPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContac
           </svg>
           View
         </Link>
-        {onCorrect && <CorrectBtn onClick={(e) => { e.stopPropagation(); onCorrect(); }} />}
+        {/* onCorrect hidden — kept internally */}
         {onRefresh && <RefreshBtn onClick={(e) => { e.stopPropagation(); onRefresh(); }} />}
       </div>
     );
@@ -356,6 +356,7 @@ export default function CampaignDetailPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDispatching, setIsDispatching] = useState(false);
   const [correctionTarget, setCorrectionTarget] = useState<CorrectionTarget>(null);
+  const [editTarget, setEditTarget] = useState<CampaignContact | null>(null);
   const [isProcessingStuck, setIsProcessingStuck] = useState(false);
   const [force, setForce] = useState(false);
   const [locationType, setLocationType] = useState<"all" | "remote" | "office">("all");
@@ -1273,6 +1274,28 @@ export default function CampaignDetailPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                       </svg>
                     </a>
+                    <button
+                      onClick={() => setEditTarget(c)}
+                      className="shrink-0 text-muted-foreground hover:text-primary transition"
+                      title="Edit contact"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Delete ${c.contactName || c.personName || "this contact"}?`)) return;
+                        await fetch(`/api/contacts/${c.contactId}`, { method: "DELETE" });
+                        fetchData();
+                      }}
+                      className="shrink-0 text-muted-foreground hover:text-red-500 transition"
+                      title="Delete contact"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </>
                 )}
               </div>
@@ -1309,6 +1332,121 @@ export default function CampaignDetailPage() {
           onApplied={fetchData}
         />
       )}
+
+      {/* Edit contact modal */}
+      {editTarget && editTarget.contactId && (
+        <EditContactModal
+          contact={editTarget}
+          onClose={() => setEditTarget(null)}
+          onSaved={() => { setEditTarget(null); fetchData(); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Edit Contact Modal ─────────────────────────────────────────────────────
+
+function EditContactModal({
+  contact,
+  onClose,
+  onSaved,
+}: {
+  contact: CampaignContact;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [name, setName] = useState(contact.contactName || contact.personName || "");
+  const [linkedinUrl, setLinkedinUrl] = useState(contact.linkedinUrl || "");
+  const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(contact.profileImageUrl);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleSave = async () => {
+    if (!contact.contactId) return;
+    setSaving(true);
+    try {
+      // Upload photo first if selected
+      if (photoFile) {
+        const form = new FormData();
+        form.append("photo", photoFile);
+        await fetch(`/api/contacts/${contact.contactId}/upload-photo`, { method: "POST", body: form });
+      }
+
+      // Patch name + linkedinUrl
+      await fetch(`/api/contacts/${contact.contactId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, linkedinUrl }),
+      });
+
+      onSaved();
+    } catch {
+      alert("Failed to save changes");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-md p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-foreground">Edit Contact</h3>
+
+        {/* Photo */}
+        <div className="flex items-center gap-4">
+          {photoPreview ? (
+            <img src={photoPreview} alt="" className="w-16 h-16 rounded-full object-cover" />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center text-xl font-semibold text-primary">
+              {(name || "?")[0]?.toUpperCase()}
+            </div>
+          )}
+          <label className="cursor-pointer text-sm text-primary hover:underline">
+            Upload photo
+            <input type="file" accept="image/jpeg,image/png" className="hidden" onChange={handlePhotoChange} />
+          </label>
+        </div>
+
+        {/* Name */}
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+
+        {/* LinkedIn URL */}
+        <div>
+          <label className="block text-sm font-medium text-muted-foreground mb-1">LinkedIn URL</label>
+          <input
+            type="text"
+            value={linkedinUrl}
+            onChange={(e) => setLinkedinUrl(e.target.value)}
+            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2 pt-2">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-border text-muted-foreground hover:bg-muted transition">
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition disabled:opacity-50">
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

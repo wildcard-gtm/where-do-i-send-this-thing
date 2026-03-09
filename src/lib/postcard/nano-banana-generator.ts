@@ -772,7 +772,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
         ].join('\n')
       : `2. COMPANY LOGO: No logo provided — draw a generic decorative circle.`,
     ``,
-    `3. SCREENS: Replace screen content with the provided dashboard screenshot.`,
+    `3. SCREENS: The wall-mounted monitor on the right side of the room shows a recruiting analytics dashboard. Replace its screen content with the provided dashboard screenshot image, fitting it within the monitor's bezel/frame. Keep the monitor shape, position, and size identical to the reference template.`,
     ``,
     `4. PEOPLE — render EXACTLY ${totalPeople} people, no more, no fewer:`,
     [
@@ -822,7 +822,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `WHAT WE ASKED:`,
     `- Fill TOP ROLES whiteboard with: ${expectedRoles}`,
     data.logoImage ? `- Fill COMPANY LOGO with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
-    `- Fill screens with the dashboard screenshot`,
+    `- Fill the wall-mounted monitor with the dashboard screenshot (fit within bezel)`,
     `- EXACTLY ${1 + data.teamImages.length} people total: 1 STANDING presenter + ${data.teamImages.length} SEATED at the table`,
     data.prospectImage ? `- Person 1 (STANDING) must match the prospect photo — this is the MAIN PROSPECT` : ``,
     data.teamImages.length > 0 ? `- Persons 2–${data.teamImages.length + 1} (SEATED) must match the ${data.teamImages.length} team member photo(s)` : ``,
@@ -936,7 +936,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
         ].join('\n')
       : `2. COMPANY LOGO: No logo provided — draw a generic decorative circle.`,
     ``,
-    `3. MONITOR SCREEN: Replace monitor content with the provided dashboard screenshot.`,
+    `3. MONITOR SCREEN: The desktop monitor on the desk in front of Person 1 shows a recruiting analytics dashboard. Replace its screen content with the provided dashboard screenshot image, fitting it within the monitor's bezel/frame. Keep the monitor shape, position, and size identical to the reference template.`,
     ``,
     `4. PEOPLE — render EXACTLY ${totalPeople} people, no more, no fewer:`,
     [
@@ -984,7 +984,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `WHAT WE ASKED:`,
     `- Fill TOP ROLES whiteboard panel with: "Top Roles Hiring:" + ${expectedRoles}`,
     data.logoImage ? `- Fill COMPANY LOGO with the provided company logo (once only)` : `- No logo provided — should be a generic decorative circle`,
-    `- Fill monitor screen with the dashboard screenshot`,
+    `- Fill the desktop monitor with the dashboard screenshot (fit within bezel)`,
     `- EXACTLY ${1 + data.teamImages.length} people total: 1 center desk person + ${data.teamImages.length} in video tiles`,
     data.prospectImage ? `- Person 1 (center desk) must match the prospect photo — this is the MAIN PROSPECT` : ``,
     data.teamImages.length > 0 ? `- Persons 2–${data.teamImages.length + 1} (video tiles) must match the ${data.teamImages.length} team member photo(s)` : ``,
