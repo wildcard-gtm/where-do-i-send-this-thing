@@ -5,7 +5,11 @@ import { prisma } from "@/lib/db";
 // GET /api/admin/logs?cursor=X&search=Y&level=Z&source=W
 export async function GET(request: Request) {
   const user = await getSession();
-  if (!user || user.role !== "admin") {
+  if (!user) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const dbUser = await prisma.user.findUnique({ where: { id: user.id }, select: { role: true } });
+  if (dbUser?.role !== "admin") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

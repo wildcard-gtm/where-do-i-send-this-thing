@@ -147,7 +147,7 @@ export default function ContactDetailPage() {
     document.title = contact ? `${contact.name} | Contacts | WDISTT` : "Contact | WDISTT";
   }, [contact]);
 
-  useEffect(() => {
+  const fetchContact = () => {
     fetch(`/api/contacts/${contactId}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -156,7 +156,9 @@ export default function ContactDetailPage() {
         if (data?.userRole === "admin") setIsAdmin(true);
         setLoading(false);
       });
-  }, [contactId]);
+  };
+
+  useEffect(() => { fetchContact(); }, [contactId]);
 
   // Load postcards for this contact when Postcard tab is opened
   const loadPostcards = () => {
@@ -612,38 +614,18 @@ export default function ContactDetailPage() {
         </div>
       ) : tab === "team" ? (
         <div className="max-w-2xl">
-          {enrichment && (enrichment.teamPhotos as TeamPhoto[] | null)?.length ? (
+          {enrichment ? (
             <div className="space-y-6">
-              <p className="text-sm text-muted-foreground">
-                Team members at <span className="font-medium text-foreground">{enrichment.companyName || contact.company || "this company"}</span> discovered during enrichment.
-              </p>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-muted-foreground">
+                  Team members at <span className="font-medium text-foreground">{enrichment.companyName || contact.company || "this company"}</span> discovered during enrichment.
+                </p>
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {(enrichment.teamPhotos as TeamPhoto[]).map((tp, i) => (
-                  <div key={i} className="glass-card rounded-2xl p-4 flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0 overflow-hidden">
-                      {tp.photoUrl
-                        ? <img src={tp.photoUrl} alt={tp.name || "Team member"} className="w-12 h-12 rounded-full object-cover" />
-                        : (tp.name || "?")[0]?.toUpperCase()}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm font-medium text-foreground truncate">{tp.name || "Unknown"}</p>
-                        {tp.linkedinUrl && (
-                          <a
-                            href={tp.linkedinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="shrink-0 text-muted-foreground/50 hover:text-[#0A66C2] transition"
-                            title="LinkedIn profile"
-                          >
-                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
-                          </a>
-                        )}
-                      </div>
-                      {tp.title && <p className="text-xs text-muted-foreground truncate">{tp.title}</p>}
-                    </div>
-                  </div>
+                {((enrichment.teamPhotos as TeamPhoto[] | null) ?? []).map((tp, i) => (
+                  <TeamMemberCard key={i} tp={tp} index={i} enrichmentId={enrichment.id} onUpdated={fetchContact} />
                 ))}
+                <AddTeamMemberCard enrichmentId={enrichment.id} onAdded={fetchContact} />
               </div>
 
               {enrichment.companyMission && (
@@ -1087,6 +1069,180 @@ export default function ContactDetailPage() {
           initialMessages={contact.chatMessages}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Team Member Card (editable) ────────────────────────────────────────────
+
+function TeamMemberCard({ tp, index, enrichmentId, onUpdated }: {
+  tp: TeamPhoto; index: number; enrichmentId: string; onUpdated: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(tp.name || "");
+  const [title, setTitle] = useState(tp.title || "");
+  const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    const form = new FormData();
+    form.append("index", String(index));
+    form.append("name", name);
+    form.append("title", title);
+    if (photoFile) form.append("photo", photoFile);
+    await fetch(`/api/enrichments/${enrichmentId}/team-member`, { method: "PATCH", body: form });
+    setSaving(false);
+    setEditing(false);
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    onUpdated();
+  };
+
+  const handleDelete = async () => {
+    if (!confirm(`Remove ${tp.name || "this team member"}?`)) return;
+    await fetch(`/api/enrichments/${enrichmentId}/team-member`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
+    });
+    onUpdated();
+  };
+
+  const displayPhoto = photoPreview || tp.photoUrl;
+
+  if (editing) {
+    return (
+      <div className="glass-card rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex items-center gap-3">
+          <label className="cursor-pointer shrink-0">
+            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary overflow-hidden relative group">
+              {displayPhoto
+                ? <img src={displayPhoto} alt="" className="w-12 h-12 rounded-full object-cover" />
+                : (name || "?")[0]?.toUpperCase()}
+              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 rounded-full transition">
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              </div>
+            </div>
+            <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+          </label>
+          <div className="flex-1 flex flex-col gap-2">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/40" />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={() => { setEditing(false); setName(tp.name || ""); setTitle(tp.title || ""); setPhotoFile(null); setPhotoPreview(null); }} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition">Cancel</button>
+          <button onClick={handleSave} disabled={saving} className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1 rounded-lg transition disabled:opacity-50">{saving ? "Saving..." : "Save"}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-card rounded-2xl p-4 flex items-center gap-4 group/member">
+      <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0 overflow-hidden">
+        {tp.photoUrl
+          ? <img src={tp.photoUrl} alt={tp.name || "Team member"} className="w-12 h-12 rounded-full object-cover" />
+          : (tp.name || "?")[0]?.toUpperCase()}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <p className="text-sm font-medium text-foreground truncate">{tp.name || "Unknown"}</p>
+          {tp.linkedinUrl && (
+            <a href={tp.linkedinUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 text-muted-foreground/50 hover:text-[#0A66C2] transition" title="LinkedIn profile">
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+            </a>
+          )}
+        </div>
+        {tp.title && <p className="text-xs text-muted-foreground truncate">{tp.title}</p>}
+      </div>
+      <div className="flex items-center gap-1 opacity-0 group-hover/member:opacity-100 transition">
+        <button onClick={() => setEditing(true)} className="p-1 text-muted-foreground hover:text-primary transition" title="Edit">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+        </button>
+        <button onClick={handleDelete} className="p-1 text-muted-foreground hover:text-red-500 transition" title="Remove">
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Add Team Member Card ───────────────────────────────────────────────────
+
+function AddTeamMemberCard({ enrichmentId, onAdded }: { enrichmentId: string; onAdded: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [title, setTitle] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleAdd = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    const form = new FormData();
+    form.append("name", name);
+    form.append("title", title);
+    if (photoFile) form.append("photo", photoFile);
+    await fetch(`/api/enrichments/${enrichmentId}/team-member`, { method: "POST", body: form });
+    setSaving(false);
+    setOpen(false);
+    setName("");
+    setTitle("");
+    setPhotoFile(null);
+    setPhotoPreview(null);
+    onAdded();
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="glass-card rounded-2xl p-4 flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-primary hover:border-primary/30 transition border border-dashed border-border/50 min-h-[72px]">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+        Add team member
+      </button>
+    );
+  }
+
+  return (
+    <div className="glass-card rounded-2xl p-4 flex flex-col gap-3">
+      <div className="flex items-center gap-3">
+        <label className="cursor-pointer shrink-0">
+          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary overflow-hidden relative group">
+            {photoPreview
+              ? <img src={photoPreview} alt="" className="w-12 h-12 rounded-full object-cover" />
+              : <svg className="w-5 h-5 text-primary/50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>}
+            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 rounded-full transition">
+              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+            </div>
+          </div>
+          <input type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
+        </label>
+        <div className="flex-1 flex flex-col gap-2">
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Name" className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" autoFocus />
+          <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Title" className="w-full bg-background border border-border rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/40" />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2">
+        <button onClick={() => { setOpen(false); setName(""); setTitle(""); setPhotoFile(null); setPhotoPreview(null); }} className="text-xs text-muted-foreground hover:text-foreground px-2 py-1 transition">Cancel</button>
+        <button onClick={handleAdd} disabled={saving || !name.trim()} className="text-xs bg-primary text-primary-foreground hover:bg-primary/90 px-3 py-1 rounded-lg transition disabled:opacity-50">{saving ? "Adding..." : "Add"}</button>
+      </div>
     </div>
   );
 }
