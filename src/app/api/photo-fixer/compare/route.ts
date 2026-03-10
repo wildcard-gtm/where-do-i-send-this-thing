@@ -24,7 +24,7 @@ async function downloadAsBase64(
   try {
     const r = await axios.get(url, {
       responseType: "arraybuffer",
-      timeout: 15000,
+      timeout: 10000,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -61,6 +61,22 @@ interface TeamMember {
   photoUrl?: string;
   title?: string;
   linkedinUrl?: string;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+interface CompareResultItem {
+  contactId: string;
+  name: string;
+  company: string;
+  slug: string;
+  dbPhotoUrl: string | null;
+  vetricPhotoUrl: string | null;
+  verdict: "MATCH" | "MISMATCH" | "MISSING" | "ERROR";
+  reason: string;
+  type: "contact" | "team";
+  teamMemberName?: string;
+  teamMemberIndex?: number;
+  enrichmentId?: string;
 }
 
 // POST /api/photo-fixer/compare
@@ -162,7 +178,7 @@ export async function POST(request: Request) {
               contactId: c.id,
               name: m.name || `Team Member ${idx + 1}`,
               company: c.company || "Unknown",
-              linkedinUrl: m.linkedinUrl || null,
+              linkedinUrl: m.linkedinUrl,
               dbPhotoUrl: m.photoUrl || null,
               type: "team",
               teamMemberName: m.name || `Team Member ${idx + 1}`,
@@ -194,18 +210,22 @@ export async function POST(request: Request) {
         total: totalItems,
       });
 
-      // Phase 1: Fetch Vetric data + download images in batches of 10
+      // Phase 1: Fetch Vetric data + download images in batches of 20
+      // Cache Vetric lookups by slug so we don't re-fetch the same person
+      // (e.g. multiple contacts at same company share team members)
+      const vetricCache = new Map<string, string | null>();
+      const imgCache = new Map<string, { base64: string; mimeType: string } | null>();
+
       const pairs: PhotoPair[] = [];
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const skippedResults: any[] = [];
-      const FETCH_BATCH = 10;
+      const skippedResults: CompareResultItem[] = [];
+      const FETCH_BATCH = 20;
       let downloaded = 0;
 
       for (let i = 0; i < allItems.length; i += FETCH_BATCH) {
         const chunk = allItems.slice(i, i + FETCH_BATCH);
         send("progress", {
           phase: "downloading",
-          message: `Downloading photos ${downloaded + 1}-${Math.min(downloaded + chunk.length, totalItems)} of ${totalItems}...`,
+          message: `Fetching photos ${downloaded + 1}–${Math.min(downloaded + chunk.length, totalItems)} of ${totalItems}...`,
           current: downloaded,
           total: totalItems,
         });
@@ -214,27 +234,40 @@ export async function POST(request: Request) {
           chunk.map(async (item) => {
             const slug = extractSlug(item.linkedinUrl);
             if (!slug) {
-              // No LinkedIn URL — can't compare, mark as MISSING immediately
-              return { skip: true as const, item, slug: "" };
+              return { skip: true as const, item };
             }
 
+            // Vetric lookup (cached by slug)
             let vetricPhotoUrl: string | null = null;
-            try {
-              const r = await axios.get(`${VETRIC_BASE}/profile/${slug}`, {
-                headers: vetricHeaders,
-                timeout: 15000,
-              });
-              if (r.data && r.data.message !== "Entity Not Found") {
-                vetricPhotoUrl = r.data.profile_picture || null;
+            if (vetricCache.has(slug)) {
+              vetricPhotoUrl = vetricCache.get(slug) ?? null;
+            } else {
+              try {
+                const r = await axios.get(`${VETRIC_BASE}/profile/${slug}`, {
+                  headers: vetricHeaders,
+                  timeout: 10000,
+                });
+                if (r.data && r.data.message !== "Entity Not Found") {
+                  vetricPhotoUrl = r.data.profile_picture || null;
+                }
+              } catch {
+                // skip
               }
-            } catch {
-              // skip
+              vetricCache.set(slug, vetricPhotoUrl);
             }
 
-            // Download both images
+            // Download both images (cached by URL)
+            async function getImg(url: string | null) {
+              if (!url) return null;
+              if (imgCache.has(url)) return imgCache.get(url) ?? null;
+              const img = await downloadAsBase64(url);
+              imgCache.set(url, img);
+              return img;
+            }
+
             const [dbImg, vetricImg] = await Promise.all([
-              item.dbPhotoUrl ? downloadAsBase64(item.dbPhotoUrl) : null,
-              vetricPhotoUrl ? downloadAsBase64(vetricPhotoUrl) : null,
+              getImg(item.dbPhotoUrl),
+              getImg(vetricPhotoUrl),
             ]);
 
             return {
@@ -259,7 +292,6 @@ export async function POST(request: Request) {
 
         for (const r of chunkResults) {
           if (r.skip) {
-            // Add as MISSING result directly — no Gemini comparison needed
             skippedResults.push({
               contactId: r.item.contactId,
               name: r.item.name,
@@ -268,7 +300,7 @@ export async function POST(request: Request) {
               dbPhotoUrl: r.item.dbPhotoUrl,
               vetricPhotoUrl: null,
               verdict: "MISSING",
-              reason: "No LinkedIn URL — cannot compare",
+              reason: "No LinkedIn URL",
               type: r.item.type,
               teamMemberName: r.item.teamMemberName,
               teamMemberIndex: r.item.teamMemberIndex,
@@ -283,20 +315,19 @@ export async function POST(request: Request) {
 
       send("progress", {
         phase: "downloading_done",
-        message: `Downloaded ${pairs.length} photo pairs (${skippedResults.length} skipped — no LinkedIn URL). Starting AI comparison...`,
+        message: `Downloaded ${pairs.length} photo pairs (${skippedResults.length} skipped, ${vetricCache.size} unique Vetric lookups). Starting AI comparison...`,
         current: totalItems,
         total: totalItems,
       });
 
-      // Phase 2: Compare via Gemini in batches of 10
+      // Phase 2: Compare via Gemini in batches of 20
       const geminiModel = await getGeminiModel("image_analysis");
       const geminiKey =
         process.env.GOOGLE_AI_STUDIO || process.env.GEMINI_API_KEY || "";
       const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiKey}`;
 
-      const COMPARE_BATCH = 10;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const allResults: any[] = [];
+      const COMPARE_BATCH = 20;
+      const allResults: CompareResultItem[] = [];
       const totalBatches = Math.ceil(pairs.length / COMPARE_BATCH);
       let batchNum = 0;
 
@@ -390,7 +421,7 @@ export async function POST(request: Request) {
             geminiUrl,
             {
               contents: [{ parts }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 4000 },
+              generationConfig: { temperature: 0.1, maxOutputTokens: 8000 },
             },
             {
               headers: { "Content-Type": "application/json" },
