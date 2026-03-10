@@ -37,6 +37,7 @@ export async function GET(
             select: {
               id: true,
               name: true,
+              company: true,
               title: true,
               profileImageUrl: true,
               officeAddress: true,
@@ -133,6 +134,7 @@ export async function GET(
       stages,
       contactId: contact?.id ?? null,
       contactName: contact?.name ?? null,
+      contactCompany: contact?.company ?? null,
       contactTitle: contact?.title ?? null,
       profileImageUrl: contact?.profileImageUrl ?? null,
       enrichmentId: enrichment?.id ?? null,

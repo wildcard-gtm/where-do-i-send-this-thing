@@ -101,6 +101,7 @@ export default function ReviewsPage() {
   const [tab, setTab] = useState<"to-review" | "reviewed">("to-review");
   const [templateFilter, setTemplateFilter] = useState<"all" | "warroom" | "zoom">("all");
   const [campaignId, setCampaignId] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
 
   // Expanded card for editing
@@ -142,10 +143,26 @@ export default function ReviewsPage() {
   const reviewedCards = postcards.filter((p) => p.status === "reviewed");
   const tabCards = tab === "to-review" ? toReviewCards : reviewedCards;
 
-  // Filter by template + paginate
+  // Filter by search + template + paginate
+  const searched = searchQuery.trim()
+    ? tabCards.filter((p) => {
+        const q = searchQuery.toLowerCase();
+        const enrichment = getEnrichment(p);
+        const team = enrichment?.teamPhotos ?? [];
+        return (
+          (p.contactName || "").toLowerCase().includes(q) ||
+          (p.contact?.name || "").toLowerCase().includes(q) ||
+          (p.contact?.company || "").toLowerCase().includes(q) ||
+          (p.contact?.linkedinUrl || "").toLowerCase().includes(q) ||
+          (enrichment?.companyName || "").toLowerCase().includes(q) ||
+          team.some((t) => (t.name || "").toLowerCase().includes(q)) ||
+          team.some((t) => (t.linkedinUrl || "").toLowerCase().includes(q))
+        );
+      })
+    : tabCards;
   const filtered = templateFilter === "all"
-    ? tabCards
-    : tabCards.filter((p) => p.template === templateFilter);
+    ? searched
+    : searched.filter((p) => p.template === templateFilter);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
@@ -328,6 +345,28 @@ export default function ReviewsPage() {
             </option>
           ))}
         </select>
+
+        <div className="h-5 w-px bg-border shrink-0" />
+
+        <div className="relative flex-1 max-w-xs">
+          <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => { setSearchQuery(e.target.value); setPage(0); }}
+            placeholder="Search name, company, team, LinkedIn..."
+            className="w-full text-sm bg-transparent border border-border rounded-lg pl-9 pr-3 py-2 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
+          />
+          {searchQuery && (
+            <button onClick={() => setSearchQuery("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Cards */}
