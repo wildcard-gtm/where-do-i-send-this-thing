@@ -4,7 +4,7 @@ import { getTeamUserIds } from "@/lib/team";
 import { getGeminiModel } from "@/lib/ai/config";
 import axios from "axios";
 
-export const maxDuration = 300;
+export const maxDuration = 600;
 
 const VETRIC_BASE = "https://api.vetric.io/linkedin/v1";
 

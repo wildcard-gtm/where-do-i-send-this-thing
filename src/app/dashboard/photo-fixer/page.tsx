@@ -102,12 +102,6 @@ export default function PhotoFixerPage() {
               const data = JSON.parse(line.slice(6));
               if (eventType === "progress") {
                 setProgress(data as ProgressInfo);
-              } else if (eventType === "batch_results") {
-                // Incrementally add results as batches complete
-                setResults((prev) => {
-                  const updated = [...(prev || []), ...data.results];
-                  return updated;
-                });
               } else if (eventType === "done") {
                 finalResults = data.results;
               }
@@ -364,12 +358,6 @@ export default function PhotoFixerPage() {
         </>
       )}
 
-      {/* Streaming partial results while loading */}
-      {loading && results && results.length > 0 && (
-        <p className="text-xs text-muted-foreground text-center">
-          Showing {results.length} results so far... more coming
-        </p>
-      )}
     </div>
   );
 }
