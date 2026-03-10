@@ -45,7 +45,7 @@ export async function GET(request: Request) {
 
     const eb = batch.enrichmentBatches[0] ?? null;
     const enrichTotal = eb ? eb.enrichments.length : 0;
-    const enrichCompleted = eb ? eb.enrichments.filter((e) => e.enrichmentStatus === "completed").length : 0;
+    const enrichCompleted = eb ? eb.enrichments.filter((e) => e.enrichmentStatus === "completed" || e.enrichmentStatus === "reviewed").length : 0;
     const enrichFailed = eb ? eb.enrichments.filter((e) => e.enrichmentStatus === "failed").length : 0;
     const enrichRunning = eb ? eb.enrichments.filter((e) => e.enrichmentStatus === "enriching").length : 0;
 

@@ -270,7 +270,7 @@ function EnrichPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact;
 }
 
 function PostcardPill({ c, onRefresh, onCorrect, onCancel }: { c: CampaignContact; onRefresh?: () => void; onCorrect?: () => void; onCancel?: () => void }) {
-  const locked = c.enrichmentStatus !== "completed" && !c.postcardId;
+  const locked = c.enrichmentStatus !== "completed" && c.enrichmentStatus !== "reviewed" && !c.postcardId;
 
   if (locked) {
     return (
@@ -605,7 +605,7 @@ export default function CampaignDetailPage() {
       (c) =>
         selectedIds.has(c.jobId) &&
         c.contactId &&
-        c.enrichmentStatus === "completed" &&
+        (c.enrichmentStatus === "completed" || c.enrichmentStatus === "reviewed") &&
         (!c.postcardId ||
           c.postcardStatus === "failed" ||
           c.postcardStatus === "cancelled" ||
@@ -870,7 +870,7 @@ export default function CampaignDetailPage() {
   );
   const canPostcard = sel.some(
     (c) =>
-      c.enrichmentStatus === "completed" &&
+      (c.enrichmentStatus === "completed" || c.enrichmentStatus === "reviewed") &&
       (!c.postcardId ||
         c.postcardStatus === "failed" ||
         c.postcardStatus === "cancelled" ||

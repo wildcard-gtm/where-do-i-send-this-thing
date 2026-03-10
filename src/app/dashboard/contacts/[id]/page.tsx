@@ -946,29 +946,29 @@ export default function ContactDetailPage() {
                 )}
 
                 {/* Data snapshot */}
-                {(postcard.contactPhoto || postcard.companyLogo || (postcard.teamPhotos as TeamPhoto[] | null)?.length) && (
+                {(contact?.profileImageUrl || enrichment?.companyLogo || (enrichment?.teamPhotos as TeamPhoto[] | null)?.length) && (
                   <div className="glass-card rounded-2xl p-5">
                     <h3 className="text-sm font-medium text-foreground mb-3">Data Used</h3>
                     <div className="space-y-3">
-                      {postcard.contactPhoto && (
+                      {contact?.profileImageUrl && (
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Prospect Photo</p>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={postcard.contactPhoto} alt="Prospect" className="w-10 h-10 rounded-full object-cover" />
+                          <img src={contact.profileImageUrl} alt="Prospect" className="w-10 h-10 rounded-full object-cover" />
                         </div>
                       )}
-                      {postcard.companyLogo && (
+                      {enrichment?.companyLogo && (
                         <div>
                           <p className="text-xs text-muted-foreground mb-1">Logo</p>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={postcard.companyLogo} alt="Logo" className="h-8 object-contain" />
+                          <img src={enrichment.companyLogo} alt="Logo" className="h-8 object-contain" />
                         </div>
                       )}
-                      {(postcard.teamPhotos as TeamPhoto[] | null)?.length ? (
+                      {(enrichment?.teamPhotos as TeamPhoto[] | null)?.length ? (
                         <div>
-                          <p className="text-xs text-muted-foreground mb-1">Team ({(postcard.teamPhotos as TeamPhoto[]).length})</p>
+                          <p className="text-xs text-muted-foreground mb-1">Team ({(enrichment!.teamPhotos as TeamPhoto[]).length})</p>
                           <div className="flex -space-x-2">
-                            {(postcard.teamPhotos as TeamPhoto[]).slice(0, 4).map((tp, i) => (
+                            {(enrichment!.teamPhotos as TeamPhoto[]).slice(0, 4).map((tp, i) => (
                               tp.photoUrl ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img key={i} src={tp.photoUrl} alt={tp.name || ""} className="w-8 h-8 rounded-full object-cover border-2 border-card" />
@@ -1014,34 +1014,15 @@ export default function ContactDetailPage() {
               onClose={() => setShowRegenerateModal(false)}
               contactId={contactId}
               contactName={contact?.name || ""}
-              contactTitle={contact?.title ?? postcard.contactTitle ?? null}
+              contactTitle={contact?.title ?? null}
               contactCompany={enrichment?.companyName ?? contact?.company}
               contactLinkedinUrl={contact?.linkedinUrl}
               currentPostcardId={postcard.id}
               currentTemplate={postcard.template}
-              currentContactPhoto={
-                isPlaceholder(postcard.contactPhoto) && contact?.profileImageUrl
-                  ? contact.profileImageUrl
-                  : postcard.contactPhoto ?? contact?.profileImageUrl ?? null
-              }
-              currentCompanyLogo={enrichment?.companyLogo ?? postcard.companyLogo ?? null}
-              currentTeamPhotos={(() => {
-                const postcardTeam = (postcard.teamPhotos as TeamPhoto[] | null) ?? [];
-                const enrichTeam = enrichment?.teamPhotos ?? [];
-                if (enrichTeam.length > 0) {
-                  // Merge: for each member, prefer enrichment photo if postcard has placeholder
-                  return enrichTeam.map((et, i) => {
-                    const pt = postcardTeam[i];
-                    if (!pt) return et;
-                    return {
-                      ...et,
-                      photoUrl: isPlaceholder(pt.photoUrl) ? et.photoUrl : pt.photoUrl,
-                    };
-                  });
-                }
-                return postcardTeam.length > 0 ? postcardTeam : null;
-              })()}
-              currentOpenRoles={(postcard.openRoles as Array<{ title: string; location?: string }> | null) ?? (enrichment?.openRoles as Array<{ title: string; location?: string }> | null) ?? null}
+              currentContactPhoto={contact?.profileImageUrl ?? null}
+              currentCompanyLogo={enrichment?.companyLogo ?? null}
+              currentTeamPhotos={(enrichment?.teamPhotos as TeamPhoto[] | null) ?? null}
+              currentOpenRoles={(enrichment?.openRoles as Array<{ title: string; location?: string }> | null) ?? null}
               onRegenerated={handleRegenerated}
             />
           )}
@@ -1084,6 +1065,24 @@ function TeamMemberCard({ tp, index, enrichmentId, onUpdated }: {
   const [saving, setSaving] = useState(false);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [refreshingPhoto, setRefreshingPhoto] = useState(false);
+
+  const handleRefreshPhoto = async () => {
+    setRefreshingPhoto(true);
+    try {
+      const res = await fetch(`/api/enrichments/${enrichmentId}/team-member/refresh-photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index }),
+      });
+      const json = await res.json();
+      if (json.photoUrl) onUpdated();
+    } catch {
+      // silently fail
+    } finally {
+      setRefreshingPhoto(false);
+    }
+  };
 
   const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1166,6 +1165,15 @@ function TeamMemberCard({ tp, index, enrichmentId, onUpdated }: {
         {tp.title && <p className="text-xs text-muted-foreground truncate">{tp.title}</p>}
       </div>
       <div className="flex items-center gap-1 opacity-0 group-hover/member:opacity-100 transition">
+        {tp.linkedinUrl && (
+          <button onClick={handleRefreshPhoto} disabled={refreshingPhoto} className="p-1 text-muted-foreground hover:text-primary transition disabled:opacity-50" title="Fetch photo from LinkedIn">
+            {refreshingPhoto ? (
+              <svg className="w-3.5 h-3.5 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            ) : (
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+            )}
+          </button>
+        )}
         <button onClick={() => setEditing(true)} className="p-1 text-muted-foreground hover:text-primary transition" title="Edit">
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
         </button>
