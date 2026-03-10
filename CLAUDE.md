@@ -200,6 +200,7 @@ ENDATO_API_NAME / ENDATO_API_PASSWORD                     # Address lookup
 EXA_AI_KEY                                                # Web search
 PROPMIX_ACCESS_TOKEN                                      # Property verification
 GOOGLE_SEARCH_API_KEY                                     # Distance calculation
+LI_API_KEY                                                # Vetric API (LinkedIn live data — profiles, posts, search)
 NEXT_PUBLIC_APP_URL                                       # Used by screenshotPostcard
 JWT_SECRET                                                # Session signing
 DEBUG_API_KEY                                             # Admin/debug endpoints
@@ -218,7 +219,127 @@ CRON_SECRET                                               # Vercel cron auth (au
 | Exa AI | Web search + people search | `EXA_AI_KEY` | Used for roles, values, team members, LinkedIn fallback |
 | Bright Data | LinkedIn scraping | `BRIGHT_DATA_API_KEY` | Profile data + headshots |
 | PDL | People enrichment | — | Fallback for photos; **credits exhausted** (HTTP 402) |
-| Vetric | LinkedIn posts/mentions | `LI_API_KEY` | `api.vetric.io` — tested, not yet integrated |
+| Vetric | LinkedIn live data (profiles, posts, search) | `LI_API_KEY` | `api.vetric.io` — **primary LinkedIn data source**, see Vetric section below |
+
+---
+
+## Vetric API — LinkedIn Live Data (Primary Source)
+
+**Base URL:** `https://api.vetric.io/linkedin/v1`
+**Auth:** Header `x-api-key: {LI_API_KEY}` (env var `LI_API_KEY`)
+
+Vetric provides **live, real-time LinkedIn data** — profiles, experience, posts, search. It replaces Bright Data for profile lookups and PDL for people enrichment. Use it as the **first choice** for any LinkedIn data needs.
+
+### Profile Endpoints (by public_identifier slug)
+
+The `public_identifier` is the slug from a LinkedIn URL: `linkedin.com/in/jamesdurkin` → `jamesdurkin`.
+
+| Endpoint | Returns |
+|---|---|
+| `GET /profile/{slug}` | Full profile: name, headline, location, connections, followers, **800×800 profile photo**, background image, top position (company name + logo), premium/verified status, about snippet |
+| `GET /profile/{slug}/about` | Full about text, featured items, languages, licenses/certifications |
+| `GET /profile/{slug}/experience` | Full work history: each company (name, logo, URL, URN) with positions (role, dates, description, employment type, is_current) |
+| `GET /profile/{slug}/education` | Schools, degrees, dates, activities |
+| `GET /profile/{slug}/skills` | Skills list with endorser counts |
+
+**Key fields from `/profile/{slug}`:**
+```json
+{
+  "first_name": "James",
+  "last_name": "Durkin",
+  "headline": "Head of Talent at Boston Dynamics",
+  "profile_picture": "https://media.licdn.com/dms/image/...shrink_800_800/...",
+  "location": { "name": "Greater Boston", "country": { "name": "United States" } },
+  "connections": 3125,
+  "followers": 3767,
+  "top_position": {
+    "start_date": { "year": 2021 },
+    "company_info": {
+      "name": "Boston Dynamics",
+      "logo": "https://media.licdn.com/.../company-logo_400_400/...",
+      "public_identifier": "boston-dynamics",
+      "url": "https://www.linkedin.com/company/boston-dynamics/"
+    }
+  },
+  "public_identifier": "jamesdurkin",
+  "urn": "urn:li:fsd_profile:ACoAAACVnSMB...",
+  "is_verified": true,
+  "has_premium": true
+}
+```
+
+### Search Endpoints
+
+| Endpoint | Method | Key Params | Returns |
+|---|---|---|---|
+| `/search/posts` | GET | `keywords` (required), `sortBy` (`top`/`latest`), `datePosted` (`day`/`week`/`month`), `fromOrganization`, `fromMember`, `cursor` | Posts with full author data (name, title, **photo URL**, profile URL, URN), text, engagement, attachments. Max 10/page, 1000 total |
+| `/search/mentions` | GET | `keywords` (required) | Company/Member entities matching keywords — returns URNs, URLs, names. Useful for resolving company org IDs |
+
+**Search posts response author object:**
+```json
+{
+  "author": {
+    "type": "Member",
+    "first_name": "Nicole",
+    "last_name": "Neglia, SHRM-SCP",
+    "occupation": "National Director, Talent Acquisition at Withum",
+    "image_url": "https://media.licdn.com/dms/.../profile-displayphoto-shrink_200_200/...",
+    "urn": "urn:li:fsd_profile:ACoAA...",
+    "url": "https://www.linkedin.com/in/...",
+    "public_identifier": "nicole-neglia-shrm-scp-12345"
+  }
+}
+```
+
+### How to Use Vetric for Common Tasks
+
+**1. Verify a team member still works at company:**
+```
+GET /profile/{slug} → check top_position.company_info.name
+```
+
+**2. Get profile photo for a team member (by LinkedIn URL slug):**
+```
+GET /profile/{slug} → profile_picture (800×800)
+```
+
+**3. Get current title for a person:**
+```
+GET /profile/{slug} → headline (or top_position role from /experience)
+```
+
+**4. Find recruiters/TA people at a company:**
+```
+GET /search/posts?keywords={company}+recruiting+hiring&sortBy=latest&datePosted=month
+→ Filter authors where occupation contains company name
+→ Each author has image_url, public_identifier, occupation (current title)
+```
+
+**5. Get company logo:**
+```
+GET /profile/{any_employee_slug} → top_position.company_info.logo (400×400)
+```
+
+**6. Discover company org ID (for fromOrganization filter):**
+```
+GET /search/mentions?keywords={company_name} → find type:"Company" entry → urn split by ":" gives org ID
+```
+
+### Pagination
+All search endpoints return `cursor` field. Pass it as `?cursor=...` for next page. Loop until no cursor returned.
+
+### Rate Limits & Gotchas
+- No explicit rate limit documented — but be respectful
+- Profile endpoint returns `{"message":"Entity Not Found"}` for invalid slugs (not 404)
+- `fromOrganization` filter with `datePosted=month` may return 0 if company doesn't post often
+- Image URLs are CDN links with expiry (`?e=...`) — they expire after ~1 month, re-fetch if stale
+- Profile photos come in `shrink_800_800` (high-res) or `shrink_200_200` (thumbnail) — prefer 800
+- The `occupation` field in search results = current headline, may differ from `/profile/{slug}` headline
+
+### Also Supports (Not Yet Used)
+- **Facebook:** `POST /facebook/v1/search/posts`, `POST /facebook/v1/search/users`
+- **Twitter/X:** `GET /twitter/v1/search/popular`, `GET /twitter/v1/search/recent`, `GET /twitter/v1/search/people`
+- **Instagram:** `GET /instagram/v1/discover/user`, `GET /instagram/v1/discover/content` (requires header `x-version: 2026-1`)
 
 ---
 
