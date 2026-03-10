@@ -18,6 +18,7 @@ interface OpenRole {
 }
 
 interface Enrichment {
+  id: string;
   companyName: string;
   companyLogo: string | null;
   teamPhotos: TeamPhoto[] | null;
@@ -430,6 +431,7 @@ function ReviewCard({
   const [savingBackMessage, setSavingBackMessage] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState<string | null>(null);
   const [pollingId, setPollingId] = useState<string | null>(null);
   const [pollingStatus, setPollingStatus] = useState<string | null>(null);
   const [pollingImageUrl, setPollingImageUrl] = useState<string | null>(null);
@@ -517,6 +519,46 @@ function ReviewCard({
 
   function toggleTeamMember(index: number) {
     setTeamPhotos((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  async function handleRefreshProspectPhoto() {
+    setRefreshing("prospect");
+    try {
+      const res = await fetch(`/api/contacts/${postcard.contactId}/refresh-photo`, { method: "POST" });
+      const json = await res.json();
+      if (json.profileImageUrl) setContactPhoto(json.profileImageUrl);
+    } catch {
+      // silently fail
+    } finally {
+      setRefreshing(null);
+    }
+  }
+
+  async function handleRefreshTeamPhoto(index: number) {
+    const member = teamPhotos[index];
+    if (!member?.linkedinUrl) return;
+    setRefreshing(`team-${index}`);
+    try {
+      const enrichmentId = postcard.contact.companyEnrichments?.[0]?.id;
+      if (!enrichmentId) return;
+      const res = await fetch(`/api/enrichments/${enrichmentId}/team-member/refresh-photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index }),
+      });
+      const json = await res.json();
+      if (json.photoUrl) {
+        setTeamPhotos((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], photoUrl: json.photoUrl };
+          return updated;
+        });
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setRefreshing(null);
+    }
   }
 
   async function handleSaveBackMessage() {
@@ -887,9 +929,26 @@ function ReviewCard({
                 <div className="space-y-1">
                   <input ref={prospectFileRef} type="file" accept="image/*" className="hidden"
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleChangePhoto("prospect", setContactPhoto, f); }} />
-                  <button onClick={() => prospectFileRef.current?.click()} disabled={uploading === "prospect"}
+                  <button onClick={() => prospectFileRef.current?.click()} disabled={uploading === "prospect" || refreshing === "prospect"}
                     className="text-xs text-primary hover:text-primary-hover font-medium transition disabled:opacity-50">
-                    {uploading === "prospect" ? "Uploading..." : "Change"}
+                    {uploading === "prospect" ? "Uploading..." : "Upload"}
+                  </button>
+                  <button onClick={handleRefreshProspectPhoto} disabled={refreshing === "prospect" || uploading === "prospect"}
+                    className="text-xs text-primary hover:text-primary-hover font-medium transition disabled:opacity-50"
+                    title="Fetch latest photo from LinkedIn">
+                    {refreshing === "prospect" ? (
+                      <span className="flex items-center gap-1">
+                        <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        Fetching...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        LinkedIn
+                      </span>
+                    )}
                   </button>
                   {contactPhoto && (
                     <button onClick={() => setContactPhoto(null)}
@@ -1002,10 +1061,23 @@ function ReviewCard({
                       </div>
                     </div>
                     <div className="flex flex-col gap-1 shrink-0">
+                      {tp.linkedinUrl && (
+                        <button onClick={() => handleRefreshTeamPhoto(i)} disabled={refreshing === `team-${i}`}
+                          className={`p-1 rounded transition ${refreshing === `team-${i}` ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10"}`}
+                          title="Refresh photo from LinkedIn">
+                          {refreshing === `team-${i}` ? (
+                            <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                       <input ref={(el) => { teamFileRefs.current[i] = el; }} type="file" accept="image/*" className="hidden"
                         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleChangeTeamPhoto(i, f); }} />
                       <button onClick={() => teamFileRefs.current[i]?.click()} disabled={uploading === `team-${i}`}
-                        className="p-1 rounded text-muted-foreground hover:text-primary transition disabled:opacity-50" title="Change photo">
+                        className="p-1 rounded text-muted-foreground hover:text-primary transition disabled:opacity-50" title="Upload photo">
                         {uploading === `team-${i}` ? (
                           <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
                         ) : (

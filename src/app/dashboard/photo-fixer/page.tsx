@@ -57,7 +57,7 @@ export default function PhotoFixerPage() {
       if (data.results) {
         setResults(data.results);
         // Auto-select all mismatches
-        const mismatches = new Set(
+        const mismatches = new Set<string>(
           data.results
             .filter((r: CompareResult) => r.verdict === "MISMATCH")
             .map((r: CompareResult) => r.contactId)
