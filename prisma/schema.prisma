@@ -300,16 +300,8 @@ model Postcard {
   // Back-of-card message (personalised outreach copy)
   backMessage      String?  // e.g. "Hi [Name], we'd love to connect..."
 
-  // Data snapshot used at generation time
-  companyLogo      String?
-  openRoles        Json?    // [{ title, location, level }]
-  companyValues    Json?    // ["value1", ...]
-  companyMission   String?
-  officeLocations  Json?    // ["NYC", "London", ...]
+  // Display fields (NOT snapshots — Contact + CompanyEnrichment are the single source of truth)
   contactName      String
-  contactTitle     String?
-  contactPhoto     String?
-  teamPhotos       Json?    // [{ name?: string, photoUrl: string, title?: string }] — snapshotted from enrichment
   deliveryAddress  String?
 
   // Regeneration support

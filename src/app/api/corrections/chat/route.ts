@@ -142,21 +142,14 @@ export async function POST(request: Request) {
     };
   }
 
-  // Postcard context
+  // Postcard context — reads live data from contact + enrichment (single source of truth)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const postcard = ((contact.postcards as any) as Array<{
     id: string;
     template: string;
     status: string;
     backMessage: string | null;
-    companyLogo: string | null;
-    openRoles: unknown;
-    companyValues: unknown;
-    companyMission: string | null;
     contactName: string;
-    contactTitle: string | null;
-    contactPhoto: string | null;
-    teamPhotos: unknown;
     deliveryAddress: string | null;
     imageUrl: string | null;
     references: Array<{ id: string; label: string; imageUrl: string }>;
@@ -168,14 +161,7 @@ export async function POST(request: Request) {
       template: postcard.template,
       status: postcard.status,
       backMessage: postcard.backMessage,
-      companyLogo: postcard.companyLogo,
-      openRoles: postcard.openRoles,
-      companyValues: postcard.companyValues,
-      companyMission: postcard.companyMission,
       contactName: postcard.contactName,
-      contactTitle: postcard.contactTitle,
-      contactPhoto: postcard.contactPhoto,
-      teamPhotos: postcard.teamPhotos,
       deliveryAddress: postcard.deliveryAddress,
       imageUrl: postcard.imageUrl,
     };

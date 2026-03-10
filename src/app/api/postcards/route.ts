@@ -45,11 +45,10 @@ export async function GET(request: Request) {
     include: {
       contact: {
         select: {
-          id: true, name: true, company: true, linkedinUrl: true, profileImageUrl: true,
+          id: true, name: true, company: true, title: true, linkedinUrl: true, profileImageUrl: true,
           companyEnrichments: {
             where: { isLatest: true },
             take: 1,
-            select: { companyName: true },
           },
         },
       },

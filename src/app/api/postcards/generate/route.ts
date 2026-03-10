@@ -94,7 +94,9 @@ export async function POST(request: Request) {
     resolvedTeamPhotos = enrichTeam;
   }
 
-  // Create Postcard record — caller dispatches /run to generate
+  // Create Postcard record — caller dispatches /run to generate.
+  // Data lives in CompanyEnrichment (single source of truth). Postcard only stores
+  // display fields (contactName, deliveryAddress) and generation config (template, customPrompt).
   const postcard = await prisma.postcard.create({
     data: {
       contactId,
@@ -102,24 +104,25 @@ export async function POST(request: Request) {
       status: "pending",
       retryCount: 0,
       contactName: contact.name,
-      contactTitle: contact.title,
-      contactPhoto: resolvedContactPhoto,
       deliveryAddress,
-      companyLogo: (overrideCompanyLogo && overrideCompanyLogo !== enrichment?.companyLogo)
-        ? overrideCompanyLogo   // User explicitly changed the logo (upload/paste)
-        : enrichment?.companyLogo ?? null,  // Always prefer latest enrichment
-      openRoles: overrideOpenRoles ?? enrichment?.openRoles ?? undefined,
-      companyValues: enrichment?.companyValues ?? undefined,
-      companyMission: enrichment?.companyMission ?? null,
-      officeLocations: enrichment?.officeLocations ?? undefined,
-      teamPhotos: resolvedTeamPhotos ?? undefined,
       customPrompt: customPrompt ?? null,
       parentPostcardId: parentPostcardId ?? null,
     },
   });
 
-  // Sync user edits back to CompanyEnrichment so it stays the source of truth.
-  // This ensures bulk regeneration and exports always use the corrected data.
+  // Sync user edits directly to Contact + CompanyEnrichment (single source of truth).
+  // No more snapshots — next generation reads live from these tables.
+  const contactUpdates: Record<string, unknown> = {};
+  if (resolvedContactPhoto && resolvedContactPhoto !== contact.profileImageUrl) {
+    contactUpdates.profileImageUrl = resolvedContactPhoto;
+  }
+  if (overrideCompanyName && overrideCompanyName !== contact.company) {
+    contactUpdates.company = overrideCompanyName;
+  }
+  if (Object.keys(contactUpdates).length > 0) {
+    await prisma.contact.update({ where: { id: contactId }, data: contactUpdates });
+  }
+
   if (enrichment) {
     const enrichmentUpdates: Record<string, unknown> = {};
     if (overrideCompanyLogo && overrideCompanyLogo !== enrichment.companyLogo) {
@@ -133,11 +136,6 @@ export async function POST(request: Request) {
     }
     if (overrideCompanyName && overrideCompanyName !== enrichment.companyName) {
       enrichmentUpdates.companyName = overrideCompanyName;
-      // Also update the Contact.company field to keep them in sync
-      await prisma.contact.update({
-        where: { id: contactId },
-        data: { company: overrideCompanyName },
-      });
     }
     if (Object.keys(enrichmentUpdates).length > 0) {
       await prisma.companyEnrichment.update({

@@ -22,7 +22,7 @@ export async function GET(
     include: {
       postcards: {
         include: {
-          contact: { select: { id: true, name: true, company: true, linkedinUrl: true } },
+          contact: { select: { id: true, name: true, company: true, title: true, linkedinUrl: true } },
         },
         orderBy: { createdAt: "asc" },
       },
@@ -50,7 +50,7 @@ export async function GET(
       include: {
         postcards: {
           include: {
-            contact: { select: { id: true, name: true, company: true, linkedinUrl: true } },
+            contact: { select: { id: true, name: true, company: true, title: true, linkedinUrl: true } },
           },
           orderBy: { createdAt: "asc" },
         },

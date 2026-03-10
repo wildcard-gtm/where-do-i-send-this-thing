@@ -17,6 +17,16 @@ interface OpenRole {
   location?: string;
 }
 
+interface Enrichment {
+  companyName: string;
+  companyLogo: string | null;
+  teamPhotos: TeamPhoto[] | null;
+  openRoles: OpenRole[] | null;
+  companyValues: string[] | null;
+  companyMission: string | null;
+  officeLocations: string[] | null;
+}
+
 interface PostcardFull {
   id: string;
   contactId: string;
@@ -24,18 +34,42 @@ interface PostcardFull {
   status: string;
   imageUrl: string | null;
   contactName: string;
-  contactTitle: string | null;
-  contactPhoto: string | null;
-  companyLogo: string | null;
-  teamPhotos: TeamPhoto[] | null;
-  openRoles: OpenRole[] | null;
   customPrompt: string | null;
   backMessage: string | null;
   deliveryAddress: string | null;
   errorMessage: string | null;
   parentPostcardId: string | null;
   createdAt: string;
-  contact: { id: string; name: string; company: string | null; linkedinUrl: string; profileImageUrl?: string | null; companyEnrichments?: { companyName: string }[] };
+  contact: {
+    id: string;
+    name: string;
+    company: string | null;
+    title: string | null;
+    linkedinUrl: string;
+    profileImageUrl?: string | null;
+    companyEnrichments?: Enrichment[];
+  };
+}
+
+/** Get enrichment data — single source of truth */
+function getEnrichment(postcard: PostcardFull): Enrichment | null {
+  return postcard.contact?.companyEnrichments?.[0] ?? null;
+}
+
+function getTeamPhotos(p: PostcardFull): TeamPhoto[] {
+  return getEnrichment(p)?.teamPhotos ?? [];
+}
+function getOpenRoles(p: PostcardFull): OpenRole[] {
+  return getEnrichment(p)?.openRoles ?? [];
+}
+function getCompanyLogo(p: PostcardFull): string | null {
+  return getEnrichment(p)?.companyLogo ?? null;
+}
+function getContactPhoto(p: PostcardFull): string | null {
+  return p.contact?.profileImageUrl ?? null;
+}
+function getContactTitle(p: PostcardFull): string | null {
+  return p.contact?.title ?? null;
 }
 
 interface Campaign {
@@ -383,11 +417,12 @@ function ReviewCard({
 }: ReviewCardProps) {
   // Use postcard.id as reset key — when the postcard changes (reload/regenerate),
   // React remounts the component via the key={postcard.id} on the parent, resetting all state.
-  const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>((postcard.teamPhotos as TeamPhoto[] | null) ?? []);
-  const [openRoles, setOpenRoles] = useState<OpenRole[]>((postcard.openRoles as OpenRole[] | null) ?? []);
-  const isPlaceholder = !postcard.contactPhoto || postcard.contactPhoto.includes('static.licdn.com') || postcard.contactPhoto.includes('ghost') || postcard.contactPhoto.includes('default-avatar');
-  const [contactPhoto, setContactPhoto] = useState(isPlaceholder && postcard.contact?.profileImageUrl ? postcard.contact.profileImageUrl : postcard.contactPhoto);
-  const [companyLogo, setCompanyLogo] = useState(postcard.companyLogo);
+  const [teamPhotos, setTeamPhotos] = useState<TeamPhoto[]>(getTeamPhotos(postcard));
+  const [openRoles, setOpenRoles] = useState<OpenRole[]>(getOpenRoles(postcard));
+  const resolvedPhoto = getContactPhoto(postcard);
+  const isPlaceholder = !resolvedPhoto || resolvedPhoto.includes('static.licdn.com') || resolvedPhoto.includes('ghost') || resolvedPhoto.includes('default-avatar');
+  const [contactPhoto, setContactPhoto] = useState(isPlaceholder ? null : resolvedPhoto);
+  const [companyLogo, setCompanyLogo] = useState(getCompanyLogo(postcard));
   const [companyName, setCompanyName] = useState(postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company || "");
   const [template, setTemplate] = useState(postcard.template);
   const [customPrompt, setCustomPrompt] = useState(postcard.customPrompt || "");
@@ -643,8 +678,8 @@ function ReviewCard({
                 <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
               </a>
             </div>
-            {postcard.contactTitle && (
-              <p className="text-sm text-muted-foreground mt-0.5">{postcard.contactTitle}</p>
+            {getContactTitle(postcard) && (
+              <p className="text-sm text-muted-foreground mt-0.5">{getContactTitle(postcard)}</p>
             )}
             {(postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company) && (
               <p className="text-sm text-muted-foreground">{postcard.contact.companyEnrichments?.[0]?.companyName || postcard.contact.company}</p>
@@ -910,9 +945,9 @@ function ReviewCard({
                 Team Members ({teamPhotos.length})
               </label>
               <div className="flex gap-2">
-                {teamPhotos.length < ((postcard.teamPhotos as TeamPhoto[] | null) ?? []).length && (
+                {teamPhotos.length < getTeamPhotos(postcard).length && (
                   <button
-                    onClick={() => setTeamPhotos((postcard.teamPhotos as TeamPhoto[] | null) ?? [])}
+                    onClick={() => setTeamPhotos(getTeamPhotos(postcard))}
                     className="text-[11px] text-muted-foreground hover:text-primary transition"
                   >
                     Reset

@@ -121,14 +121,9 @@ function buildContextBlock(ctx: CorrectionContext, openedFrom: CorrectionStage):
     lines.push(`- **Template:** ${p.template}`);
     lines.push(`- **Status:** ${p.status}`);
     lines.push(`- **Contact Name:** ${p.contactName}`);
-    if (p.contactTitle) lines.push(`- **Contact Title:** ${p.contactTitle}`);
     lines.push(`- **Delivery Address:** ${p.deliveryAddress ?? 'None'}`);
     lines.push(`- **Back Message:** ${p.backMessage ?? 'None'}`);
-    if (p.companyLogo) lines.push(`- **Postcard Logo:** ${p.companyLogo}`);
-    if (p.contactPhoto) lines.push(`- **Contact Photo:** ${p.contactPhoto}`);
     if (p.imageUrl) lines.push(`- **Current Postcard Image:** ${p.imageUrl}`);
-    if (p.openRoles) lines.push(`- **Postcard Open Roles:** ${JSON.stringify(p.openRoles)}`);
-    if (p.teamPhotos) lines.push(`- **Postcard Team Photos:** ${JSON.stringify(p.teamPhotos)}`);
   }
 
   // ── Reference Images ──

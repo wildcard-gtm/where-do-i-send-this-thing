@@ -63,14 +63,7 @@ export interface CorrectionContext {
     template: string;
     status: string;
     backMessage: string | null;
-    companyLogo: string | null;
-    openRoles: unknown;
-    companyValues: unknown;
-    companyMission: string | null;
     contactName: string;
-    contactTitle: string | null;
-    contactPhoto: string | null;
-    teamPhotos: unknown;
     deliveryAddress: string | null;
     imageUrl: string | null;
   } | null;
@@ -377,12 +370,7 @@ function viewCurrentRecord(ctx: CorrectionContext): ToolResult {
       status: ctx.postcard.status,
       backMessage: ctx.postcard.backMessage,
       contactName: ctx.postcard.contactName,
-      contactTitle: ctx.postcard.contactTitle,
       deliveryAddress: ctx.postcard.deliveryAddress,
-      companyLogo: ctx.postcard.companyLogo,
-      contactPhoto: ctx.postcard.contactPhoto,
-      teamPhotos: ctx.postcard.teamPhotos,
-      openRoles: ctx.postcard.openRoles,
       imageUrl: ctx.postcard.imageUrl,
     };
   }
@@ -583,16 +571,9 @@ async function applyEnrichChanges(ctx: CorrectionContext, changes: Record<string
 async function applyPostcardChanges(ctx: CorrectionContext, changes: Record<string, unknown>) {
   if (!ctx.postcardId) throw new Error('No postcard record to update');
 
-  // Fields that affect the generated postcard image — changing these triggers regeneration
-  const visualFields = ['contactPhoto', 'teamPhotos', 'companyLogo', 'openRoles'];
-  const visualChanged = visualFields.some((f) => f in changes);
-
+  // Only postcard-own fields can be updated here (template, backMessage, contactName, deliveryAddress).
+  // Visual data (logo, teamPhotos, openRoles, contactPhoto) lives in Contact + CompanyEnrichment.
   const data: Record<string, unknown> = { ...changes };
-  if (visualChanged) {
-    data.imageUrl = null;
-    data.backgroundUrl = null;
-    data.status = 'pending';
-  }
 
   await prisma.postcard.update({ where: { id: ctx.postcardId }, data });
 }
@@ -627,12 +608,7 @@ function getCurrentData(ctx: CorrectionContext, target: CorrectionStage): Record
       template: ctx.postcard.template,
       backMessage: ctx.postcard.backMessage,
       contactName: ctx.postcard.contactName,
-      contactTitle: ctx.postcard.contactTitle,
       deliveryAddress: ctx.postcard.deliveryAddress,
-      companyLogo: ctx.postcard.companyLogo,
-      contactPhoto: ctx.postcard.contactPhoto,
-      teamPhotos: ctx.postcard.teamPhotos,
-      openRoles: ctx.postcard.openRoles,
     };
   }
   return {};

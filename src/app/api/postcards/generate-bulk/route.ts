@@ -90,8 +90,8 @@ export async function POST(request: Request) {
         ? contact.officeAddress
         : contact.homeAddress || contact.officeAddress;
 
-    // Prefer latest postcard values (which include user edits from the modal)
-    // over raw enrichment data. If no postcard exists yet, fall back to enrichment.
+    // No snapshot — Contact + CompanyEnrichment are the single source of truth.
+    // The /run route reads live data from those tables during generation.
     const postcard = await prisma.postcard.create({
       data: {
         contactId: contact.id,
@@ -100,15 +100,7 @@ export async function POST(request: Request) {
         status: "pending",
         retryCount: 0,
         contactName: contact.name,
-        contactTitle: contact.title,
-        contactPhoto: latestPostcard?.contactPhoto ?? contact.profileImageUrl,
         deliveryAddress,
-        companyLogo: latestPostcard?.companyLogo ?? enrichment?.companyLogo ?? null,
-        openRoles: (latestPostcard?.openRoles ?? enrichment?.openRoles ?? undefined) as string[] | undefined,
-        companyValues: (latestPostcard?.companyValues ?? enrichment?.companyValues ?? undefined) as string[] | undefined,
-        companyMission: latestPostcard?.companyMission ?? enrichment?.companyMission ?? null,
-        officeLocations: (latestPostcard?.officeLocations ?? enrichment?.officeLocations ?? undefined) as string[] | undefined,
-        teamPhotos: latestPostcard?.teamPhotos ?? enrichment?.teamPhotos ?? undefined,
         customPrompt: latestPostcard?.customPrompt ?? null,
         ...(backMessage ? { backMessage } : {}),
       },

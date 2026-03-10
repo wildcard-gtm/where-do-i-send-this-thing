@@ -79,17 +79,25 @@ export async function POST(
     appLog("info", "system", "postcard_start", `Postcard ${id} generation attempt ${attempt}/${MAX_POSTCARD_ATTEMPTS}`, { postcardId: id, attempt }).catch(() => {});
 
     try {
+      // Read postcard meta + live data from Contact + CompanyEnrichment (single source of truth)
       const existing = await prisma.postcard.findUnique({
         where: { id },
         select: {
           template: true,
-          openRoles: true,
-          contactName: true,
-          companyLogo: true,
-          contactPhoto: true,
-          teamPhotos: true,
           customPrompt: true,
+          contactName: true,
+          contactId: true,
         },
+      });
+
+      const contact = await prisma.contact.findUnique({
+        where: { id: existing?.contactId ?? postcard.contactId },
+        select: { name: true, profileImageUrl: true },
+      });
+
+      const enrichment = await prisma.companyEnrichment.findFirst({
+        where: { contactId: existing?.contactId ?? postcard.contactId, isLatest: true },
+        select: { companyLogo: true, openRoles: true, teamPhotos: true },
       });
 
       // Check for user-uploaded reference images that override defaults
@@ -99,18 +107,17 @@ export async function POST(
       });
       const refByLabel = (label: string) => refs.find((r) => r.label === label)?.imageUrl;
 
-      // Generate the postcard scene — Nano Banana (Gemini) agentic generation
-      const teamPhotos = (existing?.teamPhotos as Array<{ name?: string; photoUrl: string }> | null) ?? [];
-      const openRoles = (existing?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
+      // Read live data from enrichment (single source of truth)
+      const teamPhotos = (enrichment?.teamPhotos as Array<{ name?: string; photoUrl: string; title?: string }> | null) ?? [];
+      const openRoles = (enrichment?.openRoles as Array<{ title: string; location: string }> | null) ?? [];
 
       // Reference images override: prospect_photo, company_logo, team_photo
       const refTeamPhotos = refs.filter((r) => r.label === "team_photo").map((r) => r.imageUrl);
 
-      const prospectPhotoUrl = refByLabel("prospect_photo") ?? existing?.contactPhoto ?? undefined;
+      const prospectPhotoUrl = refByLabel("prospect_photo") ?? contact?.profileImageUrl ?? undefined;
 
       // Filter out the prospect from team photos to avoid duplicates
-      // (enrichment may include the prospect as a team member if they're in recruiting/talent)
-      const prospectName = existing?.contactName?.toLowerCase().trim();
+      const prospectName = (existing?.contactName ?? contact?.name)?.toLowerCase().trim();
       const filteredTeamPhotos = teamPhotos.filter((p) => {
         if (prospectPhotoUrl && p.photoUrl === prospectPhotoUrl) return false;
         if (prospectName && p.name?.toLowerCase().trim() === prospectName) return false;
@@ -119,16 +126,16 @@ export async function POST(
 
       const nanaBananaInput = {
         prospectPhotoUrl,
-        companyLogoUrl: refByLabel("company_logo") ?? existing?.companyLogo ?? null,
+        companyLogoUrl: refByLabel("company_logo") ?? enrichment?.companyLogo ?? null,
         teamPhotoUrls: refTeamPhotos.length > 0
           ? refTeamPhotos
           : filteredTeamPhotos.map((p) => p.photoUrl).filter(Boolean),
         teamMembers: filteredTeamPhotos.map((p) => ({
           name: p.name,
-          title: (p as Record<string, unknown>).title as string | undefined,
+          title: p.title,
         })),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
-        prospectName: existing?.contactName ?? undefined,
+        prospectName: existing?.contactName ?? contact?.name ?? undefined,
         customPrompt: existing?.customPrompt ?? undefined,
       };
 

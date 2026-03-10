@@ -11,7 +11,7 @@
 
 import type { Message, ToolUseBlock, ToolResultBlock, TextBlock } from './types';
 import { getAIClientForRole } from '@/lib/ai/config';
-import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl, scrapeWithFirecrawl, getLinkedInProfileViaMCP, getLinkedInCompanyViaMCP, searchLinkedInPeopleViaMCP, searchLinkedInJobsViaMCP } from './services';
+import { fetchCompanyLogo, fetchBrandfetch, fetchLogoDev, searchExaAI, searchExaPerson, fetchBrightDataLinkedIn, fetchBrightDataCompany, enrichWithPDL, validateLogoUrl, scrapeWithFirecrawl, getVetricProfile, getVetricExperience, searchVetricPosts } from './services';
 import axios, { type AxiosError } from 'axios';
 import { appLog } from '@/lib/app-log';
 import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
@@ -72,19 +72,77 @@ export interface EnrichmentEvent {
 
 const ENRICHMENT_TOOLS = [
   {
-    name: 'fetch_company_logo',
-    description: 'Fetch company logo and brand data. Tries Hunter.io first (free, fast), then Brandfetch as fallback (also returns brand colors and description). Always call this before scraping.',
+    name: 'vetric_profile',
+    description: 'Get a LinkedIn profile via Vetric API (live, real-time). This is the PRIMARY source for any person\'s current employer, title, photo, and headline. Returns: first_name, last_name, headline, profile_picture (800×800 headshot), location, connections, top_position (current company name + logo + start date). Use this FIRST for the main contact and for EVERY team member candidate — it is ground truth for verifying current employment. Pass either a full LinkedIn URL or just the username slug (e.g. "jamesdurkin").',
     input_schema: {
       type: 'object' as const,
       properties: {
-        domain: { type: 'string', description: 'Company domain (e.g. "stripe.com", "ashbyhq.com")' },
+        linkedin_url: { type: 'string', description: 'LinkedIn profile URL (https://www.linkedin.com/in/username) or just the username slug' },
+      },
+      required: ['linkedin_url'],
+    },
+  },
+  {
+    name: 'vetric_experience',
+    description: 'Get a person\'s full work history via Vetric API (live, real-time). Returns array of companies with positions, dates, descriptions. Use this to verify current employment when top_position from vetric_profile isn\'t sufficient, or to check if someone recently left a company. Each entry has company name, logo, positions with start/end dates and is_current flag.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        linkedin_url: { type: 'string', description: 'LinkedIn profile URL or username slug' },
+      },
+      required: ['linkedin_url'],
+    },
+  },
+  {
+    name: 'vetric_search_posts',
+    description: 'Search LinkedIn posts via Vetric API (live, real-time). Returns posts with FULL AUTHOR DATA: name, occupation (current title), image_url (profile photo), profile URL, public_identifier. This is how you DISCOVER team members — search for "{company name} recruiting hiring" or "{company name} talent acquisition" to find recruiters who post about the company. Each author result gives you their photo and LinkedIn slug for verification. Use datePosted="month" to get recent posters who are likely still at the company.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        keywords: { type: 'string', description: 'Search keywords, e.g. "GitLab recruiting hiring" or "Stripe talent acquisition"' },
+        sort_by: { type: 'string', enum: ['latest', 'top'], description: 'Sort order (default: latest)' },
+        date_posted: { type: 'string', enum: ['day', 'week', 'month'], description: 'Filter by recency (default: no filter). Use "month" for team discovery.' },
+        from_organization: { type: 'string', description: 'Filter by company org ID (get from vetric_search_posts or search_web). Optional.' },
+      },
+      required: ['keywords'],
+    },
+  },
+  {
+    name: 'scrape_linkedin_profile',
+    description: 'Scrape a LinkedIn profile via Bright Data to get a headshot photo URL. Use this ONLY as a LAST RESORT fallback when vetric_profile returned no profile_picture for a verified team member. vetric_profile already returns 800×800 photos — only use this if Vetric\'s photo was null or a placeholder.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/username' },
+      },
+      required: ['linkedin_url'],
+    },
+  },
+  {
+    name: 'scrape_linkedin_company',
+    description: 'Scrape a LinkedIn company page via Bright Data. Returns logo URL, office locations, and up to 4 featured employees with photos. Use this as a FALLBACK for company data when Vetric profile top_position doesn\'t give enough company info, or when you need the company logo and fetch_company_logo failed.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        company_url: { type: 'string', description: 'LinkedIn company URL, e.g. https://www.linkedin.com/company/stripe' },
+      },
+      required: ['company_url'],
+    },
+  },
+  {
+    name: 'fetch_company_logo',
+    description: 'Fetch company logo from Brandfetch (high-quality SVG/PNG brand assets). Use this to get a crisp logo for the postcard — Brandfetch logos are higher quality than LinkedIn CDN logos. Falls back to Hunter.io and Logo.dev.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        domain: { type: 'string', description: 'Company domain (e.g. "stripe.com", "gitlab.com")' },
       },
       required: ['domain'],
     },
   },
   {
     name: 'search_web',
-    description: 'Search the web for company information. Use for finding open roles, company values, mission statement, office locations, and team photos.',
+    description: 'Search the web using Exa AI. Use for finding company values, mission statement, office locations, careers pages, and open roles. Also use for company-level data since Vetric has no company endpoint. For team member discovery, prefer vetric_search_posts first — only use Exa as fallback.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -96,7 +154,7 @@ const ENRICHMENT_TOOLS = [
   },
   {
     name: 'search_people',
-    description: 'Search for people at a company using Exa AI people search. Returns LinkedIn profile URLs. Use this to find Talent Acquisition / Recruiting / People team members at the company. More targeted than search_web for finding specific people.',
+    description: 'Search for people on LinkedIn using Exa AI people search. Returns LinkedIn profile URLs with names/titles. Use as a FALLBACK when vetric_search_posts doesn\'t find enough team member candidates. Exa data may be weeks old — always verify results with vetric_profile before including anyone.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -108,80 +166,13 @@ const ENRICHMENT_TOOLS = [
   },
   {
     name: 'fetch_url',
-    description: 'Fetch and read the contents of a URL. Use to scrape company careers page, about page, or values page.',
+    description: 'Fetch and read the contents of a URL. Use to scrape company careers page, about page, or values page for roles and values data.',
     input_schema: {
       type: 'object' as const,
       properties: {
         url: { type: 'string', description: 'URL to fetch' },
       },
       required: ['url'],
-    },
-  },
-  {
-    name: 'scrape_linkedin_profile',
-    description: 'Scrape a LinkedIn profile URL via Bright Data to get the person\'s real headshot (avatar), name, and title. Use this to get team member photos — it returns a reliable photo URL unlike scraping web pages. Call with individual LinkedIn profile URLs found via search_web.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL, e.g. https://www.linkedin.com/in/username' },
-      },
-      required: ['linkedin_url'],
-    },
-  },
-  {
-    name: 'scrape_linkedin_company',
-    description: 'Scrape a LinkedIn company page via Bright Data. Returns company logo (LinkedIn CDN — most reliable logo source), office locations, about/specialties, headquarters, company size, and up to 4 featured employees with photos. Use this early to get logo + locations in one call.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        company_url: { type: 'string', description: 'LinkedIn company URL, e.g. https://www.linkedin.com/company/stripe' },
-      },
-      required: ['company_url'],
-    },
-  },
-  {
-    name: 'linkedin_mcp_profile',
-    description: 'Scrape a LinkedIn profile via the LinkedIn MCP server (authenticated browser session). Returns rich profile data including experience, education, skills, and about section. Use as a fallback when scrape_linkedin_profile (Bright Data) fails or returns incomplete data.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL (https://www.linkedin.com/in/...)' },
-      },
-      required: ['linkedin_url'],
-    },
-  },
-  {
-    name: 'linkedin_mcp_company',
-    description: 'Scrape a LinkedIn company page via the LinkedIn MCP server (authenticated browser session). Returns company info, posts, and details. Use as a fallback when scrape_linkedin_company (Bright Data) fails or returns incomplete data.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        company_url: { type: 'string', description: 'LinkedIn company URL (https://www.linkedin.com/company/...)' },
-      },
-      required: ['company_url'],
-    },
-  },
-  {
-    name: 'linkedin_mcp_search_people',
-    description: 'Search for people on LinkedIn via the LinkedIn MCP server (authenticated browser session). Use to find team members, recruiters, or talent acquisition staff when other search methods fail.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        keywords: { type: 'string', description: 'Search keywords — person name, company, title, etc.' },
-      },
-      required: ['keywords'],
-    },
-  },
-  {
-    name: 'linkedin_mcp_search_jobs',
-    description: 'Search for job postings on LinkedIn via the LinkedIn MCP server (authenticated browser session). Returns real-time job listings. Use to find open roles at a company when web search does not return good results.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        keywords: { type: 'string', description: 'Job search keywords — company name, role title, etc.' },
-        location: { type: 'string', description: 'Location filter (e.g. "United States", "New York")' },
-      },
-      required: ['keywords'],
     },
   },
   {
@@ -240,62 +231,102 @@ const ENRICHMENT_TOOLS = [
 
 // ─── System Prompt ───────────────────────────────────────
 
-const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Given a contact's name, company, and LinkedIn URL, your job is to research and collect the following data about their company:
+const ENRICHMENT_SYSTEM_PROMPT = `You are a company data enrichment specialist. Your job is to collect accurate, current data about a contact's company for a physical postcard.
 
-1. **Company logo** — The LinkedIn company page logo (from scrape_linkedin_company) is the MOST RELIABLE source. Only fall back to fetch_company_logo if the company scrape had no logo.
-2. **Top 3 open roles** — Find the 3 highest-level UNIQUE open positions in the USA (prioritize Director, VP, Staff, Principal, Senior roles). The best source is the company's LinkedIn jobs page: search for "[company name] LinkedIn jobs" or use fetch_url on linkedin.com/company/[slug]/jobs/. DEDUPLICATION: If the same role title appears in multiple locations, include it ONLY ONCE (pick the most prominent US location). We want 3 DIFFERENT role titles, not the same title repeated across cities. Focus ONLY on US-based roles — exclude international positions.
-3. **Company values** — Find 3-6 core company values from their website or about page.
-4. **Company mission** — Find the mission statement (1-2 sentences) from their website.
-5. **Office locations** — Use formatted_locations from the LinkedIn company scrape as the PRIMARY source. Supplement with web search only if the company scrape had no locations.
-6. **Team photos** — Find up to 4 photos of people on the **Talent / People / Recruiting team** at the same company. Prioritize people with titles like: Talent Acquisition, TA, Head of Talent, VP of People, Recruiting Manager, Recruiter, Chief People Officer, People Operations, Head of Recruiting, Talent Partner. Do NOT default to random executives (CEO, CTO, CFO) — we want the target person's colleagues on the talent/recruiting team. Each photo must be a direct URL to a headshot. Aim for 4 people. If you find fewer than 4, you can use featured_employees from the LinkedIn company scrape as a fallback — they already have photos, names, titles, and LinkedIn URLs.
+## GROUND TRUTH PRINCIPLE
+Vetric API tools (vetric_profile, vetric_experience, vetric_search_posts) return LIVE, real-time LinkedIn data. This is your ground truth. Never override what Vetric tells you based on Exa, Bright Data, PDL, or any other source — those are fallbacks only for filling gaps, not for making decisions about who works where or what their title is.
 
-WORKFLOW:
+## WHAT YOU ARE COLLECTING
+1. **Company logo** — High-quality brand logo for the postcard
+2. **Top 3 open roles** — Highest-level current US roles to display on the postcard
+3. **Company values** — 3-6 core values from their website
+4. **Company mission** — 1-2 sentence mission statement
+5. **Office locations** — Cities/regions where the company has offices
+6. **Team photos** — 2-4 people from the Talent/Recruiting/People team, confirmed currently at the company via Vetric, with real headshot photos
 
-STEP 0 — VERIFY CURRENT COMPANY (CRITICAL — do this FIRST):
-→ The company name provided may be OUTDATED. People change jobs but data sources lag behind.
-→ Scrape the contact's LinkedIn profile using scrape_linkedin_profile to check their current role and company.
-→ PRIVATE PROFILE FALLBACK: If scrape_linkedin_profile returns no data (private profile), use search_web
-  with: site:linkedin.com "{person name}" — Exa often has a cached LinkedIn page with company/title.
-  Also try: "{person name} {company} current" to cross-reference on other sites.
-→ SIGNALS THAT THE COMPANY IS WRONG:
-  - LinkedIn experience shows a different current employer
-  - Email domain (from address records) doesn't match the stated company (e.g. @automationanywhere.com ≠ Yahoo)
-  - Web search shows the person at a different company
-  - LinkedIn profile is bare (no headline, no title, no experience) — treat company as UNVERIFIED
-→ If you determine the company is wrong, use the CORRECT company for ALL subsequent enrichment steps.
-→ Submit the corrected company name in submit_enrichment so it updates the database.
+## TEAM MEMBER SELECTION RULES
+**RELEVANCE PRIORITY (most to least relevant):**
+1. Talent Acquisition / Recruiting team members (TA, Recruiter, Recruiting Manager, Talent Partner)
+2. HR leadership (Head of People, VP People, HR Director, CHRO)
+3. People in the same city/location as the contact
+4. Hiring managers from the contact's department
 
-STEP 1 — SCRAPE LINKEDIN COMPANY PAGE (do this right after verifying the company):
-→ Derive the company LinkedIn URL: https://www.linkedin.com/company/{slug}
-  - The slug is usually the lowercased company name with spaces replaced by hyphens (e.g. "Palo Alto Networks" → "palo-alto-networks")
-  - If the personal LinkedIn profile's experience section has a company link, use that instead
-→ Call scrape_linkedin_company with the company URL
-→ This returns: logo (LinkedIn CDN — most reliable), office_locations, about, specialties, headquarters, featured_employees with photos
-→ If logo is found: SKIP fetch_company_logo entirely — LinkedIn CDN logos are high quality
-→ If office_locations are found: use them as the primary office locations
-→ The about/specialties data gives you context for the values/mission search
+**NEVER INCLUDE:**
+- Investors, board members, advisors
+- Sales reps, account executives
+- People from different countries than the contact (unless US-based company)
+- Anyone not verified as CURRENTLY at the company
 
-STEP 2 — LOGO FALLBACK (only if Step 1 had no logo):
-→ Call fetch_company_logo with the company domain
-→ This tries Hunter.io → Brandfetch → Logo.dev in sequence
+**TEAM SIZE:** Aim for 3 people (2-4 acceptable). Quality over quantity.
+**PHOTO PREFERENCE:** Strongly prefer people who have profile photos. A team of 3 with photos beats a team of 4 where some lack photos.
 
-STEP 3 — Search web for: "[company] LinkedIn jobs" (for open roles — deduplicate by title, US only), "[company] company values mission"
-→ Use the about/specialties from Step 1 to inform your search if available
+## WORKFLOW
 
-STEP 4 — Use fetch_url to scrape the careers page and about/values page directly if search_web gives you URLs
+### STEP 0 — VERIFY CONTACT'S CURRENT COMPANY (do this FIRST)
+Call vetric_profile with the contact's LinkedIn URL.
+- Check top_position.company_info.name — this is their CURRENT employer
+- If the company differs from what was provided, call vetric_experience to confirm with full work history
+- Use the CORRECT current company for ALL subsequent steps
+- If Vetric fails, fall back to scrape_linkedin_profile (Bright Data), then search_web as last resort
 
-STEP 5 — Use search_people to find Talent/Recruiting team members at [company] — search for "Talent Acquisition [company]" or "Recruiter [company]" or "Head of People [company]". This uses Exa AI people search which is optimized for finding people on LinkedIn.
+### STEP 1 — COMPANY DATA
+Vetric has no company endpoint, so use search_web (Exa) for company info.
+- Search for "[company] about values mission" to find their website
+- The contact's vetric_profile may give you the company logo via top_position.company_info.logo (400×400 LinkedIn CDN logo — use as fallback if fetch_company_logo fails)
 
-STEP 6 — If search_people doesn't find enough results, fall back to search_web with "site:linkedin.com/in [company name] Talent Acquisition OR Recruiter OR Head of People OR TA"
+### STEP 2 — LOGO
+Call fetch_company_logo with the company domain. This tries Hunter.io → Brandfetch → Logo.dev.
+- If fetch_company_logo fails, use the company logo from vetric_profile top_position.company_info.logo
+- If that's also missing, call scrape_linkedin_company for the LinkedIn CDN logo
 
-STEP 7 — For each LinkedIn profile URL found (up to 4), call scrape_linkedin_profile to get their real headshot (avatar URL). This is the ONLY reliable way to get real photo URLs. IMPORTANT: When submitting team_photos, include the linkedin_url for each person so we can link back to their profile.
-→ FALLBACK: If you found fewer than 4 team photos via the Exa → scrape_linkedin_profile path, use the featured_employees from Step 1 to fill remaining slots. They already have photo URLs, names, titles, and LinkedIn URLs.
+### STEP 3 — OPEN ROLES
+Search for open roles using search_web: "[company] careers jobs site:linkedin.com" or "[company] open positions"
+- Pick the 3 highest-level UNIQUE US roles (Director, VP, Staff, Principal, Senior)
+- Deduplicate by title — no two roles should be the same title
+- Keep titles SHORT (under 40 characters) — e.g. "Sr. Director, Engineering" not "Senior Director of Engineering and Platform Development"
+- If search_web finds a careers page URL, use fetch_url to scrape it for more roles
 
-STEP 8 — Call submit_enrichment with everything you found — include whatever you have, even if some fields are missing
+### STEP 4 — VALUES & MISSION
+Call search_web for "[company] company values mission" then fetch_url on their about/values page.
 
-Be efficient — you have a max of 18 tool calls. Don't repeat searches. Prioritize quality over quantity.
-If you can't find certain data, submit what you have with null for missing fields.
-Never make up data. Only include what you actually found.`;
+### STEP 5 — DISCOVER TEAM MEMBER CANDIDATES (Vetric first)
+You need 2-4 people from the Talent/Recruiting/People team who are CURRENTLY at the company.
+
+Call vetric_search_posts with keywords like "[company name] recruiting hiring talent" and date_posted="month".
+- Each post result includes the AUTHOR with: name, occupation (current title), image_url (profile photo!), public_identifier (LinkedIn slug)
+- Filter authors whose occupation mentions the target company
+- Authors who post about recruiting/hiring at the company are likely current employees
+- The author's image_url from search results IS their profile photo — you may not need a separate photo fetch
+
+If vetric_search_posts returns few results, try:
+1. Different keywords: "[company name] talent acquisition", "[company name] recruiter", "[company name] HR"
+2. Fall back to search_people (Exa) — but treat results as UNVERIFIED candidates
+
+### STEP 6 — VERIFY EVERY CANDIDATE (no exceptions)
+For each person found in Step 5, call vetric_profile with their LinkedIn slug or URL.
+- Check top_position.company_info.name — if it does NOT match the target company → DISCARD THEM
+- If unclear, call vetric_experience to check full work history for is_current positions
+- Use the current title from vetric_profile headline — not what the search returned
+- Note: vetric_profile returns profile_picture (800×800) — save this for Step 7
+
+### STEP 7 — GET PHOTOS for verified members
+vetric_profile already returns profile_picture (800×800 headshot) — use this!
+vetric_search_posts author results include image_url (200×200 thumbnail) — also usable.
+Only call scrape_linkedin_profile (Bright Data) as a LAST RESORT if Vetric returned no photo.
+- If no photo from any source, the person can still be included — submit without photo_url.
+- Never use photos from any source other than that person's own LinkedIn profile.
+
+### STEP 8 — SUBMIT
+Call submit_enrichment with everything. Partial data is fine — submit what you have.
+Use names and titles exactly as they appear on LinkedIn (from Vetric).
+
+## RULES
+- Vetric is always the authoritative source for LinkedIn data. Never override it with data from other tools.
+- Never include a team member you have not personally verified via vetric_profile in Step 6.
+- If you can only find 2 verified members, submit 2 — never pad with unverified people.
+- Never invent names, titles, or photos.
+- You have a max of 22 tool calls. Be efficient — don't repeat searches.
+- When submitting team_photos, always include the linkedin_url so photos can be refreshed later.`;
 
 // ─── Tool Executor ───────────────────────────────────────
 
@@ -347,48 +378,59 @@ async function executeEnrichmentTool(
       return { result: scraped };
     }
 
+    case 'vetric_profile': {
+      const res = await getVetricProfile(args.linkedin_url as string);
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'vetric_experience': {
+      const res = await getVetricExperience(args.linkedin_url as string);
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
+    case 'vetric_search_posts': {
+      const res = await searchVetricPosts(
+        args.keywords as string,
+        (args.sort_by as 'latest' | 'top' | undefined) ?? 'latest',
+        args.date_posted as 'day' | 'week' | 'month' | undefined,
+        args.from_organization as string | undefined,
+      );
+      return { result: { success: res.success, data: res.data, summary: res.summary } };
+    }
+
     case 'scrape_linkedin_profile': {
+      // Try Vetric first for photo, fall back to Bright Data
       const linkedinUrl = args.linkedin_url as string;
+      try {
+        const vetricRes = await getVetricProfile(linkedinUrl);
+        if (vetricRes.success && vetricRes.data) {
+          const d = vetricRes.data as Record<string, unknown>;
+          const photo = d.profile_picture as string | undefined;
+          const name = `${d.first_name ?? ''} ${d.last_name ?? ''}`.trim();
+          const title = d.headline as string | undefined;
+          if (photo && !isPlaceholderUrl(photo)) {
+            return {
+              result: {
+                success: true,
+                name,
+                title,
+                photo_url: photo,
+                summary: `Got photo for ${name}: ${photo}`,
+              },
+            };
+          }
+        }
+      } catch { /* Vetric failed, try Bright Data */ }
+
       try {
         const profile = await fetchBrightDataLinkedIn(linkedinUrl);
         if (!profile) {
           return { result: { success: false, summary: 'Could not scrape LinkedIn profile — timeout or not found' } };
         }
         let avatar = (profile as Record<string, unknown>).avatar as string | undefined;
-        // Reject placeholder/default avatar URLs
         if (avatar && isPlaceholderUrl(avatar)) avatar = undefined;
         const name = profile.name;
         const title = profile.current_company_position ?? profile.headline;
-
-        // PDL fallback for photo
-        if (!avatar) {
-          try {
-            const pdl = await enrichWithPDL(linkedinUrl);
-            if (pdl.success && pdl.data) {
-              const pic = (pdl.data as Record<string, unknown>).profile_pic_url as string | undefined;
-              if (pic && !isPlaceholderUrl(pic)) avatar = pic;
-            }
-          } catch { /* continue */ }
-        }
-
-        // Exa → Bright Data fallback for photo
-        if (!avatar && name) {
-          const company = profile.current_company_name ?? '';
-          try {
-            const exa = await searchExaPerson(name, company, 3);
-            if (exa.success && Array.isArray(exa.data)) {
-              for (const r of exa.data as Array<{ url?: string }>) {
-                if (!r.url?.includes('linkedin.com/in/')) continue;
-                if (r.url === linkedinUrl) continue;
-                try {
-                  const p = await fetchBrightDataLinkedIn(r.url);
-                  const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
-                  if (a && !isPlaceholderUrl(a)) { avatar = a; break; }
-                } catch { continue; }
-              }
-            }
-          } catch { /* exhausted */ }
-        }
 
         return {
           result: {
@@ -449,29 +491,6 @@ async function executeEnrichmentTool(
       } catch (err) {
         return { result: { success: false, summary: `LinkedIn company scrape failed: ${(err as Error).message}` } };
       }
-    }
-
-    case 'linkedin_mcp_profile': {
-      const res = await getLinkedInProfileViaMCP(args.linkedin_url as string);
-      return { result: { success: res.success, data: res.data, summary: res.summary } };
-    }
-
-    case 'linkedin_mcp_company': {
-      const res = await getLinkedInCompanyViaMCP(args.company_url as string);
-      return { result: { success: res.success, data: res.data, summary: res.summary } };
-    }
-
-    case 'linkedin_mcp_search_people': {
-      const res = await searchLinkedInPeopleViaMCP(args.keywords as string);
-      return { result: { success: res.success, data: res.data, summary: res.summary } };
-    }
-
-    case 'linkedin_mcp_search_jobs': {
-      const res = await searchLinkedInJobsViaMCP(
-        args.keywords as string,
-        args.location as string | undefined,
-      );
-      return { result: { success: res.success, data: res.data, summary: res.summary } };
     }
 
     case 'submit_enrichment': {

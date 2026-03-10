@@ -25,6 +25,17 @@ export async function GET(
       id,
       contact: { userId: { in: teamUserIds } },
     },
+    include: {
+      contact: {
+        select: {
+          id: true, name: true, company: true, title: true, linkedinUrl: true, profileImageUrl: true,
+          companyEnrichments: {
+            where: { isLatest: true },
+            take: 1,
+          },
+        },
+      },
+    },
   });
 
   if (!postcard) {
@@ -39,6 +50,17 @@ export async function GET(
     postcard = await prisma.postcard.update({
       where: { id },
       data: { status: "failed", errorMessage: "Timed out — generation took too long" },
+      include: {
+        contact: {
+          select: {
+            id: true, name: true, company: true, title: true, linkedinUrl: true, profileImageUrl: true,
+            companyEnrichments: {
+              where: { isLatest: true },
+              take: 1,
+            },
+          },
+        },
+      },
     });
   }
 

@@ -95,12 +95,7 @@ interface PostcardData {
   imageUrl: string | null;
   template: string;
   errorMessage?: string | null;
-  contactPhoto?: string | null;
-  teamPhotos?: TeamPhoto[] | null;
-  companyLogo?: string | null;
   contactName?: string;
-  contactTitle?: string | null;
-  openRoles?: Array<{ title: string; location?: string }> | null;
   customPrompt?: string | null;
   backMessage?: string | null;
   parentPostcardId?: string | null;

@@ -30,22 +30,25 @@ export async function GET(
   const postcards = await prisma.postcard.findMany({
     where: { contactId: id },
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      status: true,
-      template: true,
-      imageUrl: true,
-      errorMessage: true,
-      createdAt: true,
-      contactPhoto: true,
-      teamPhotos: true,
-      companyLogo: true,
-      contactName: true,
-      contactTitle: true,
-      openRoles: true,
-      customPrompt: true,
-      backMessage: true,
-      parentPostcardId: true,
+    include: {
+      contact: {
+        select: {
+          id: true, name: true, company: true, title: true, linkedinUrl: true, profileImageUrl: true,
+          companyEnrichments: {
+            where: { isLatest: true },
+            take: 1,
+            select: {
+              companyName: true,
+              companyLogo: true,
+              teamPhotos: true,
+              openRoles: true,
+              companyValues: true,
+              companyMission: true,
+              officeLocations: true,
+            },
+          },
+        },
+      },
     },
   });
 

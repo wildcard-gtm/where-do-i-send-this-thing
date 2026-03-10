@@ -18,7 +18,144 @@ import { isPlaceholderUrl } from '@/lib/photo-finder/detect-placeholder';
 const TIMEOUT = 30_000;
 const MAX_TEXT_PER_RESULT = 1500; // Truncate Exa text to avoid burning context
 
-// ─── LinkedIn MCP Server ──────────────────────────────────
+// ─── Vetric API — LinkedIn Live Data (Primary) ────────────
+
+const VETRIC_BASE = 'https://api.vetric.io/linkedin/v1';
+
+function getVetricHeaders(): Record<string, string> {
+  const apiKey = process.env.LI_API_KEY;
+  return {
+    'x-api-key': apiKey ?? '',
+    'accept': 'application/json',
+  };
+}
+
+/**
+ * Extract LinkedIn username slug from a full URL or return as-is if already a slug.
+ */
+function extractLinkedInSlug(urlOrSlug: string): string {
+  if (urlOrSlug.includes('linkedin.com/in/')) {
+    return urlOrSlug.replace(/^.*linkedin\.com\/in\//, '').replace(/[/?#].*$/, '').trim();
+  }
+  return urlOrSlug.trim();
+}
+
+/**
+ * Get a person's full LinkedIn profile via Vetric API.
+ * Returns: name, headline, photo (800×800), location, connections, top_position (company + logo), etc.
+ */
+export async function getVetricProfile(linkedinUrlOrSlug: string): Promise<ToolResult> {
+  const slug = extractLinkedInSlug(linkedinUrlOrSlug);
+  if (!slug) return { success: false, summary: 'Vetric: no LinkedIn slug provided' };
+  if (!process.env.LI_API_KEY) return { success: false, summary: 'LI_API_KEY not configured' };
+
+  try {
+    const res = await axios.get(`${VETRIC_BASE}/profile/${slug}`, {
+      headers: getVetricHeaders(),
+      timeout: TIMEOUT,
+    });
+    const d = res.data;
+    if (d?.message === 'Entity Not Found') {
+      return { success: false, summary: `Vetric: profile not found for "${slug}"` };
+    }
+    appLog('info', 'vetric', 'profile', `Vetric profile: ${d.first_name} ${d.last_name} — ${d.headline}`, { slug }).catch(() => {});
+    return {
+      success: true,
+      data: d,
+      summary: `Vetric profile: ${d.first_name} ${d.last_name} | ${d.headline} | ${d.location?.name ?? 'unknown location'}`,
+    };
+  } catch (err) {
+    const status = (err as AxiosError).response?.status;
+    appLog('error', 'vetric', 'profile', `Vetric profile failed for "${slug}": ${(err as Error).message}`, { slug }).catch(() => {});
+    return { success: false, summary: `Vetric profile failed${status ? ` (HTTP ${status})` : ''}: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Get a person's full work history via Vetric API.
+ * Returns: array of companies with positions, dates, descriptions.
+ */
+export async function getVetricExperience(linkedinUrlOrSlug: string): Promise<ToolResult> {
+  const slug = extractLinkedInSlug(linkedinUrlOrSlug);
+  if (!slug) return { success: false, summary: 'Vetric: no LinkedIn slug provided' };
+  if (!process.env.LI_API_KEY) return { success: false, summary: 'LI_API_KEY not configured' };
+
+  try {
+    const res = await axios.get(`${VETRIC_BASE}/profile/${slug}/experience`, {
+      headers: getVetricHeaders(),
+      timeout: TIMEOUT,
+    });
+    appLog('info', 'vetric', 'experience', `Vetric experience: ${slug}`, { slug }).catch(() => {});
+    return {
+      success: true,
+      data: res.data,
+      summary: `Vetric experience for ${slug}: ${(res.data?.experience ?? []).length} positions`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Vetric experience failed: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Search LinkedIn posts via Vetric API.
+ * Useful for finding team members at a company (search "{company} recruiting hiring").
+ * Returns posts with full author data: name, title (occupation), photo URL, profile URL.
+ */
+export async function searchVetricPosts(
+  keywords: string,
+  sortBy: 'latest' | 'top' = 'latest',
+  datePosted?: 'day' | 'week' | 'month',
+  fromOrganization?: string,
+): Promise<ToolResult> {
+  if (!process.env.LI_API_KEY) return { success: false, summary: 'LI_API_KEY not configured' };
+
+  try {
+    const params: Record<string, string> = { keywords, sortBy };
+    if (datePosted) params.datePosted = datePosted;
+    if (fromOrganization) params.fromOrganization = fromOrganization;
+
+    const res = await axios.get(`${VETRIC_BASE}/search/posts`, {
+      headers: getVetricHeaders(),
+      params,
+      timeout: TIMEOUT,
+    });
+    const posts = res.data?.posts ?? [];
+    appLog('info', 'vetric', 'search_posts', `Vetric post search: "${keywords}" — ${posts.length} results`, { keywords, total: res.data?.total_matches }).catch(() => {});
+    return {
+      success: true,
+      data: { posts, total_matches: res.data?.total_matches, cursor: res.data?.cursor },
+      summary: `Found ${res.data?.total_matches ?? posts.length} posts for "${keywords}"`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Vetric post search failed: ${(err as Error).message}` };
+  }
+}
+
+/**
+ * Search LinkedIn mentions via Vetric API.
+ * Returns company/member URN entities. Useful for resolving company org IDs.
+ */
+export async function searchVetricMentions(keywords: string): Promise<ToolResult> {
+  if (!process.env.LI_API_KEY) return { success: false, summary: 'LI_API_KEY not configured' };
+
+  try {
+    const res = await axios.get(`${VETRIC_BASE}/search/mentions`, {
+      headers: getVetricHeaders(),
+      params: { keywords },
+      timeout: TIMEOUT,
+    });
+    const results = Array.isArray(res.data) ? res.data : [];
+    return {
+      success: true,
+      data: results,
+      summary: `Found ${results.length} mention(s) for "${keywords}"`,
+    };
+  } catch (err) {
+    return { success: false, summary: `Vetric mentions failed: ${(err as Error).message}` };
+  }
+}
+
+// ─── LinkedIn MCP Server (Legacy — kept as fallback) ──────
 
 const LINKEDIN_MCP_URL = process.env.LINKEDIN_MCP_URL ?? 'http://5.9.70.211:7777/mcp';
 const LINKEDIN_MCP_API_KEY = process.env.LINKEDIN_MCP_API_KEY ?? 'bWcwEc_cI91Dc1DMLJY_Ljyl1ITjaZC_KxEqoCUBM08';
@@ -148,24 +285,57 @@ export async function callLinkedInMCP(
 }
 
 /**
- * Get a person's LinkedIn profile via the MCP server.
+ * Extract LinkedIn username slug from a full URL or return as-is if already a slug.
  */
-export async function getLinkedInProfileViaMCP(linkedinUrl: string): Promise<ToolResult> {
-  return callLinkedInMCP('get_person_profile', { url: linkedinUrl });
+function extractLinkedInUsername(urlOrUsername: string): string {
+  return urlOrUsername.includes('linkedin.com/in/')
+    ? urlOrUsername.replace(/^.*linkedin\.com\/in\//, '').replace(/\/$/, '').split('?')[0]
+    : urlOrUsername;
+}
+
+/**
+ * Extract LinkedIn company slug from a full URL or return as-is if already a slug.
+ */
+function extractLinkedInCompanySlug(urlOrSlug: string): string {
+  return urlOrSlug.includes('linkedin.com/company/')
+    ? urlOrSlug.replace(/^.*linkedin\.com\/company\//, '').replace(/\/$/, '').split('?')[0]
+    : urlOrSlug;
+}
+
+/**
+ * Get a person's LinkedIn profile via the MCP server.
+ * Accepts a full LinkedIn URL (https://linkedin.com/in/username) or just the username slug.
+ * The MCP requires `linkedin_username` (slug only), not the full URL.
+ * Optional sections: "experience", "education", "contact_info", "posts", "honors", "languages"
+ */
+export async function getLinkedInProfileViaMCP(linkedinUrlOrUsername: string, sections?: string): Promise<ToolResult> {
+  const username = extractLinkedInUsername(linkedinUrlOrUsername);
+  const args: Record<string, unknown> = { linkedin_username: username };
+  if (sections) args.sections = sections;
+  return callLinkedInMCP('get_person_profile', args);
 }
 
 /**
  * Get a company's LinkedIn profile via the MCP server.
+ * Accepts a full LinkedIn company URL or just the slug.
+ * The MCP requires `company_name` (slug only), not the full URL.
+ * Optional sections: "posts", "jobs"
  */
-export async function getLinkedInCompanyViaMCP(companyUrl: string): Promise<ToolResult> {
-  return callLinkedInMCP('get_company_profile', { url: companyUrl });
+export async function getLinkedInCompanyViaMCP(companyUrlOrSlug: string, sections?: string): Promise<ToolResult> {
+  const slug = extractLinkedInCompanySlug(companyUrlOrSlug);
+  const args: Record<string, unknown> = { company_name: slug };
+  if (sections) args.sections = sections;
+  return callLinkedInMCP('get_company_profile', args);
 }
 
 /**
  * Search for people on LinkedIn via the MCP server.
+ * Note: returns a search URL with section text — parse the text to extract names/titles/URLs.
  */
-export async function searchLinkedInPeopleViaMCP(keywords: string): Promise<ToolResult> {
-  return callLinkedInMCP('search_people', { keywords });
+export async function searchLinkedInPeopleViaMCP(keywords: string, location?: string): Promise<ToolResult> {
+  const args: Record<string, unknown> = { keywords };
+  if (location) args.location = location;
+  return callLinkedInMCP('search_people', args);
 }
 
 /**
@@ -373,125 +543,110 @@ export async function fetchBrightDataCompany(url: string): Promise<LinkedInCompa
 }
 
 export async function enrichLinkedInProfile(url: string): Promise<ToolResult> {
-  // Run Bright Data, PDL, and Exa in parallel — get everything in one shot
-  // Extract person name from LinkedIn URL slug for Exa search
-  const slugMatch = url.match(/linkedin\.com\/in\/([^/?]+)/);
-  const urlSlug = slugMatch ? slugMatch[1].replace(/-/g, ' ').replace(/\d+$/g, '').trim() : '';
+  const slug = extractLinkedInSlug(url);
 
-  const [profile, pdlResult, exaResult] = await Promise.allSettled([
-    fetchBrightDataLinkedIn(url),
+  // 1. Try Vetric first (live data, fastest, most reliable)
+  const [vetricProfile, vetricExp, pdlResult] = await Promise.allSettled([
+    slug ? getVetricProfile(slug) : Promise.resolve({ success: false, summary: 'no slug' } as ToolResult),
+    slug ? getVetricExperience(slug) : Promise.resolve({ success: false, summary: 'no slug' } as ToolResult),
     enrichWithPDL(url),
-    urlSlug ? searchExaAI(`site:linkedin.com "${urlSlug}"`, 'auto', 2) : Promise.resolve({ success: false, summary: 'no slug' } as ToolResult),
   ]);
 
-  const bdProfile = profile.status === 'fulfilled' ? profile.value : null;
+  const vetric = vetricProfile.status === 'fulfilled' && vetricProfile.value.success ? vetricProfile.value.data as Record<string, unknown> : null;
+  const vetricExpData = vetricExp.status === 'fulfilled' && vetricExp.value.success ? vetricExp.value.data as Record<string, unknown> : null;
   const pdl = pdlResult.status === 'fulfilled' && pdlResult.value.success ? pdlResult.value.data as Record<string, unknown> : null;
 
-  // Parse Exa cached LinkedIn data — extract company/title from text
-  let exaCompany: string | undefined;
-  let exaTitle: string | undefined;
-  let exaName: string | undefined;
-  if (exaResult.status === 'fulfilled' && exaResult.value.success && exaResult.value.data) {
-    const exaResults = exaResult.value.data as Array<{ title?: string; text?: string; url?: string }>;
-    // ONLY use the result that matches our exact LinkedIn URL — never a different profile
-    const match = exaResults.find(r => r.url === url);
-    if (match?.text) {
-      // Exa returns cached LinkedIn text like: "# Name\nTitle at Company\n..."
-      const lines = match.text.split('\n').map(l => l.replace(/^#+\s*/, '').trim()).filter(Boolean);
-      if (lines[0]) exaName = lines[0];
-      // Look for "at Company" pattern in title/headline
-      for (const line of lines.slice(0, 5)) {
-        const atMatch = line.match(/(?:at|@)\s+(.+?)(?:\s*\(|$)/i);
-        if (atMatch) {
-          exaCompany = atMatch[1].trim();
-          // Clean up company name — remove trailing certifications, emojis, badges
-          exaCompany = exaCompany.replace(/\s*[-–—]\s*(Workday|Certified|Pro|☁️|🏆|⭐|💡).*$/i, '').trim();
-          // Title is the part before "at"
-          const titlePart = line.split(/\s+(?:at|@)\s+/i)[0];
-          if (titlePart && titlePart !== exaName) exaTitle = titlePart;
-          break;
-        }
-      }
-    }
+  // 2. Fall back to Bright Data + Exa if Vetric fails
+  let bdProfile: LinkedInProfile | null = null;
+  if (!vetric) {
+    try {
+      bdProfile = await fetchBrightDataLinkedIn(url);
+    } catch { /* continue */ }
   }
 
-  if (!bdProfile && !pdl && !exaCompany) {
-    appLog('error', 'bright_data', 'linkedin_scrape', `LinkedIn scrape failed for ${url} (BD + PDL + Exa all failed)`, { url }).catch(() => {});
+  if (!vetric && !bdProfile && !pdl) {
+    appLog('error', 'vetric', 'linkedin_enrich', `LinkedIn enrichment failed for ${url} (Vetric + BD + PDL all failed)`, { url }).catch(() => {});
     return { success: false, summary: 'All sources failed — could not retrieve LinkedIn profile data' };
   }
-  appLog('info', 'bright_data', 'linkedin_scrape', `LinkedIn profile scraped: ${url}`, { url, hasAvatar: !!(bdProfile as Record<string, unknown> | null)?.avatar, exaFallback: !!exaCompany }).catch(() => {});
 
-  // Build combined enrichment — LinkedIn is ground truth for current role, PDL fills in contact points, Exa is fallback
-  const name = bdProfile?.name ?? (pdl?.name as string | undefined) ?? exaName ?? 'Unknown';
-  const company = bdProfile?.current_company_name ?? (pdl?.company as string | undefined) ?? exaCompany ?? 'N/A';
-  const position = bdProfile?.current_company_position ?? (pdl?.jobTitle as string | undefined) ?? exaTitle ?? '';
-  const city = bdProfile?.city ?? '';
+  // Build combined enrichment — Vetric is ground truth, others fill gaps
+  const topPos = vetric?.top_position as Record<string, unknown> | undefined;
+  const topCompanyInfo = topPos?.company_info as Record<string, unknown> | undefined;
+
+  const name = vetric
+    ? `${vetric.first_name ?? ''} ${vetric.last_name ?? ''}`.trim()
+    : bdProfile?.name ?? (pdl?.name as string | undefined) ?? 'Unknown';
+  const company = topCompanyInfo?.name as string ?? bdProfile?.current_company_name ?? (pdl?.company as string | undefined) ?? 'N/A';
+  const position = vetric?.headline as string ?? bdProfile?.current_company_position ?? (pdl?.jobTitle as string | undefined) ?? '';
+  const locationObj = vetric?.location as Record<string, unknown> | undefined;
+  const city = locationObj?.name as string ?? bdProfile?.city ?? '';
   const state = bdProfile?.state ?? '';
 
-  // Expose full experience so agent can verify current employer
-  const experience = (bdProfile?.experience ?? []).slice(0, 8).map(e => ({
-    company: e.company,
-    title: e.title,
-    location: e.location,
-    start_date: e.start_date,
-    end_date: e.end_date,
-    is_current: !e.end_date || e.end_date === 'Present',
-  }));
+  // Build experience from Vetric or Bright Data
+  const experience = vetricExpData
+    ? ((vetricExpData.experience ?? []) as Array<Record<string, unknown>>).slice(0, 8).map(e => {
+        const positions = (e.positions ?? []) as Array<Record<string, unknown>>;
+        const companyObj = e.company as Record<string, unknown> | undefined;
+        return positions.map(p => ({
+          company: companyObj?.name as string ?? '',
+          title: p.role as string ?? '',
+          location: p.location as string ?? companyObj?.location as string ?? '',
+          start_date: p.start_date ? `${(p.start_date as Record<string, unknown>).year ?? ''}` : '',
+          end_date: p.is_current_position ? 'Present' : (p.end_date ? `${(p.end_date as Record<string, unknown>).year ?? ''}` : ''),
+          is_current: p.is_current_position as boolean ?? false,
+        }));
+      }).flat()
+    : (bdProfile?.experience ?? []).slice(0, 8).map(e => ({
+        company: e.company,
+        title: e.title,
+        location: e.location,
+        start_date: e.start_date,
+        end_date: e.end_date,
+        is_current: !e.end_date || e.end_date === 'Present',
+      }));
 
-  // PDL contact points — phones, emails, location history
+  // Avatar: Vetric profile_picture is 800×800, best quality
+  const vetricPhoto = vetric?.profile_picture as string | undefined;
+  const bdAvatar = (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined;
+  const pdlPic = pdl?.profile_pic_url as string | undefined;
+  const avatar = (vetricPhoto && !isPlaceholderUrl(vetricPhoto)) ? vetricPhoto
+    : (bdAvatar && !isPlaceholderUrl(bdAvatar)) ? bdAvatar
+    : (pdlPic && !isPlaceholderUrl(pdlPic)) ? pdlPic
+    : undefined;
+
+  // PDL contact points — phones, emails
   const phones: string[] = (pdl?.phones as string[] | undefined) ?? [];
   const emails: string[] = (pdl?.emails as string[] | undefined) ?? [];
   const pdlCompany = pdl?.company as string | undefined;
 
-  // Flag employer discrepancy — PDL and LinkedIn disagree on current employer
   const employerMismatch = pdlCompany && company && pdlCompany !== company &&
     !pdlCompany.toLowerCase().includes(company.toLowerCase()) &&
     !company.toLowerCase().includes(pdlCompany.toLowerCase());
 
   const data = {
     name,
-    headline: bdProfile?.headline ?? '',
+    headline: vetric?.headline as string ?? bdProfile?.headline ?? '',
     company,
     position,
     city,
     state,
-    country: bdProfile?.country ?? '',
-    about: bdProfile?.about?.slice(0, 500) ?? '',
-    avatar: await (async () => {
-      // 1. Bright Data avatar (reject placeholders)
-      const bdAvatar = (bdProfile as Record<string, unknown> | null)?.avatar as string | undefined;
-      if (bdAvatar && !isPlaceholderUrl(bdAvatar)) return bdAvatar;
-      // 2. PDL profile_pic_url (reject placeholders)
-      const pdlPic = pdl?.profile_pic_url as string | undefined;
-      if (pdlPic && !isPlaceholderUrl(pdlPic)) return pdlPic;
-      // 3. Exa person search → Bright Data scrape
-      if (name && name !== 'Unknown' && company && company !== 'N/A') {
-        try {
-          const exa = await searchExaPerson(name, company, 3);
-          if (exa.success && Array.isArray(exa.data)) {
-            for (const r of exa.data as Array<{ url?: string }>) {
-              if (!r.url?.includes('linkedin.com/in/')) continue;
-              if (r.url === url) continue; // skip same URL we already tried
-              try {
-                const p = await fetchBrightDataLinkedIn(r.url);
-                const a = p ? (p as Record<string, unknown>).avatar as string | undefined : undefined;
-                if (a && !isPlaceholderUrl(a)) return a;
-              } catch { continue; }
-            }
-          }
-        } catch { /* exhausted */ }
-      }
-      return undefined;
-    })(),
+    country: (locationObj?.country as Record<string, unknown>)?.name as string ?? bdProfile?.country ?? '',
+    about: vetric?.about as string ?? bdProfile?.about?.slice(0, 500) ?? '',
+    avatar,
     experience,
-    // PDL contact data merged in — agent gets phones/emails without a separate tool call
+    connections: vetric?.connections as number ?? undefined,
+    followers: vetric?.followers as number ?? undefined,
+    company_logo: topCompanyInfo?.logo as string ?? undefined,
     phones,
     emails,
     pdl_company: pdlCompany,
     employer_discrepancy: employerMismatch
       ? `LinkedIn shows "${company}" but PDL shows "${pdlCompany}" — verify which is current before proceeding`
       : undefined,
+    source: vetric ? 'vetric' : bdProfile ? 'bright_data' : 'pdl',
   };
+
+  appLog('info', 'vetric', 'linkedin_enrich', `LinkedIn profile enriched: ${name} at ${company} (via ${data.source})`, { url, source: data.source }).catch(() => {});
 
   const summaryParts = [`${name}, ${company}, ${city || 'location unknown'}`];
   if (phones.length) summaryParts.push(`phones: ${phones.join(', ')}`);

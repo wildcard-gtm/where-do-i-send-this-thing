@@ -15,8 +15,8 @@ import {
   enrichWithPDL,
   searchExaPerson,
   scrapeWithFirecrawl,
-  getLinkedInProfileViaMCP,
-  searchLinkedInPeopleViaMCP,
+  getVetricProfile,
+  searchVetricPosts,
 } from './services';
 import { prisma } from '@/lib/db';
 
@@ -44,10 +44,10 @@ const FALLBACK_DESCRIPTIONS: Record<string, string> = {
     'Fetch and read the contents of any URL. Returns clean markdown text via Firecrawl (with raw HTTP fallback). Use to scrape company pages, news articles, or any web page for more context about the person or their company.',
   submit_decision:
     'Submit your final delivery recommendation. Call this ONLY when you have gathered enough evidence and your confidence is above 75%.',
-  linkedin_mcp_profile:
-    'Scrape a LinkedIn profile via the LinkedIn MCP server (authenticated browser session). Returns rich profile data including experience, education, skills, and about section. Use as a fallback when Bright Data scraping fails or returns incomplete data.',
-  linkedin_mcp_search:
-    'Search for people on LinkedIn via the LinkedIn MCP server (authenticated browser session). Returns matching LinkedIn profiles. Use when you need to find someone\'s LinkedIn URL by name/company, especially when Exa search returns no results.',
+  vetric_profile:
+    'Get a LinkedIn profile via Vetric API (live, real-time). Returns name, headline, profile_picture (800×800 headshot), location, connections, top_position (current company + logo). Use to verify a person\'s current employer and get their photo. Pass a full LinkedIn URL or just the username slug.',
+  vetric_search_posts:
+    'Search LinkedIn posts via Vetric API (live, real-time). Returns posts with full author data: name, occupation (current title), image_url (photo), profile URL. Use to discover people at a company by searching for relevant keywords. Each author result gives you their photo and LinkedIn slug.',
 };
 
 // ─── Tool Schema Builder ────────────────────────────────
@@ -176,23 +176,25 @@ function buildToolDefinitions(descriptions: Record<string, string>): ToolDefinit
       },
     },
     {
-      name: 'linkedin_mcp_profile',
-      description: descriptions.linkedin_mcp_profile,
+      name: 'vetric_profile',
+      description: descriptions.vetric_profile,
       input_schema: {
         type: 'object',
         properties: {
-          linkedin_url: { type: 'string', description: 'Full LinkedIn profile URL (https://www.linkedin.com/in/...)' },
+          linkedin_url: { type: 'string', description: 'LinkedIn profile URL (https://www.linkedin.com/in/username) or just the username slug' },
         },
         required: ['linkedin_url'],
       },
     },
     {
-      name: 'linkedin_mcp_search',
-      description: descriptions.linkedin_mcp_search,
+      name: 'vetric_search_posts',
+      description: descriptions.vetric_search_posts,
       input_schema: {
         type: 'object',
         properties: {
-          keywords: { type: 'string', description: 'Search keywords — person name, company, title, etc.' },
+          keywords: { type: 'string', description: 'Search keywords, e.g. "GitLab recruiting" or "Stripe talent acquisition"' },
+          sort_by: { type: 'string', enum: ['latest', 'top'], description: 'Sort order (default: latest)' },
+          date_posted: { type: 'string', enum: ['day', 'week', 'month'], description: 'Filter by recency (optional)' },
         },
         required: ['keywords'],
       },
@@ -383,11 +385,17 @@ export async function executeTool(toolUse: ToolUseBlock): Promise<ToolDispatchRe
       };
     }
 
-    case 'linkedin_mcp_profile':
-      return { toolResult: await getLinkedInProfileViaMCP(args.linkedin_url as string) };
+    case 'vetric_profile':
+      return { toolResult: await getVetricProfile(args.linkedin_url as string) };
 
-    case 'linkedin_mcp_search':
-      return { toolResult: await searchLinkedInPeopleViaMCP(args.keywords as string) };
+    case 'vetric_search_posts': {
+      const res = await searchVetricPosts(
+        args.keywords as string,
+        (args.sort_by as 'latest' | 'top' | undefined) ?? 'latest',
+        args.date_posted as 'day' | 'week' | 'month' | undefined,
+      );
+      return { toolResult: res };
+    }
 
     case 'submit_decision': {
       // Sanitize address fields — model occasionally passes a raw string instead of an object

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
-import { fetchBrightDataLinkedIn } from "@/agent/services";
+import { getVetricProfile, fetchBrightDataLinkedIn } from "@/agent/services";
 import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
 
 interface TeamPhoto {
@@ -52,15 +52,28 @@ export async function POST(
 
   let photoUrl: string | null = null;
 
-  // Scrape LinkedIn profile for avatar via Bright Data
+  // Try Vetric API first (returns 800×800 profile photo)
   try {
-    const profile = await fetchBrightDataLinkedIn(member.linkedinUrl);
-    const avatar = profile
-      ? ((profile as Record<string, unknown>).avatar as string | undefined)
-      : undefined;
-    if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
+    const vetricRes = await getVetricProfile(member.linkedinUrl);
+    if (vetricRes.success && vetricRes.data) {
+      const pic = (vetricRes.data as Record<string, unknown>).profile_picture as string | undefined;
+      if (pic && !isPlaceholderUrl(pic)) photoUrl = pic;
+    }
   } catch {
-    // failed
+    // Vetric failed, try Bright Data
+  }
+
+  // Fallback to Bright Data scraping
+  if (!photoUrl) {
+    try {
+      const profile = await fetchBrightDataLinkedIn(member.linkedinUrl);
+      const avatar = profile
+        ? ((profile as Record<string, unknown>).avatar as string | undefined)
+        : undefined;
+      if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
+    } catch {
+      // failed
+    }
   }
 
   if (!photoUrl) {

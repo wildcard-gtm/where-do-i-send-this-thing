@@ -78,3 +78,6 @@ prisma/dev.db-journal
 
 # Chrome extension (contains hardcoded keys)
 chrome-extension/
+
+# Local verification agent (not deployed)
+/verification/

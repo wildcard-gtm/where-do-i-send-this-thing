@@ -8,6 +8,7 @@ interface ContactInfo {
   id: string;
   name: string;
   company: string | null;
+  title: string | null;
   linkedinUrl: string;
 }
 
@@ -416,10 +417,10 @@ export default function PostcardBatchDetailPage() {
                     </a>
                   </div>
                   <p className="text-xs text-muted-foreground truncate">
-                    {postcard.contactTitle || postcard.contact.company || postcard.contact.linkedinUrl
+                    {postcard.contact.title || postcard.contact.company || postcard.contact.linkedinUrl
                       .replace(/^https?:\/\/(www\.)?linkedin\.com\/in\//, "")
                       .replace(/\/$/, "")}
-                    {postcard.contact.company && postcard.contactTitle ? ` at ${postcard.contact.company}` : ""}
+                    {postcard.contact.company && postcard.contact.title ? ` at ${postcard.contact.company}` : ""}
                     {" · "}
                     <span className="capitalize">{postcard.template}</span>
                     {postcard.deliveryAddress && ` · ${postcard.deliveryAddress}`}

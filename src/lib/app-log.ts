@@ -13,6 +13,7 @@ export type LogSource =
   | "exa_ai"
   | "firecrawl"
   | "linkedin_mcp"
+  | "vetric"
   | "pdl"
   | "google_maps"
   | "hunter_io"

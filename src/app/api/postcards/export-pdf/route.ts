@@ -89,6 +89,7 @@ export async function POST(request: Request) {
           id: true,
           name: true,
           company: true,
+          title: true,
           linkedinUrl: true,
           profileImageUrl: true,
           companyEnrichments: {
@@ -254,7 +255,7 @@ export async function POST(request: Request) {
     iy -= 18;
 
     // Prospect photo
-    const prospectPhotoUrl = pc.contactPhoto || pc.contact.profileImageUrl;
+    const prospectPhotoUrl = pc.contact.profileImageUrl;
     if (prospectPhotoUrl) {
       const prospectData = await fetchImageBytes(prospectPhotoUrl);
       if (prospectData) {
@@ -318,7 +319,7 @@ export async function POST(request: Request) {
     };
 
     drawInfoLabel("Name", pc.contactName);
-    if (pc.contactTitle) drawInfoLabel("Title", pc.contactTitle);
+    if (pc.contact.title) drawInfoLabel("Title", pc.contact.title);
     drawInfoLabel("Company", companyName);
     if (pc.contact.linkedinUrl) {
       const linkedinShort = pc.contact.linkedinUrl
@@ -364,7 +365,7 @@ export async function POST(request: Request) {
     c1y -= 18;
 
     let logoEmbedded = false;
-    const logoUrl = enrichment?.companyLogo || pc.companyLogo;
+    const logoUrl = enrichment?.companyLogo;
     if (logoUrl) {
       const logoData = await fetchImageBytes(logoUrl);
       if (logoData) {
