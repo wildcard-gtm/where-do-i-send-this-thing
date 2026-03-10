@@ -157,7 +157,7 @@ export async function POST(request: Request) {
       const members = enrichment.teamPhotos as TeamMember[];
       if (Array.isArray(members)) {
         members.forEach((m, idx) => {
-          if (m.linkedinUrl || m.photoUrl) {
+          if (m.linkedinUrl) {
             allItems.push({
               contactId: c.id,
               name: m.name || `Team Member ${idx + 1}`,
@@ -196,6 +196,8 @@ export async function POST(request: Request) {
 
       // Phase 1: Fetch Vetric data + download images in batches of 10
       const pairs: PhotoPair[] = [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const skippedResults: any[] = [];
       const FETCH_BATCH = 10;
       let downloaded = 0;
 
@@ -211,21 +213,22 @@ export async function POST(request: Request) {
         const chunkResults = await Promise.all(
           chunk.map(async (item) => {
             const slug = extractSlug(item.linkedinUrl);
-            if (!slug && !item.dbPhotoUrl) return null;
+            if (!slug) {
+              // No LinkedIn URL — can't compare, mark as MISSING immediately
+              return { skip: true as const, item, slug: "" };
+            }
 
             let vetricPhotoUrl: string | null = null;
-            if (slug) {
-              try {
-                const r = await axios.get(`${VETRIC_BASE}/profile/${slug}`, {
-                  headers: vetricHeaders,
-                  timeout: 15000,
-                });
-                if (r.data && r.data.message !== "Entity Not Found") {
-                  vetricPhotoUrl = r.data.profile_picture || null;
-                }
-              } catch {
-                // skip
+            try {
+              const r = await axios.get(`${VETRIC_BASE}/profile/${slug}`, {
+                headers: vetricHeaders,
+                timeout: 15000,
+              });
+              if (r.data && r.data.message !== "Entity Not Found") {
+                vetricPhotoUrl = r.data.profile_picture || null;
               }
+            } catch {
+              // skip
             }
 
             // Download both images
@@ -235,31 +238,52 @@ export async function POST(request: Request) {
             ]);
 
             return {
-              contactId: item.contactId,
-              name: item.name,
-              company: item.company,
-              slug: slug || "",
-              dbPhotoUrl: item.dbPhotoUrl,
-              vetricPhotoUrl,
-              dbImg,
-              vetricImg,
-              type: item.type,
-              teamMemberName: item.teamMemberName,
-              teamMemberIndex: item.teamMemberIndex,
-              enrichmentId: item.enrichmentId,
-            } as PhotoPair;
+              skip: false as const,
+              pair: {
+                contactId: item.contactId,
+                name: item.name,
+                company: item.company,
+                slug,
+                dbPhotoUrl: item.dbPhotoUrl,
+                vetricPhotoUrl,
+                dbImg,
+                vetricImg,
+                type: item.type,
+                teamMemberName: item.teamMemberName,
+                teamMemberIndex: item.teamMemberIndex,
+                enrichmentId: item.enrichmentId,
+              } as PhotoPair,
+            };
           })
         );
 
         for (const r of chunkResults) {
-          if (r) pairs.push(r);
+          if (r.skip) {
+            // Add as MISSING result directly — no Gemini comparison needed
+            skippedResults.push({
+              contactId: r.item.contactId,
+              name: r.item.name,
+              company: r.item.company,
+              slug: "",
+              dbPhotoUrl: r.item.dbPhotoUrl,
+              vetricPhotoUrl: null,
+              verdict: "MISSING",
+              reason: "No LinkedIn URL — cannot compare",
+              type: r.item.type,
+              teamMemberName: r.item.teamMemberName,
+              teamMemberIndex: r.item.teamMemberIndex,
+              enrichmentId: r.item.enrichmentId,
+            });
+          } else {
+            pairs.push(r.pair);
+          }
           downloaded++;
         }
       }
 
       send("progress", {
         phase: "downloading_done",
-        message: `Downloaded ${pairs.length} photo pairs. Starting AI comparison...`,
+        message: `Downloaded ${pairs.length} photo pairs (${skippedResults.length} skipped — no LinkedIn URL). Starting AI comparison...`,
         current: totalItems,
         total: totalItems,
       });
@@ -431,8 +455,8 @@ export async function POST(request: Request) {
         });
       }
 
-      // Final done event with all results
-      send("done", { results: allResults });
+      // Final done event with all results (compared + skipped)
+      send("done", { results: [...allResults, ...skippedResults] });
       controller.close();
     },
   });
