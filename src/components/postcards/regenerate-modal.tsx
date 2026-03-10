@@ -57,6 +57,7 @@ export default function RegenerateModal({
   const [editingTeamIndex, setEditingTeamIndex] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  const [refreshingField, setRefreshingField] = useState<string | null>(null);
 
   const prospectFileRef = useRef<HTMLInputElement>(null);
   const logoFileRef = useRef<HTMLInputElement>(null);
@@ -98,6 +99,50 @@ export default function RegenerateModal({
       });
     }
     setUploadingField(null);
+  }
+
+  async function handleRefreshProspectPhoto() {
+    setRefreshingField("prospect");
+    try {
+      const res = await fetch(`/api/contacts/${contactId}/refresh-photo`, { method: "POST" });
+      const json = await res.json();
+      if (json.profileImageUrl) setContactPhoto(json.profileImageUrl);
+    } catch {
+      // silently fail
+    } finally {
+      setRefreshingField(null);
+    }
+  }
+
+  async function handleRefreshTeamPhoto(index: number) {
+    const member = teamPhotos[index];
+    if (!member?.linkedinUrl) return;
+    setRefreshingField(`team-${index}`);
+    try {
+      // Use the enrichment team-member refresh endpoint
+      // We need the enrichment ID — fetch it first
+      const enrichRes = await fetch(`/api/contacts/${contactId}`);
+      const enrichJson = await enrichRes.json();
+      const enrichmentId = enrichJson.contact?.companyEnrichments?.[0]?.id;
+      if (!enrichmentId) return;
+      const res = await fetch(`/api/enrichments/${enrichmentId}/team-member/refresh-photo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ index }),
+      });
+      const json = await res.json();
+      if (json.photoUrl) {
+        setTeamPhotos((prev) => {
+          const updated = [...prev];
+          updated[index] = { ...updated[index], photoUrl: json.photoUrl };
+          return updated;
+        });
+      }
+    } catch {
+      // silently fail
+    } finally {
+      setRefreshingField(null);
+    }
   }
 
   function handleEditTeamName(index: number, name: string) {
@@ -232,7 +277,7 @@ export default function RegenerateModal({
                   />
                   <button
                     onClick={() => prospectFileRef.current?.click()}
-                    disabled={uploadingField === "prospect"}
+                    disabled={uploadingField === "prospect" || refreshingField === "prospect"}
                     className="text-xs text-primary hover:text-primary-hover font-medium transition disabled:opacity-50"
                   >
                     {uploadingField === "prospect" ? (
@@ -241,7 +286,27 @@ export default function RegenerateModal({
                         Uploading...
                       </span>
                     ) : (
-                      "Change"
+                      "Upload"
+                    )}
+                  </button>
+                  <button
+                    onClick={handleRefreshProspectPhoto}
+                    disabled={refreshingField === "prospect" || uploadingField === "prospect"}
+                    className="text-xs text-primary hover:text-primary-hover font-medium transition disabled:opacity-50"
+                    title="Fetch latest photo from LinkedIn"
+                  >
+                    {refreshingField === "prospect" ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                        Fetching...
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        LinkedIn
+                      </span>
                     )}
                   </button>
                   {contactPhoto && (
@@ -415,8 +480,24 @@ export default function RegenerateModal({
                       )}
                     </div>
 
-                    {/* Actions: edit toggle + delete */}
+                    {/* Actions: refresh photo, edit toggle, delete */}
                     <div className="flex flex-col gap-1 shrink-0">
+                      {tp.linkedinUrl && (
+                        <button
+                          onClick={() => handleRefreshTeamPhoto(i)}
+                          disabled={refreshingField === `team-${i}`}
+                          className={`p-1 rounded transition ${refreshingField === `team-${i}` ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-0 group-hover/team:opacity-100"}`}
+                          title="Refresh photo from LinkedIn"
+                        >
+                          {refreshingField === `team-${i}` ? (
+                            <span className="w-3 h-3 border-2 border-primary border-t-transparent rounded-full animate-spin block" />
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={() => setEditingTeamIndex(editingTeamIndex === i ? null : i)}
                         className={`p-1 rounded transition ${editingTeamIndex === i ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-primary hover:bg-primary/10 opacity-0 group-hover/team:opacity-100"}`}

@@ -2,15 +2,11 @@ import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getTeamUserIds } from "@/lib/team";
-import {
-  fetchBrightDataLinkedIn,
-  enrichWithPDL,
-  searchExaPerson,
-} from "@/agent/services";
+import { getVetricProfile, fetchBrightDataLinkedIn } from "@/agent/services";
 import { isPlaceholderUrl } from "@/lib/photo-finder/detect-placeholder";
 
 // POST /api/contacts/[id]/refresh-photo
-// Lightweight photo-only refresh: tries Bright Data → PDL → Exa+Bright Data
+// Lightweight photo-only refresh: tries Vetric (800×800) → Bright Data
 // Only updates profileImageUrl, never touches other fields.
 export async function POST(
   _request: Request,
@@ -33,63 +29,27 @@ export async function POST(
 
   let photoUrl: string | null = null;
 
-  // 1. Bright Data — scrape LinkedIn profile for avatar
+  // 1. Vetric — returns 800×800 profile photo directly
   try {
-    const profile = await fetchBrightDataLinkedIn(contact.linkedinUrl);
-    const avatar = profile
-      ? ((profile as Record<string, unknown>).avatar as string | undefined)
-      : undefined;
-    if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
+    const vetricRes = await getVetricProfile(contact.linkedinUrl);
+    if (vetricRes.success && vetricRes.data) {
+      const pic = (vetricRes.data as Record<string, unknown>).profile_picture as string | undefined;
+      if (pic && !isPlaceholderUrl(pic)) photoUrl = pic;
+    }
   } catch {
-    // continue to next fallback
+    // continue to fallback
   }
 
-  // 2. PDL — profile_pic_url
+  // 2. Bright Data — scrape LinkedIn profile for avatar
   if (!photoUrl) {
     try {
-      const pdlResult = await enrichWithPDL(contact.linkedinUrl);
-      if (pdlResult.success && pdlResult.data) {
-        const pic = (pdlResult.data as Record<string, unknown>)
-          .profile_pic_url as string | undefined;
-        if (pic && !isPlaceholderUrl(pic)) photoUrl = pic;
-      }
+      const profile = await fetchBrightDataLinkedIn(contact.linkedinUrl);
+      const avatar = profile
+        ? ((profile as Record<string, unknown>).avatar as string | undefined)
+        : undefined;
+      if (avatar && !isPlaceholderUrl(avatar)) photoUrl = avatar;
     } catch {
-      // continue to next fallback
-    }
-  }
-
-  // 3. Exa person search → find LinkedIn → scrape with Bright Data
-  if (!photoUrl && contact.name && contact.company) {
-    try {
-      const exaResult = await searchExaPerson(
-        contact.name,
-        contact.company,
-        3
-      );
-      if (exaResult.success && Array.isArray(exaResult.data)) {
-        for (const result of exaResult.data as Array<{
-          url?: string;
-          name?: string;
-        }>) {
-          if (!result.url?.includes("linkedin.com/in/")) continue;
-          try {
-            const profile = await fetchBrightDataLinkedIn(result.url);
-            const avatar = profile
-              ? ((profile as Record<string, unknown>).avatar as
-                  | string
-                  | undefined)
-              : undefined;
-            if (avatar && !isPlaceholderUrl(avatar)) {
-              photoUrl = avatar;
-              break;
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
-    } catch {
-      // all fallbacks exhausted
+      // fallback exhausted
     }
   }
 
