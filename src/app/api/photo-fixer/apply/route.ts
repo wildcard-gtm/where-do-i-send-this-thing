@@ -237,7 +237,7 @@ export async function POST(request: Request) {
     if (updated) {
       await prisma.companyEnrichment.update({
         where: { id: enrichmentId },
-        data: { teamPhotos: members },
+        data: { teamPhotos: members as unknown as import("@prisma/client").Prisma.InputJsonValue },
       });
     }
   }
