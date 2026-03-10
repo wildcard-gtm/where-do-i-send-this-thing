@@ -25,6 +25,18 @@ interface CompareResult {
   enrichmentId?: string;
 }
 
+interface PhotoItem {
+  contactId: string;
+  name: string;
+  company: string;
+  linkedinUrl: string | null;
+  dbPhotoUrl: string | null;
+  type: "contact" | "team";
+  teamMemberName?: string;
+  teamMemberIndex?: number;
+  enrichmentId?: string;
+}
+
 interface ProgressInfo {
   phase: string;
   message: string;
@@ -33,6 +45,8 @@ interface ProgressInfo {
   batchNum?: number;
   totalBatches?: number;
 }
+
+const CHUNK_SIZE = 20;
 
 export default function PhotoFixerPage() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
@@ -58,75 +72,95 @@ export default function PhotoFixerPage() {
     setResults(null);
     setSelected(new Set());
     setApplyResult(null);
-    setProgress({ phase: "init", message: "Starting comparison...", current: 0, total: 0 });
+    setProgress({ phase: "init", message: "Loading contacts and team members...", current: 0, total: 0 });
 
     try {
-      const res = await fetch("/api/photo-fixer/compare", {
+      // Phase 1: Get all items
+      const initRes = await fetch("/api/photo-fixer/compare", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ batchId: selectedBatch }),
       });
+      const initData = await initRes.json();
 
-      if (!res.ok) {
-        const err = await res.json();
-        setProgress({ phase: "error", message: err.error || "Request failed", current: 0, total: 0 });
+      if (!initData.items) {
+        setProgress({ phase: "error", message: initData.error || "Failed to load items", current: 0, total: 0 });
         setLoading(false);
         return;
       }
 
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setProgress({ phase: "error", message: "No response stream", current: 0, total: 0 });
-        setLoading(false);
-        return;
-      }
+      const items: PhotoItem[] = initData.items;
+      const totalItems = items.length;
+      const totalBatches = Math.ceil(totalItems / CHUNK_SIZE);
 
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finalResults: CompareResult[] | null = null;
+      setProgress({
+        phase: "ready",
+        message: `Found ${initData.totalContacts} contacts + ${initData.totalTeam} team members (${totalItems} total). Starting comparison...`,
+        current: 0,
+        total: totalItems,
+      });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      // Phase 2: Process chunks sequentially
+      const allResults: CompareResult[] = [];
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
+      for (let i = 0; i < totalItems; i += CHUNK_SIZE) {
+        const chunk = items.slice(i, i + CHUNK_SIZE);
+        const batchNum = Math.floor(i / CHUNK_SIZE) + 1;
 
-        let eventType = "";
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              if (eventType === "progress") {
-                setProgress(data as ProgressInfo);
-              } else if (eventType === "done") {
-                finalResults = data.results;
-              }
-            } catch {
-              // skip unparseable
-            }
+        setProgress({
+          phase: "comparing",
+          message: `Processing batch ${batchNum}/${totalBatches} — downloading & comparing ${chunk.length} photos...`,
+          current: allResults.length,
+          total: totalItems,
+          batchNum,
+          totalBatches,
+        });
+
+        try {
+          const chunkRes = await fetch("/api/photo-fixer/compare", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ batchId: selectedBatch, items: chunk, offset: i }),
+          });
+          const chunkData = await chunkRes.json();
+
+          if (chunkData.results) {
+            allResults.push(...chunkData.results);
+          }
+        } catch {
+          // Mark this chunk as ERROR
+          for (const item of chunk) {
+            allResults.push({
+              contactId: item.contactId,
+              name: item.name,
+              company: item.company,
+              slug: "",
+              dbPhotoUrl: item.dbPhotoUrl,
+              vetricPhotoUrl: null,
+              verdict: "ERROR",
+              reason: "Request failed for this batch",
+              type: item.type,
+              teamMemberName: item.teamMemberName,
+              teamMemberIndex: item.teamMemberIndex,
+              enrichmentId: item.enrichmentId,
+            });
           }
         }
       }
 
-      if (finalResults) {
-        setResults(finalResults);
-        // Auto-select all mismatches
-        const mismatchKeys = new Set<string>(
-          finalResults
-            .filter((r: CompareResult) => r.verdict === "MISMATCH")
-            .map((r: CompareResult) => resultKey(r))
-        );
-        setSelected(mismatchKeys);
-      }
+      // All done — show results
+      setResults(allResults);
+      const mismatchKeys = new Set<string>(
+        allResults
+          .filter((r) => r.verdict === "MISMATCH")
+          .map((r) => resultKey(r))
+      );
+      setSelected(mismatchKeys);
+      setProgress(null);
     } catch {
       setProgress({ phase: "error", message: "Error running comparison", current: 0, total: 0 });
     } finally {
       setLoading(false);
-      setProgress(null);
     }
   }, [selectedBatch]);
 
@@ -135,7 +169,6 @@ export default function PhotoFixerPage() {
     setApplying(true);
     setApplyResult(null);
 
-    // Build items list from selected keys
     const items = results
       .filter((r) => selected.has(resultKey(r)))
       .map((r) => ({
@@ -156,7 +189,6 @@ export default function PhotoFixerPage() {
       setApplyResult(
         `Updated ${data.applied} photos. ${data.failed} failed.`
       );
-      // Update results to reflect fixes
       if (data.results) {
         setResults(
           results.map((r) => {
@@ -262,7 +294,7 @@ export default function PhotoFixerPage() {
         </div>
 
         {/* Progress panel */}
-        {progress && (
+        {progress && progress.phase !== "error" && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <svg className="w-4 h-4 animate-spin shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -274,22 +306,24 @@ export default function PhotoFixerPage() {
               <div className="space-y-1">
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>
-                    {progress.phase === "downloading" && "Downloading photos..."}
-                    {progress.phase === "comparing" && `Comparing batch ${progress.batchNum || 0}/${progress.totalBatches || 0}...`}
-                    {progress.phase === "downloading_done" && "Downloads complete"}
-                    {progress.phase === "init" && "Initializing..."}
+                    {progress.batchNum && progress.totalBatches
+                      ? `Batch ${progress.batchNum} of ${progress.totalBatches}`
+                      : "Preparing..."}
                   </span>
                   <span>{progress.current}/{progress.total} ({progressPercent}%)</span>
                 </div>
                 <div className="w-full bg-card border border-border rounded-full h-2 overflow-hidden">
                   <div
-                    className="bg-primary h-full rounded-full transition-all duration-300"
+                    className="bg-primary h-full rounded-full transition-all duration-500"
                     style={{ width: `${progressPercent}%` }}
                   />
                 </div>
               </div>
             )}
           </div>
+        )}
+        {progress && progress.phase === "error" && (
+          <div className="text-sm text-red-500">{progress.message}</div>
         )}
       </div>
 
@@ -357,7 +391,6 @@ export default function PhotoFixerPage() {
           </div>
         </>
       )}
-
     </div>
   );
 }
