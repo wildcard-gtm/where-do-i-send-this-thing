@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { generateAndDownloadPrintPdf, generateAndDownloadExportPdf } from "@/lib/client-pdf";
 
 interface Postcard {
   id: string;
@@ -17,8 +18,16 @@ interface Postcard {
     id: string;
     name: string;
     company: string | null;
+    title: string | null;
     linkedinUrl: string;
-    companyEnrichments?: { companyName: string }[];
+    profileImageUrl: string | null;
+    companyEnrichments?: {
+      companyName?: string | null;
+      companyWebsite?: string | null;
+      companyLogo?: string | null;
+      openRoles?: { title: string; location?: string }[] | null;
+      teamPhotos?: { name?: string; photoUrl: string; title?: string }[] | null;
+    }[];
   };
 }
 
@@ -149,33 +158,17 @@ export default function PostcardsPage() {
 
   const handleDownloadPrintPdf = async () => {
     const targets = filteredPostcards.filter(
-      (p) =>
-        p.imageUrl &&
-        (selected.size === 0 || selected.has(p.id))
+      (p) => p.imageUrl && (selected.size === 0 || selected.has(p.id))
     );
     if (targets.length === 0) {
       setActionMessage("No postcards with images to download.");
       return;
     }
     setPdfExporting(true);
-    setActionMessage(`Generating print-ready PDF for ${targets.length} postcard(s)...`);
     try {
-      const res = await fetch("/api/postcards/print-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postcardIds: targets.map((p) => p.id) }),
+      await generateAndDownloadPrintPdf(targets, (done, total) => {
+        setActionMessage(`Building print PDF... ${done}/${total} postcards`);
       });
-      if (!res.ok) {
-        setActionMessage("Failed to generate print PDF.");
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "postcards-print-ready.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
       setActionMessage(`Downloaded print-ready PDF with ${targets.length} postcard(s).`);
     } catch {
       setActionMessage("Print PDF generation failed.");
@@ -185,33 +178,19 @@ export default function PostcardsPage() {
   };
 
   const handleExportPdf = async () => {
-    const ids = selected.size > 0
-      ? Array.from(selected)
-      : filteredPostcards.filter((p) => p.imageUrl).map((p) => p.id);
-    if (ids.length === 0) {
+    const targets = selected.size > 0
+      ? filteredPostcards.filter((p) => selected.has(p.id))
+      : filteredPostcards.filter((p) => p.imageUrl);
+    if (targets.length === 0) {
       setActionMessage("No postcards with images to export.");
       return;
     }
     setPdfExporting(true);
-    setActionMessage(`Generating PDF for ${ids.length} postcard(s)...`);
     try {
-      const res = await fetch("/api/postcards/export-pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postcardIds: ids }),
+      await generateAndDownloadExportPdf(targets, (done, total) => {
+        setActionMessage(`Building export PDF... ${done}/${total} postcards`);
       });
-      if (!res.ok) {
-        setActionMessage("Failed to generate PDF.");
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "wdistt-postcard-export.pdf";
-      a.click();
-      URL.revokeObjectURL(url);
-      setActionMessage(`Exported ${ids.length} postcard(s) to PDF.`);
+      setActionMessage(`Exported ${targets.length} postcard(s) to PDF.`);
     } catch {
       setActionMessage("PDF export failed.");
     } finally {
