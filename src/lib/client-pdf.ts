@@ -6,24 +6,12 @@ import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 
 // ── Image helpers ──
 
-/** Load image at full resolution (for print PDF) */
-async function loadImageBytes(
+/** Load image at full resolution as JPG 100% quality (for print PDF) */
+async function loadImageFullRes(
   url: string
-): Promise<{ bytes: Uint8Array; type: "png" | "jpg" } | null> {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error();
-    const buf = await res.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    if (bytes[0] === 0x89 && bytes[1] === 0x50) return { bytes, type: "png" };
-    if (bytes[0] === 0xff && bytes[1] === 0xd8) return { bytes, type: "jpg" };
-    // WebP or other — convert via canvas at full size
-    const jpg = await resizeViaCanvas(url);
-    return jpg ? { bytes: jpg, type: "jpg" } : null;
-  } catch {
-    const jpg = await resizeViaCanvas(url);
-    return jpg ? { bytes: jpg, type: "jpg" } : null;
-  }
+): Promise<{ bytes: Uint8Array; type: "jpg" } | null> {
+  const jpg = await resizeViaCanvas(url, undefined, undefined, 1.0);
+  return jpg ? { bytes: jpg, type: "jpg" } : null;
 }
 
 /** Load + downscale image via canvas, output as JPEG. maxW/maxH cap the dimensions. */
@@ -36,7 +24,7 @@ async function loadImageResized(
   return jpg ? { bytes: jpg, type: "jpg" } : null;
 }
 
-function resizeViaCanvas(url: string, maxW?: number, maxH?: number): Promise<Uint8Array | null> {
+function resizeViaCanvas(url: string, maxW?: number, maxH?: number, quality = 0.85): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -59,7 +47,7 @@ function resizeViaCanvas(url: string, maxW?: number, maxH?: number): Promise<Uin
           blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)));
         },
         "image/jpeg",
-        0.85
+        quality
       );
     };
     img.onerror = () => resolve(null);
@@ -139,7 +127,7 @@ export async function generateAndDownloadPrintPdf(
   for (let i = 0; i < sorted.length; i++) {
     onProgress?.(i, sorted.length);
     const pc = sorted[i];
-    const imgData = await loadImageBytes(pc.imageUrl!);
+    const imgData = await loadImageFullRes(pc.imageUrl!);
     if (imgData) {
       try {
         const embedded = await embedImage(doc, imgData);

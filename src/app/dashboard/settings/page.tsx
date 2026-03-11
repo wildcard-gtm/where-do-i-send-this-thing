@@ -25,7 +25,13 @@ interface AccountUser {
   teamId: string | null;
 }
 
-type Tab = "team" | "account";
+interface RevisionStats {
+  totalPostcards: number;
+  latestCount: number;
+  oldRevisions: number;
+}
+
+type Tab = "team" | "account" | "storage";
 
 // ── Main settings page ───────────────────────────────────────────────────────
 
@@ -50,6 +56,12 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingAccount, setSavingAccount] = useState(false);
   const [accountResult, setAccountResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // Storage / cleanup state
+  const [revisionStats, setRevisionStats] = useState<RevisionStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   // Invite form state (expanded when account needs to be created)
   const [inviteNeedsPassword, setInviteNeedsPassword] = useState(false);
@@ -135,6 +147,34 @@ export default function SettingsPage() {
     await fetchData();
   };
 
+  // ── Storage / cleanup handlers ─────────────────────────────────────────────
+
+  const fetchRevisionStats = async () => {
+    setLoadingStats(true);
+    setCleanupResult(null);
+    try {
+      const res = await fetch("/api/postcards/cleanup-revisions");
+      if (res.ok) setRevisionStats(await res.json());
+    } catch { /* ignore */ }
+    setLoadingStats(false);
+  };
+
+  const handleCleanupRevisions = async () => {
+    if (!revisionStats || revisionStats.oldRevisions === 0) return;
+    if (!confirm(`Delete ${revisionStats.oldRevisions} old postcard revision(s)? This cannot be undone. Only the latest postcard per contact will be kept.`)) return;
+    setDeleting(true);
+    setCleanupResult(null);
+    try {
+      const res = await fetch("/api/postcards/cleanup-revisions", { method: "DELETE" });
+      const data = await res.json();
+      setCleanupResult({ ok: res.ok, message: data.message || "Done" });
+      if (res.ok) await fetchRevisionStats();
+    } catch {
+      setCleanupResult({ ok: false, message: "Failed to delete revisions" });
+    }
+    setDeleting(false);
+  };
+
   // ── Account handler ────────────────────────────────────────────────────────
 
   const handleSaveAccount = async (e: React.FormEvent) => {
@@ -180,6 +220,15 @@ export default function SettingsPage() {
       icon: (
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+    },
+    {
+      id: "storage",
+      label: "Storage",
+      icon: (
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
         </svg>
       ),
     },
@@ -361,6 +410,88 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Storage tab ── */}
+      {activeTab === "storage" && (
+        <div className="flex flex-col gap-6 max-w-2xl">
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="text-base font-semibold text-foreground mb-2">Postcard Revisions</h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              When postcards are regenerated, old versions stay in storage. Clean them up to free space — only the latest postcard per contact is kept.
+            </p>
+
+            {!revisionStats && !loadingStats && (
+              <button
+                onClick={fetchRevisionStats}
+                className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                Scan for old revisions
+              </button>
+            )}
+
+            {loadingStats && (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+                Scanning postcards...
+              </div>
+            )}
+
+            {revisionStats && !loadingStats && (
+              <div className="flex flex-col gap-4">
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-card border border-border rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-foreground">{revisionStats.totalPostcards}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Total postcards</p>
+                  </div>
+                  <div className="bg-card border border-border rounded-xl p-4 text-center">
+                    <p className="text-2xl font-bold text-success">{revisionStats.latestCount}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Latest (kept)</p>
+                  </div>
+                  <div className="bg-card border border-border rounded-xl p-4 text-center">
+                    <p className={`text-2xl font-bold ${revisionStats.oldRevisions > 0 ? "text-danger" : "text-muted-foreground"}`}>
+                      {revisionStats.oldRevisions}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Old revisions</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleCleanupRevisions}
+                    disabled={deleting || revisionStats.oldRevisions === 0}
+                    className="inline-flex items-center gap-2 bg-danger hover:bg-danger/90 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
+                  >
+                    {deleting ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
+                    {deleting ? "Deleting..." : revisionStats.oldRevisions === 0 ? "No old revisions" : `Delete ${revisionStats.oldRevisions} old revision(s)`}
+                  </button>
+                  <button
+                    onClick={fetchRevisionStats}
+                    disabled={loadingStats}
+                    className="text-sm text-muted-foreground hover:text-foreground transition"
+                  >
+                    Rescan
+                  </button>
+                </div>
+
+                {cleanupResult && (
+                  <p className={`text-sm ${cleanupResult.ok ? "text-success" : "text-danger"}`}>
+                    {cleanupResult.message}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
