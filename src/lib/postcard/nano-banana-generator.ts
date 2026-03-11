@@ -1056,11 +1056,12 @@ export async function generateNanaBananaWarRoom(
   let bestIssueCount = Infinity;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const prompt = buildWarRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
+    // Fresh generation each attempt — don't pass previous issues or image to avoid regressions
+    const prompt = buildWarRoomGenerationPrompt(data /*, previousIssues.length > 0 ? previousIssues : undefined */);
     const parts = buildInterleavedParts(
       prompt,
       data,
-      currentImage && previousIssues.length > 0 ? currentImage : null,
+      /* currentImage && previousIssues.length > 0 ? currentImage : */ null,
     );
 
     console.log(`[NanoBanana] War Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
@@ -1128,11 +1129,12 @@ export async function generateNanaBananaZoomRoom(
   let bestIssueCount = Infinity;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const prompt = buildZoomRoomGenerationPrompt(data, previousIssues.length > 0 ? previousIssues : undefined);
+    // Fresh generation each attempt — don't pass previous issues or image to avoid regressions
+    const prompt = buildZoomRoomGenerationPrompt(data /*, previousIssues.length > 0 ? previousIssues : undefined */);
     const parts = buildZoomInterleavedParts(
       prompt,
       data,
-      currentImage && previousIssues.length > 0 ? currentImage : null,
+      /* currentImage && previousIssues.length > 0 ? currentImage : */ null,
     );
 
     console.log(`[NanoBanana] Zoom Room attempt ${attempt}/${MAX_ATTEMPTS}...`);
