@@ -378,6 +378,97 @@ async function validatePhotos(
   }
 }
 
+// ─── Face Description (Identity Anchors) ────────────────────────────────────
+
+interface FaceDescriptions {
+  prospect: string | null;
+  team: string[];
+}
+
+/**
+ * Analyze all face photos in a single batch call and return a short text
+ * description for each (hair color/style, skin tone, gender, glasses, etc.).
+ * These "identity anchors" are injected into the generation prompt so Gemini
+ * has both the visual reference AND a written description to preserve.
+ * Also flags sunglasses — the generator will be told to remove them.
+ */
+async function describeFaces(
+  prospectImage: ImageData | null,
+  teamImages: ImageData[],
+): Promise<FaceDescriptions> {
+  const empty: FaceDescriptions = { prospect: null, team: teamImages.map(() => '') };
+
+  const entries: { img: ImageData; label: string }[] = [];
+  if (prospectImage) entries.push({ img: prospectImage, label: 'Prospect' });
+  teamImages.forEach((img, i) => entries.push({ img, label: `Team ${i + 1}` }));
+
+  if (entries.length === 0) return empty;
+
+  const parts: object[] = [
+    { text: [
+      'For each person below, provide a SHORT one-line physical description that an illustrator would need to draw them accurately.',
+      'Include: gender, skin tone, hair color, hair length/style, facial hair (if any), glasses (specify if SUNGLASSES or regular glasses), and any other distinctive feature.',
+      'If they are wearing SUNGLASSES, write "SUNGLASSES" clearly.',
+      'Format: Label: description',
+      'Example:',
+      'Prospect: Male, light brown skin, short black curly hair, thin beard, no glasses',
+      'Team 1: Female, fair skin, long straight blonde hair, SUNGLASSES, small nose',
+    ].join('\n') },
+  ];
+
+  for (const { img, label } of entries) {
+    parts.push(
+      { text: `\n${label}:` },
+      { inline_data: { mime_type: img.mimeType, data: img.data } },
+    );
+  }
+
+  try {
+    const analysisModel = await getGeminiModel('image_analysis');
+    const result = await callGeminiWithRetry(analysisModel, {
+      contents: [{ role: 'user', parts }],
+      generationConfig: { responseModalities: ['TEXT'] },
+    });
+
+    const response = result.text ?? '';
+    console.log(`[NanoBanana] Face descriptions: ${response.trim()}`);
+
+    let prospectDesc: string | null = null;
+    const teamDescs: string[] = teamImages.map(() => '');
+
+    for (const line of response.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      if (/^Prospect:/i.test(trimmed)) {
+        prospectDesc = trimmed.replace(/^Prospect:\s*/i, '').trim();
+        // Flag sunglasses removal
+        if (/sunglasses/i.test(prospectDesc)) {
+          prospectDesc = prospectDesc.replace(/,?\s*SUNGLASSES/gi, '').trim();
+          prospectDesc += ' (photo shows sunglasses — render WITHOUT sunglasses, show their eyes)';
+        }
+      }
+
+      const teamMatch = trimmed.match(/^Team\s*(\d+):\s*(.*)/i);
+      if (teamMatch) {
+        const idx = parseInt(teamMatch[1], 10) - 1;
+        let desc = teamMatch[2].trim();
+        if (/sunglasses/i.test(desc)) {
+          desc = desc.replace(/,?\s*SUNGLASSES/gi, '').trim();
+          desc += ' (photo shows sunglasses — render WITHOUT sunglasses, show their eyes)';
+        }
+        if (idx >= 0 && idx < teamDescs.length) teamDescs[idx] = desc;
+      }
+    }
+
+    return { prospect: prospectDesc, team: teamDescs };
+  } catch (err) {
+    console.log(`[NanoBanana] Face description failed, proceeding without anchors: ${(err as Error).message}`);
+    appLog('warn', 'gemini', 'face_describe', `Face description failed: ${(err as Error).message}`).catch(() => {});
+    return empty;
+  }
+}
+
 // ─── Image Fetching ─────────────────────────────────────────────────────────
 
 /** Known generic/placeholder avatar URL patterns — these are NOT real photos */
@@ -608,6 +699,7 @@ interface PreparedData {
   teamImages: ImageData[];
   rolesText: string;
   customPrompt?: string | null;
+  faceDescriptions: FaceDescriptions;
 }
 
 async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData> {
@@ -642,6 +734,9 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
     appLog('info', 'system', 'postcard_promote', `No prospect photo, promoted ${who} to standing presenter`).catch(() => {});
   }
 
+  // Describe faces — extract identity anchors (hair, skin tone, gender, glasses)
+  const faceDescriptions = await describeFaces(prospectImage, teamImages);
+
   // Pick the template variant that matches the exact headcount
   // (1 prospect + N team = totalPeople). Each variant has only the
   // silhouette placeholders needed, so Gemini won't hallucinate extras.
@@ -656,7 +751,7 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
     : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
-  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt };
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt, faceDescriptions };
 }
 
 async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData> {
@@ -688,6 +783,9 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
     appLog('info', 'system', 'postcard_promote', `No prospect photo, promoted ${who} to center desk`).catch(() => {});
   }
 
+  // Describe faces — extract identity anchors (hair, skin tone, gender, glasses)
+  const faceDescriptions = await describeFaces(prospectImage, teamImages);
+
   // Pick the template variant that matches the exact headcount
   const totalPeople = 1 + teamImages.length;
   const clamped = Math.min(Math.max(totalPeople, 1), 5);
@@ -700,7 +798,7 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
     : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
-  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt };
+  return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt, faceDescriptions };
 }
 
 // ─── War Room Prompts ───────────────────────────────────────────────────────
@@ -719,11 +817,14 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
   const totalPeople = 1 + data.teamImages.length; // 1 prospect + N team members
   const personSlots: string[] = [];
 
+  const prospectDesc = data.faceDescriptions.prospect;
   if (data.prospectImage) {
     personSlots.push(
-      `   - "Person 1" (standing presenter): This is the MAIN PROSPECT. Use the prospect face photo.`,
+      `   - "Person 1" (standing presenter): Use the prospect face photo.`,
       `     This person MUST be STANDING — they are the presenter, not seated at the table.`,
-      `     Preserve their facial features (hair, skin tone, facial structure, glasses, facial hair).`,
+      prospectDesc
+        ? `     IDENTITY ANCHOR: ${prospectDesc}. Match these features EXACTLY from the reference photo.`
+        : `     Preserve their EXACT hair color/style, skin tone, facial structure, glasses, facial hair.`,
       `     Match gender — adapt body build, clothing, and footwear to the prospect's apparent gender.`,
       `     Give them a warm, friendly SMILE — happy and approachable expression.`,
       `     Render in illustration style, not photorealistic.`,
@@ -736,10 +837,15 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
   }
 
   for (let i = 0; i < data.teamImages.length; i++) {
+    const teamDesc = data.faceDescriptions.team[i];
     personSlots.push(
       `   - "Person ${i + 2}" (seated): Use team member ${i + 1} face photo.`,
-      `     Preserve their facial features, render in illustration style. Keep the seated pose.`,
-      `     Give them a warm, friendly SMILE.`,
+      teamDesc
+        ? `     IDENTITY ANCHOR: ${teamDesc}. Match these features EXACTLY from the reference photo.`
+        : `     Preserve their EXACT hair color/style, skin tone, facial structure, glasses, facial hair.`,
+      `     Match gender — adapt body build and clothing to this person's apparent gender.`,
+      `     Give them a warm, friendly SMILE. Render in illustration style. Keep the seated pose.`,
+      `     This person must match their OWN reference photo — do not copy another person's face onto them.`,
     );
   }
 
@@ -750,6 +856,8 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `⚠️ CRITICAL: The reference template contains placeholder labels like "Person 1", "Role 1", "COMPANY LOGO". These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce placeholder labels or square brackets in the output image.`,
     ``,
     `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 standing + ${data.teamImages.length} seated = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
+    ``,
+    `⚠️ FACE IDENTITY: Each person has their OWN reference photo. Study each photo INDIVIDUALLY before drawing that person. Each person must match their specific reference photo's hair color, skin tone, gender, and features. Do NOT copy one person's face onto another.`,
     ``,
     `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -788,6 +896,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     ``,
     `FINAL CHECKS — verify before outputting:`,
     `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
+    `- ⚠️ FACE CHECK: Each person matches their own reference photo — correct hair color, skin tone, gender, and features.`,
     `- Person 1 is STANDING (not seated). All others are SEATED.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
@@ -885,10 +994,13 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
   const totalPeople = 1 + data.teamImages.length; // 1 prospect + N team members
   const personSlots: string[] = [];
 
+  const prospectDesc = data.faceDescriptions.prospect;
   if (data.prospectImage) {
     personSlots.push(
-      `   - "Person 1" (center desk person — the MAIN PROSPECT): Use the prospect face photo.`,
-      `     Preserve their facial features (hair, skin tone, facial structure, glasses, facial hair).`,
+      `   - "Person 1" (center desk person): Use the prospect face photo.`,
+      prospectDesc
+        ? `     IDENTITY ANCHOR: ${prospectDesc}. Match these features EXACTLY from the reference photo.`
+        : `     Preserve their EXACT hair color/style, skin tone, facial structure, glasses, facial hair.`,
       `     Match gender — adapt body build, clothing to the prospect's apparent gender.`,
       `     Give them a warm, friendly SMILE — happy and approachable expression.`,
       `     Render in illustration style, not photorealistic. Keep the seated-at-desk pose.`,
@@ -900,10 +1012,15 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
   }
 
   for (let i = 0; i < data.teamImages.length; i++) {
+    const teamDesc = data.faceDescriptions.team[i];
     personSlots.push(
       `   - "Person ${i + 2}" (video tile): Use team member ${i + 1} face photo.`,
-      `     Preserve their facial features, render in illustration style.`,
-      `     Give them a warm, friendly SMILE.`,
+      teamDesc
+        ? `     IDENTITY ANCHOR: ${teamDesc}. Match these features EXACTLY from the reference photo.`
+        : `     Preserve their EXACT hair color/style, skin tone, facial structure, glasses, facial hair.`,
+      `     Match gender — adapt body build and clothing to this person's apparent gender.`,
+      `     Give them a warm, friendly SMILE. Render in illustration style.`,
+      `     This person must match their OWN reference photo — do not copy another person's face onto them.`,
     );
   }
 
@@ -914,6 +1031,8 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `⚠️ CRITICAL: The reference template contains placeholder labels like "Person 1", "Role 1", "COMPANY LOGO". These are INSTRUCTIONS, not text to copy. You must REPLACE them with the actual content below. NEVER reproduce placeholder labels or square brackets in the output image.`,
     ``,
     `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 at desk + ${data.teamImages.length} in video tiles = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
+    ``,
+    `⚠️ FACE IDENTITY: Each person has their OWN reference photo. Study each photo INDIVIDUALLY before drawing that person. Each person must match their specific reference photo's hair color, skin tone, gender, and features. Do NOT copy one person's face onto another.`,
     ``,
     `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -951,6 +1070,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     ``,
     `FINAL CHECKS — verify before outputting:`,
     `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
+    `- ⚠️ FACE CHECK: Each person matches their own reference photo — correct hair color, skin tone, gender, and features.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
