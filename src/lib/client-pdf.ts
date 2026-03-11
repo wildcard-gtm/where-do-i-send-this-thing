@@ -6,29 +6,7 @@ import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 
 // ── Image helpers ──
 
-async function canvasConvertToPng(url: string): Promise<Uint8Array | null> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const ctx = canvas.getContext("2d")!;
-      ctx.drawImage(img, 0, 0);
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) { resolve(null); return; }
-          blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)));
-        },
-        "image/png"
-      );
-    };
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
-}
-
+/** Load image at full resolution (for print PDF) */
 async function loadImageBytes(
   url: string
 ): Promise<{ bytes: Uint8Array; type: "png" | "jpg" } | null> {
@@ -39,14 +17,54 @@ async function loadImageBytes(
     const bytes = new Uint8Array(buf);
     if (bytes[0] === 0x89 && bytes[1] === 0x50) return { bytes, type: "png" };
     if (bytes[0] === 0xff && bytes[1] === 0xd8) return { bytes, type: "jpg" };
-    // WebP or other format — convert via canvas
-    const png = await canvasConvertToPng(url);
-    return png ? { bytes: png, type: "png" } : null;
+    // WebP or other — convert via canvas at full size
+    const jpg = await resizeViaCanvas(url);
+    return jpg ? { bytes: jpg, type: "jpg" } : null;
   } catch {
-    // CORS or network issue — try canvas fallback
-    const png = await canvasConvertToPng(url);
-    return png ? { bytes: png, type: "png" } : null;
+    const jpg = await resizeViaCanvas(url);
+    return jpg ? { bytes: jpg, type: "jpg" } : null;
   }
+}
+
+/** Load + downscale image via canvas, output as JPEG. maxW/maxH cap the dimensions. */
+async function loadImageResized(
+  url: string,
+  maxW: number,
+  maxH: number
+): Promise<{ bytes: Uint8Array; type: "jpg" } | null> {
+  const jpg = await resizeViaCanvas(url, maxW, maxH);
+  return jpg ? { bytes: jpg, type: "jpg" } : null;
+}
+
+function resizeViaCanvas(url: string, maxW?: number, maxH?: number): Promise<Uint8Array | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      if (maxW && maxH) {
+        const scale = Math.min(1, maxW / w, maxH / h);
+        w = Math.round(w * scale);
+        h = Math.round(h * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { resolve(null); return; }
+          blob.arrayBuffer().then((buf) => resolve(new Uint8Array(buf)));
+        },
+        "image/jpeg",
+        0.85
+      );
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
 async function embedImage(doc: PDFDocument, data: { bytes: Uint8Array; type: "png" | "jpg" }) {
@@ -202,7 +220,7 @@ export async function generateAndDownloadExportPdf(
 
     let imageEmbedded = false;
     if (pc.imageUrl) {
-      const imgData = await loadImageBytes(pc.imageUrl);
+      const imgData = await loadImageResized(pc.imageUrl, imgTargetW * 2, imgTargetH * 2);
       if (imgData) {
         try {
           const embedded = await embedImage(doc, imgData);
@@ -230,7 +248,7 @@ export async function generateAndDownloadExportPdf(
     iy -= 18;
 
     if (pc.contact.profileImageUrl) {
-      const prospectData = await loadImageBytes(pc.contact.profileImageUrl);
+      const prospectData = await loadImageResized(pc.contact.profileImageUrl, 96, 96);
       if (prospectData) {
         try {
           const prospectImg = await embedImage(doc, prospectData);
@@ -292,7 +310,7 @@ export async function generateAndDownloadExportPdf(
     c1y -= 18;
     let logoEmbedded = false;
     if (enrichment?.companyLogo) {
-      const logoData = await loadImageBytes(enrichment.companyLogo);
+      const logoData = await loadImageResized(enrichment.companyLogo, 72, 72);
       if (logoData) {
         try {
           const logoImg = await embedImage(doc, logoData);
@@ -349,7 +367,7 @@ export async function generateAndDownloadExportPdf(
       for (const member of teamPhotos.slice(0, 5)) {
         let memberPhotoEmbedded = false;
         if (member.photoUrl) {
-          const photoData = await loadImageBytes(member.photoUrl);
+          const photoData = await loadImageResized(member.photoUrl, 56, 56);
           if (photoData) {
             try {
               const photoImg = await embedImage(doc, photoData);
