@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "WDISTT Photo Refresh",
+  "version": "1.0",
+  "description": "Refreshes LinkedIn photos for specific leads from the missing CSV — replaces if real photo found",
+  "permissions": ["activeTab", "tabs", "scripting", "storage"],
+  "host_permissions": [
+    "https://www.linkedin.com/*",
+    "https://*.linkedin.com/*",
+    "https://media.licdn.com/*",
+    "https://*.licdn.com/*",
+    "https://where-do-i-send-this-thing.vercel.app/*",
+    "http://localhost:3000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": "icon.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "48": "icon.png",
+    "128": "icon.png"
+  }
+}

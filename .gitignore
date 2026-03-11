@@ -81,3 +81,6 @@ chrome-extension/
 
 # Local verification agent (not deployed)
 /verification/
+
+# Local PDF exporter
+/exportpdf/
