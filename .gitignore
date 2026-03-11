@@ -60,6 +60,9 @@ notes/
 # local test scripts
 /tests/
 
+# local scripts
+/scripts/
+
 # vercel
 .vercel
 
@@ -76,11 +79,15 @@ prisma/dev.db-journal
 # backups (db + source snapshots)
 /backups/
 
-# Chrome extension (contains hardcoded keys)
+# Chrome extensions (contain hardcoded keys)
 chrome-extension/
+chrome-extension-refresh/
 
 # Local verification agent (not deployed)
 /verification/
 
 # Local PDF exporter
 /exportpdf/
+
+# Legacy server-side PDF generator
+src/lib/pdf-generator.ts
