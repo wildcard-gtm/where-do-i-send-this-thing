@@ -91,3 +91,13 @@ chrome-extension-refresh/
 
 # Legacy server-side PDF generator
 src/lib/pdf-generator.ts
+
+# Template backups and working files (not used at runtime)
+public/templates/originals/
+public/templates/originals-backup/
+public/templates/*.jpg~
+public/templates/newsize.*
+public/templates/fetch_rewards_logo.*
+public/templates/reference-pose-6.png
+public/templates/reference-pose-backup.png
+public/templates/gpt-image-*
