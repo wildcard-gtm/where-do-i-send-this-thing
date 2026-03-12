@@ -609,14 +609,12 @@ export function normalizeJobTitle(title: string): string {
   t = t.replace(/\s*[,|–—]\s*[A-Z]{2}\s*$/i, ''); // trailing state codes
   t = t.replace(/\s*\(.*?\)\s*/g, ''); // parenthetical info
 
-  // Abbreviate common terms
+  // Only abbreviate standard industry acronyms — never shorten words like
+  // Software, Engineering, Development etc. which must appear in full on postcards
   const abbrevs: [RegExp, string][] = [
-    [/\bSenior\b/gi, 'Sr.'],
-    [/\bJunior\b/gi, 'Jr.'],
     [/\bVice President\b/gi, 'VP'],
     [/\bSenior Vice President\b/gi, 'SVP'],
     [/\bExecutive Vice President\b/gi, 'EVP'],
-    [/\bManaging Director\b/gi, 'MD'],
     [/\bChief Technology Officer\b/gi, 'CTO'],
     [/\bChief Executive Officer\b/gi, 'CEO'],
     [/\bChief Financial Officer\b/gi, 'CFO'],
@@ -625,26 +623,8 @@ export function normalizeJobTitle(title: string): string {
     [/\bChief Product Officer\b/gi, 'CPO'],
     [/\bChief Revenue Officer\b/gi, 'CRO'],
     [/\bChief Information Officer\b/gi, 'CIO'],
-    [/\bSoftware Engineer\b/gi, 'SW Engineer'],
-    [/\bSoftware Development Engineer\b/gi, 'SDE'],
     [/\bMachine Learning\b/gi, 'ML'],
     [/\bArtificial Intelligence\b/gi, 'AI'],
-    [/\bEngineering Manager\b/gi, 'Eng Manager'],
-    [/\bProduct Manager\b/gi, 'Product Manager'],
-    [/\bPrincipal\b/gi, 'Principal'],
-    [/\bDistinguished\b/gi, 'Dist.'],
-    [/\bDepartment\b/gi, 'Dept.'],
-    [/\bAssociate\b/gi, 'Assoc.'],
-    [/\bAssistant\b/gi, 'Asst.'],
-    [/\bAdministrat(or|ion)\b/gi, 'Admin'],
-    [/\bDevelopment\b/gi, 'Dev'],
-    [/\bEngineering\b/gi, 'Eng'],
-    [/\bManagement\b/gi, 'Mgmt'],
-    [/\bOperations\b/gi, 'Ops'],
-    [/\bInfrastructure\b/gi, 'Infra'],
-    [/\bArchitecture\b/gi, 'Architecture'],
-    [/\bTechnolog(y|ies)\b/gi, 'Tech'],
-    [/\bInformation\b/gi, 'Info'],
   ];
 
   for (const [pattern, replacement] of abbrevs) {
@@ -749,7 +729,7 @@ async function prepareWarRoomData(input: NanoBananaInput): Promise<PreparedData>
 
   const rolesText = input.openRoles?.length
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
-    : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
   return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt, faceDescriptions };
 }
@@ -796,7 +776,7 @@ async function prepareZoomRoomData(input: NanoBananaInput): Promise<PreparedData
 
   const rolesText = input.openRoles?.length
     ? input.openRoles.slice(0, 3).map(r => `  \u2022 ${normalizeJobTitle(r.title)}`).join('\n')
-    : '  \u2022 SW Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
+    : '  \u2022 Software Engineer\n  \u2022 Product Manager\n  \u2022 Data Analyst';
 
   return { reference, screen, prospectImage, logoImage, teamImages, rolesText, customPrompt: input.customPrompt, faceDescriptions };
 }
@@ -858,6 +838,9 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 standing + ${data.teamImages.length} seated = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
     ``,
     `⚠️ FACE IDENTITY: Each person has their OWN reference photo. Study each photo INDIVIDUALLY before drawing that person. Each person must match their specific reference photo's hair color, skin tone, gender, and features. Do NOT copy one person's face onto another.`,
+    `⚠️ SKIN TONE ACCURACY: Match the EXACT skin tone from each reference photo. Do not lighten or darken. If the person has dark skin, draw dark skin. If the person has light skin, draw light skin. Getting this wrong is the #1 complaint — take extra care.`,
+    `⚠️ GLASSES: Only draw PRESCRIPTION glasses (clear lenses) on a person if they are CLEARLY wearing glasses in their reference photo. If you cannot see glasses in the photo, do NOT add them. When in doubt, leave glasses off. NEVER draw sunglasses on anyone — even if the reference photo shows sunglasses, draw the person WITHOUT them.`,
+    `⚠️ HAIR: Match the exact color and style from each reference photo. Blonde stays blonde, dark stays dark, curly stays curly. Do not default to generic brown hair.`,
     ``,
     `STYLE: Bold flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -868,6 +851,7 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `   - Header: "TOP ROLES" in bold, CENTERED horizontally on the whiteboard`,
     `   - Roles listed below, CENTERED on the whiteboard:`,
     data.rolesText,
+    `   - ROLE TEXT INPUT: The exact role titles to render are listed above. These are the FINAL versions — they have already been formatted. Copy them CHARACTER BY CHARACTER. Do not "fix" or "improve" them. If a title says "Software Engineer", write "Software Engineer" — not "SW Engineer", not "SWE", not "S/W Engineer". Every letter matters.`,
     `   - SPELLING (CRITICAL): Copy each role title EXACTLY as written above — letter by letter. Do NOT abbreviate, shorten, or use acronyms (e.g. do NOT write "SW" instead of "Software", do NOT write "Eng" instead of "Engineer"). Every word must be spelled out in full exactly as provided.`,
     `   - FONT STYLE (MANDATORY): Use a thick dry-erase marker handwriting style — like "Permanent Marker" or "Cabin Sketch" Google Font. Strokes should be bold, slightly uneven, and look like someone wrote them on a real whiteboard with a chunky marker. NOT thin pen, NOT cursive, NOT printed/typed. Think: casual whiteboard brainstorm writing.`,
     `   - Write ONLY these roles. No filler text. If fewer than 3, leave remaining space blank.`,
@@ -893,11 +877,13 @@ function buildWarRoomGenerationPrompt(data: PreparedData, previousIssues?: strin
     `   - The final image must have NO label text like "Person 1", "Person 2", etc.`,
     `   - NO gray silhouettes, shadows, outlines, or placeholder figures anywhere.`,
     `   - Person 1 MUST be STANDING. All other people MUST be SEATED.`,
+    `   - GAZE DIRECTION: Each person should face the camera/viewer with a natural forward-looking expression. Do NOT have all people looking at one person. Some variation is fine (slight head turns) but the default should be facing forward, like a team photo. No one should be gazing admiringly at another person.`,
     corrections,
     ``,
     `FINAL CHECKS — verify before outputting:`,
     `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
     `- ⚠️ FACE CHECK: Each person matches their own reference photo — correct hair color, skin tone, gender, and features.`,
+    `- ⚠️ GLASSES CHECK: Only draw prescription glasses if the reference photo CLEARLY shows them. If no glasses in photo, no glasses in illustration. NEVER draw sunglasses — remove them even if the photo shows sunglasses.`,
     `- Person 1 is STANDING (not seated). All others are SEATED.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
@@ -964,7 +950,9 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. The template had exactly ${1 + data.teamImages.length} silhouette placeholders — no extras should appear. Extra silhouettes, shadows, or invented people count as extra.`,
     `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any placeholder labels or square-bracketed text appears — all labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
-    `10. FORMAT: Wide landscape (3:2)?`,
+    `10. GLASSES CHECK: For each person, compare the reference photo to the generated image. If the reference photo shows NO glasses but the generated person HAS glasses → FAIL. If the reference photo shows clear prescription glasses but the generated person has NO glasses → FAIL. If any person is wearing SUNGLASSES → FAIL (sunglasses are never allowed, even if the reference photo shows them).`,
+    `11. GAZE DIRECTION: Are people looking at the camera/viewer? FAIL if all people are gazing at one person instead of facing forward.`,
+    `12. FORMAT: Wide landscape (3:2)?`,
     ``,
     `For each: PASS or FAIL with brief reason.`,
     `OVERALL: PASS or FAIL`,
@@ -975,6 +963,7 @@ function buildWarRoomAnalysisPrompt(data: PreparedData): string {
     `GOOD: "Person 1 (standing) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
     `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
     `For labels: "The text 'Person 3' is still visible on the right side — remove it completely."`,
+    `For glasses: "Person 2 (seated, left) is wearing glasses but their reference photo shows no glasses — remove the glasses." or "Person 3 is wearing sunglasses — sunglasses are never allowed, remove them entirely."`,
     `For silhouettes: "The person on the [position] chair is a gray silhouette/shadow — replace it with a fully illustrated colorful person with visible features, clothing, and skin tone."`,
   ].filter(Boolean).join('\n');
 }
@@ -1034,6 +1023,9 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `⚠️ HEADCOUNT: EXACTLY ${totalPeople} people — COUNT THEM: 1 at desk + ${data.teamImages.length} in video tiles = ${totalPeople} TOTAL. The template shows exactly ${totalPeople} silhouette placeholder(s). Replace each placeholder with an illustrated person — do NOT add any extra people beyond what the template shows. If you see more than ${totalPeople} people in your output, ERASE the extras completely.`,
     ``,
     `⚠️ FACE IDENTITY: Each person has their OWN reference photo. Study each photo INDIVIDUALLY before drawing that person. Each person must match their specific reference photo's hair color, skin tone, gender, and features. Do NOT copy one person's face onto another.`,
+    `⚠️ SKIN TONE ACCURACY: Match the EXACT skin tone from each reference photo. Do not lighten or darken. If the person has dark skin, draw dark skin. If the person has light skin, draw light skin. Getting this wrong is the #1 complaint — take extra care.`,
+    `⚠️ GLASSES: Only draw PRESCRIPTION glasses (clear lenses) on a person if they are CLEARLY wearing glasses in their reference photo. If you cannot see glasses in the photo, do NOT add them. When in doubt, leave glasses off. NEVER draw sunglasses on anyone — even if the reference photo shows sunglasses, draw the person WITHOUT them.`,
+    `⚠️ HAIR: Match the exact color and style from each reference photo. Blonde stays blonde, dark stays dark, curly stays curly. Do not default to generic brown hair.`,
     ``,
     `STYLE: Warm-toned flat-color corporate illustration — clean outlines, vibrant colors, Pixar-inspired 2D. Every element including all people must match this style consistently. No photorealistic faces. ALL people must have warm, friendly SMILING expressions — happy and approachable, like a team photo.`,
     ``,
@@ -1044,6 +1036,7 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `   - Header: "Top Roles Hiring:" in bold, CENTERED horizontally on the panel`,
     `   - Roles listed below, CENTERED on the panel:`,
     data.rolesText,
+    `   - ROLE TEXT INPUT: The exact role titles to render are listed above. These are the FINAL versions — they have already been formatted. Copy them CHARACTER BY CHARACTER. Do not "fix" or "improve" them. If a title says "Software Engineer", write "Software Engineer" — not "SW Engineer", not "SWE", not "S/W Engineer". Every letter matters.`,
     `   - SPELLING (CRITICAL): Copy each role title EXACTLY as written above — letter by letter. Do NOT abbreviate, shorten, or use acronyms (e.g. do NOT write "SW" instead of "Software", do NOT write "Eng" instead of "Engineer"). Every word must be spelled out in full exactly as provided.`,
     `   - FONT STYLE (MANDATORY): Use a thick dry-erase marker handwriting style — like "Permanent Marker" or "Cabin Sketch" Google Font. Strokes should be bold, slightly uneven, and look like someone wrote them on a real whiteboard with a chunky marker. NOT thin pen, NOT cursive, NOT printed/typed. Think: casual whiteboard brainstorm writing.`,
     `   - Write ONLY these roles. No filler text. If fewer than 3, leave remaining space blank.`,
@@ -1068,11 +1061,13 @@ function buildZoomRoomGenerationPrompt(data: PreparedData, previousIssues?: stri
     `   - ALL people rendered in the same illustration style — vibrant, colorful, detailed characters.`,
     `   - The final image must have NO label text like "Person 1", "Person 2", etc.`,
     `   - NO gray silhouettes, shadows, outlines, or placeholder figures anywhere.`,
+    `   - GAZE DIRECTION: Each person should face the camera/viewer with a natural forward-looking expression. Do NOT have all people looking at one person. Some variation is fine (slight head turns) but the default should be facing forward, like a team photo. No one should be gazing admiringly at another person.`,
     corrections,
     ``,
     `FINAL CHECKS — verify before outputting:`,
     `- ⚠️ COUNT every person: there must be EXACTLY ${totalPeople}. If more than ${totalPeople}, ERASE the extras completely.`,
     `- ⚠️ FACE CHECK: Each person matches their own reference photo — correct hair color, skin tone, gender, and features.`,
+    `- ⚠️ GLASSES CHECK: Only draw prescription glasses if the reference photo CLEARLY shows them. If no glasses in photo, no glasses in illustration. NEVER draw sunglasses — remove them even if the photo shows sunglasses.`,
     `- Logo appears EXACTLY ONCE`,
     `- All text legible and within bounds`,
     `- No "Person N" label text from the template remains — all labels must be gone`,
@@ -1138,7 +1133,9 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `7. HEADCOUNT CHECK — CRITICAL: Count every person in the image. There must be EXACTLY ${1 + data.teamImages.length} people. FAIL if there are more or fewer. The template had exactly ${1 + data.teamImages.length} silhouette placeholders — no extras should appear. Extra silhouettes, shadows, or invented people count as extra.`,
     `8. LABEL TEXT: Are ALL "Person N" labels from the template GONE? The final image must NOT contain any text like "Person 1", "Person 2", etc. Also FAIL if any placeholder labels or square-bracketed text appears — all labels must be replaced with clean text or graphics.`,
     `9. STYLE: Consistent illustration style on ALL faces — flat colors, clean outlines, no photorealistic faces?`,
-    `10. FORMAT: Wide landscape (3:2)?`,
+    `10. GLASSES CHECK: For each person, compare the reference photo to the generated image. If the reference photo shows NO glasses but the generated person HAS glasses → FAIL. If the reference photo shows clear prescription glasses but the generated person has NO glasses → FAIL. If any person is wearing SUNGLASSES → FAIL (sunglasses are never allowed, even if the reference photo shows them).`,
+    `11. GAZE DIRECTION: Are people looking at the camera/viewer? FAIL if all people are gazing at one person instead of facing forward.`,
+    `12. FORMAT: Wide landscape (3:2)?`,
     ``,
     `For each: PASS or FAIL with brief reason.`,
     `OVERALL: PASS or FAIL`,
@@ -1148,6 +1145,7 @@ function buildZoomRoomAnalysisPrompt(data: PreparedData): string {
     `BAD: "Make Person 1 look like Image 4"`,
     `GOOD: "Person 1 (center desk) should be a [gender] with [skin tone], [hair], [glasses]. Currently looks like [problem]."`,
     `For spelling: "Whiteboard says '[wrong]' but should say '[correct]'."`,
+    `For glasses: "Person 2 (video tile, top-right) is wearing glasses but their reference photo shows no glasses — remove the glasses." or "Person 3 is wearing sunglasses — sunglasses are never allowed, remove them entirely."`,
     `For labels: "The text 'Person 3' is still visible on a video tile — remove it completely."`,
   ].filter(Boolean).join('\n');
 }

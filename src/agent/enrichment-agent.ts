@@ -283,7 +283,8 @@ Call fetch_company_logo with the company domain. This tries Hunter.io → Brandf
 Search for open roles using search_web: "[company] careers jobs site:linkedin.com" or "[company] open positions"
 - Pick the 3 highest-level UNIQUE US roles (Director, VP, Staff, Principal, Senior)
 - Deduplicate by title — no two roles should be the same title
-- Keep titles SHORT (under 40 characters) — e.g. "Sr. Director, Engineering" not "Senior Director of Engineering and Platform Development"
+- Keep titles under 40 characters. Do NOT abbreviate words — spell out "Software", "Engineering", "Development", "Infrastructure" etc. in full. Use standard acronyms only (VP, CTO, AI, ML). If a title is too long, remove location/level suffixes rather than abbreviating words.
+- VERIFY ROLES ARE CURRENT: Only include roles that appear on active job listings (posted within the last 60 days). Do not include roles from old/expired postings. If the company's LinkedIn jobs page shows 0 results, try their careers page directly. If you cannot confirm any current openings, submit an empty roles array — do not guess.
 - If search_web finds a careers page URL, use fetch_url to scrape it for more roles
 
 ### STEP 4 — VALUES & MISSION
@@ -308,6 +309,8 @@ For each person found in Step 5, call vetric_profile with their LinkedIn slug or
 - If unclear, call vetric_experience to check full work history for is_current positions
 - Use the current title from vetric_profile headline — not what the search returned
 - Note: vetric_profile returns profile_picture (800×800) — save this for Step 7
+- DEPARTURE CHECK: Also look at the headline. If the headline says "Former", "Ex-", "Previously at", or doesn't mention the target company → DISCARD. People who recently left may still appear in search results.
+- ROLE RELEVANCE: Only include people whose title clearly indicates Talent Acquisition, Recruiting, HR, or People functions. Do NOT include: salespeople, advisors, consultants, board members, or people from other departments. If their title is ambiguous, check vetric_experience for their role description.
 
 ### STEP 7 — GET PHOTOS for verified members
 vetric_profile already returns profile_picture (800×800 headshot) — use this!
