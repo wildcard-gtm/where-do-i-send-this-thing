@@ -6,6 +6,11 @@ import sharp from "sharp";
 
 export const maxDuration = 300;
 
+/** Strip non-WinAnsi characters (emojis, special unicode) */
+function sanitize(text: string): string {
+  return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, "").trim();
+}
+
 // Standard US postcard: 6" x 4.25" (landscape) in PDF points (72pt/inch)
 const POSTCARD_W = 6 * 72; // 432pt
 const POSTCARD_H = 4.25 * 72; // 306pt
@@ -131,7 +136,7 @@ export async function POST(request: Request) {
           x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H,
           color: rgb(0.95, 0.95, 0.95),
         });
-        page.drawText(`[Image failed: ${pc.contactName}]`, {
+        page.drawText(`[Image failed: ${sanitize(pc.contactName)}]`, {
           x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5),
         });
       }
@@ -141,7 +146,7 @@ export async function POST(request: Request) {
         x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H,
         color: rgb(0.95, 0.95, 0.95),
       });
-      page.drawText(`[No image: ${pc.contactName}]`, {
+      page.drawText(`[No image: ${sanitize(pc.contactName)}]`, {
         x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5),
       });
     }

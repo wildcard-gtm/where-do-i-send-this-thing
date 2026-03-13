@@ -59,6 +59,11 @@ async function embedImage(doc: PDFDocument, data: { bytes: Uint8Array; type: "pn
   return data.type === "png" ? doc.embedPng(data.bytes) : doc.embedJpg(data.bytes);
 }
 
+/** Strip non-WinAnsi characters (emojis, special unicode) */
+function sanitize(text: string): string {
+  return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, "").trim();
+}
+
 // ── Types ──
 
 export interface PrintPostcard {
@@ -140,12 +145,12 @@ export async function generateAndDownloadPrintPdf(
       } catch {
         const page = doc.addPage([POSTCARD_W, POSTCARD_H]);
         page.drawRectangle({ x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H, color: rgb(0.95, 0.95, 0.95) });
-        page.drawText(`[Image failed: ${pc.contactName}]`, { x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5) });
+        page.drawText(`[Image failed: ${sanitize(pc.contactName)}]`, { x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5) });
       }
     } else {
       const page = doc.addPage([POSTCARD_W, POSTCARD_H]);
       page.drawRectangle({ x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H, color: rgb(0.95, 0.95, 0.95) });
-      page.drawText(`[No image: ${pc.contactName}]`, { x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5) });
+      page.drawText(`[No image: ${sanitize(pc.contactName)}]`, { x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5) });
     }
   }
 
@@ -181,7 +186,7 @@ export async function generateAndDownloadExportPdf(
     onProgress?.(idx, sorted.length);
     const pc = sorted[idx];
     const enrichment = pc.contact.companyEnrichments?.[0] || null;
-    const companyName = enrichment?.companyName || pc.contact.company || "Unknown";
+    const companyName = sanitize(enrichment?.companyName || pc.contact.company || "Unknown");
     const companyWebsite = enrichment?.companyWebsite || "";
     const openRoles = (enrichment?.openRoles as { title: string; location?: string }[] | null) || [];
     const teamPhotos = (enrichment?.teamPhotos as { name?: string; photoUrl: string; title?: string }[] | null) || [];
@@ -249,9 +254,10 @@ export async function generateAndDownloadExportPdf(
       }
     }
 
-    const drawInfoLabel = (label: string, value: string) => {
+    const drawInfoLabel = (label: string, rawValue: string) => {
       page.drawText(label, { x: infoX, y: iy, size: 7, font: boldFont, color: GRAY });
       iy -= 12;
+      const value = sanitize(rawValue);
       const words = value.split(" ");
       let line = "";
       const lines: string[] = [];
@@ -333,7 +339,7 @@ export async function generateAndDownloadExportPdf(
       page.drawText("No roles found", { x: col2X, y: c2y, size: 9, font: regularFont, color: GRAY });
     } else {
       for (const role of openRoles.slice(0, 6)) {
-        const roleText = role.location ? `${role.title} (${role.location})` : role.title;
+        const roleText = sanitize(role.location ? `${role.title} (${role.location})` : role.title);
         const display = roleText.length > 45 ? roleText.slice(0, 42) + "..." : roleText;
         page.drawText(`• ${display}`, { x: col2X, y: c2y, size: 8, font: regularFont, color: BLACK });
         c2y -= 14;
@@ -366,11 +372,12 @@ export async function generateAndDownloadExportPdf(
           }
         }
         const textX = memberPhotoEmbedded ? col3X + PHOTO_SIZE + PHOTO_GAP : col3X;
-        const memberName = member.name || "Team member";
+        const memberName = sanitize(member.name || "") || "Team member";
         const nameDisplay = memberName.length > 25 ? memberName.slice(0, 22) + "..." : memberName;
         page.drawText(nameDisplay, { x: textX, y: c3y - 10, size: 8, font: boldFont, color: BLACK });
         if (member.title) {
-          const titleDisplay = member.title.length > 28 ? member.title.slice(0, 25) + "..." : member.title;
+          const cleanTitle = sanitize(member.title);
+          const titleDisplay = cleanTitle.length > 28 ? cleanTitle.slice(0, 25) + "..." : cleanTitle;
           page.drawText(titleDisplay, { x: textX, y: c3y - 22, size: 7, font: regularFont, color: GRAY });
         }
         c3y -= PHOTO_SIZE + PHOTO_GAP;

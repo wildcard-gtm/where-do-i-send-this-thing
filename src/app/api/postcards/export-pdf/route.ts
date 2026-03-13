@@ -4,6 +4,11 @@ import { prisma } from "@/lib/db";
 import { PDFDocument, StandardFonts, rgb, PageSizes } from "pdf-lib";
 import sharp from "sharp";
 
+/** Strip non-WinAnsi characters (emojis, special unicode) */
+function sanitize(text: string): string {
+  return text.replace(/[^\x20-\x7E\xA0-\xFF]/g, "").trim();
+}
+
 // Colors (matching existing PDF report)
 const BLACK = rgb(0.1, 0.1, 0.1);
 const GRAY = rgb(0.45, 0.45, 0.45);
@@ -135,7 +140,7 @@ export async function POST(request: Request) {
     const pc = sorted[idx];
     const enrichment = pc.contact.companyEnrichments[0] || null;
     const companyName =
-      enrichment?.companyName || pc.contact.company || "Unknown";
+      sanitize(enrichment?.companyName || pc.contact.company || "Unknown");
     const companyWebsite = enrichment?.companyWebsite || "";
     const openRoles =
       (enrichment?.openRoles as OpenRole[] | null) || [];
@@ -283,7 +288,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const drawInfoLabel = (label: string, value: string) => {
+    const drawInfoLabel = (label: string, rawValue: string) => {
       page.drawText(label, {
         x: infoX,
         y: iy,
@@ -292,6 +297,7 @@ export async function POST(request: Request) {
         color: GRAY,
       });
       iy -= 12;
+      const value = sanitize(rawValue);
       const words = value.split(" ");
       let line = "";
       const lines: string[] = [];
@@ -456,9 +462,9 @@ export async function POST(request: Request) {
       });
     } else {
       for (const role of openRoles.slice(0, 6)) {
-        const roleText = role.location
+        const roleText = sanitize(role.location
           ? `${role.title} (${role.location})`
-          : role.title;
+          : role.title);
         const display =
           roleText.length > 45 ? roleText.slice(0, 42) + "..." : roleText;
         page.drawText(`• ${display}`, {
@@ -535,7 +541,7 @@ export async function POST(request: Request) {
         const textX = memberPhotoEmbedded
           ? col3X + PHOTO_SIZE + PHOTO_GAP
           : col3X;
-        const memberName = member.name || "Team member";
+        const memberName = sanitize(member.name || "") || "Team member";
         const nameDisplay =
           memberName.length > 25
             ? memberName.slice(0, 22) + "..."
@@ -548,10 +554,11 @@ export async function POST(request: Request) {
           color: BLACK,
         });
         if (member.title) {
+          const cleanTitle = sanitize(member.title);
           const titleDisplay =
-            member.title.length > 28
-              ? member.title.slice(0, 25) + "..."
-              : member.title;
+            cleanTitle.length > 28
+              ? cleanTitle.slice(0, 25) + "..."
+              : cleanTitle;
           page.drawText(titleDisplay, {
             x: textX,
             y: c3y - 22,
