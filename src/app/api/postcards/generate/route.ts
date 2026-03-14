@@ -64,14 +64,6 @@ export async function POST(request: Request) {
     template = isFullyRemote ? "zoom" : "warroom";
   }
 
-  // Determine delivery address from recommendation
-  const deliveryAddress =
-    contact.recommendation === "HOME"
-      ? contact.homeAddress
-      : contact.recommendation === "OFFICE"
-      ? contact.officeAddress
-      : contact.homeAddress || contact.officeAddress;
-
   // Resolve contact photo: prefer non-placeholder from override, then contact DB, then enrichment
   const resolvedContactPhoto =
     (overrideContactPhoto && !isPlaceholderUrl(overrideContactPhoto))
@@ -95,16 +87,13 @@ export async function POST(request: Request) {
   }
 
   // Create Postcard record — caller dispatches /run to generate.
-  // Data lives in CompanyEnrichment (single source of truth). Postcard only stores
-  // display fields (contactName, deliveryAddress) and generation config (template, customPrompt).
+  // Contact + CompanyEnrichment are the single source of truth for display data.
   const postcard = await prisma.postcard.create({
     data: {
       contactId,
       template,
       status: "pending",
       retryCount: 0,
-      contactName: contact.name,
-      deliveryAddress,
       customPrompt: customPrompt ?? null,
       parentPostcardId: parentPostcardId ?? null,
     },

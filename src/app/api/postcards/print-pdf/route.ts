@@ -136,7 +136,7 @@ export async function POST(request: Request) {
           x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H,
           color: rgb(0.95, 0.95, 0.95),
         });
-        page.drawText(`[Image failed: ${sanitize(pc.contactName)}]`, {
+        page.drawText(`[Image failed: ${sanitize(pc.contact.name)}]`, {
           x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5),
         });
       }
@@ -146,7 +146,7 @@ export async function POST(request: Request) {
         x: 0, y: 0, width: POSTCARD_W, height: POSTCARD_H,
         color: rgb(0.95, 0.95, 0.95),
       });
-      page.drawText(`[No image: ${sanitize(pc.contactName)}]`, {
+      page.drawText(`[No image: ${sanitize(pc.contact.name)}]`, {
         x: 20, y: POSTCARD_H / 2, size: 10, color: rgb(0.5, 0.5, 0.5),
       });
     }

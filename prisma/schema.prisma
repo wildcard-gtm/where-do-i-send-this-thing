@@ -300,9 +300,7 @@ model Postcard {
   // Back-of-card message (personalised outreach copy)
   backMessage      String?  // e.g. "Hi [Name], we'd love to connect..."
 
-  // Display fields (NOT snapshots — Contact + CompanyEnrichment are the single source of truth)
-  contactName      String
-  deliveryAddress  String?
+  // contactName and deliveryAddress removed — read from Contact relation instead
 
   // Regeneration support
   customPrompt     String?  // User's additional instructions for the AI generator

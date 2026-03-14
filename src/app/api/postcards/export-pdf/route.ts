@@ -97,6 +97,9 @@ export async function POST(request: Request) {
           title: true,
           linkedinUrl: true,
           profileImageUrl: true,
+          recommendation: true,
+          homeAddress: true,
+          officeAddress: true,
           companyEnrichments: {
             where: { isLatest: true },
             take: 1,
@@ -117,8 +120,20 @@ export async function POST(request: Request) {
     return new Response("No postcards found", { status: 404 });
   }
 
+  // Compute contactName and deliveryAddress from Contact relation
+  const withComputed = postcards.map((p) => {
+    const c = p.contact;
+    return {
+      ...p,
+      contactName: c.name ?? "Unknown",
+      deliveryAddress: c.recommendation === "HOME" ? c.homeAddress
+        : c.recommendation === "OFFICE" ? c.officeAddress
+        : c.homeAddress || c.officeAddress,
+    };
+  });
+
   // Sort by company name A-Z
-  const sorted = postcards.sort((a, b) => {
+  const sorted = withComputed.sort((a, b) => {
     const compA = (
       a.contact.company ||
       a.contact.companyEnrichments[0]?.companyName ||

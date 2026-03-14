@@ -120,8 +120,11 @@ function buildContextBlock(ctx: CorrectionContext, openedFrom: CorrectionStage):
     lines.push('### Postcard Data');
     lines.push(`- **Template:** ${p.template}`);
     lines.push(`- **Status:** ${p.status}`);
-    lines.push(`- **Contact Name:** ${p.contactName}`);
-    lines.push(`- **Delivery Address:** ${p.deliveryAddress ?? 'None'}`);
+    lines.push(`- **Contact Name:** ${ctx.contact.name}`);
+    const deliveryAddr = ctx.contact.recommendation === 'HOME' ? ctx.contact.homeAddress
+      : ctx.contact.recommendation === 'OFFICE' ? ctx.contact.officeAddress
+      : ctx.contact.homeAddress || ctx.contact.officeAddress;
+    lines.push(`- **Delivery Address:** ${deliveryAddr ?? 'None'}`);
     lines.push(`- **Back Message:** ${p.backMessage ?? 'None'}`);
     if (p.imageUrl) lines.push(`- **Current Postcard Image:** ${p.imageUrl}`);
   }

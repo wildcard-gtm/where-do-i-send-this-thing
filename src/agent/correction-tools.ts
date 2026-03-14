@@ -63,8 +63,6 @@ export interface CorrectionContext {
     template: string;
     status: string;
     backMessage: string | null;
-    contactName: string;
-    deliveryAddress: string | null;
     imageUrl: string | null;
   } | null;
   // Reference images
@@ -369,8 +367,6 @@ function viewCurrentRecord(ctx: CorrectionContext): ToolResult {
       template: ctx.postcard.template,
       status: ctx.postcard.status,
       backMessage: ctx.postcard.backMessage,
-      contactName: ctx.postcard.contactName,
-      deliveryAddress: ctx.postcard.deliveryAddress,
       imageUrl: ctx.postcard.imageUrl,
     };
   }
@@ -571,7 +567,7 @@ async function applyEnrichChanges(ctx: CorrectionContext, changes: Record<string
 async function applyPostcardChanges(ctx: CorrectionContext, changes: Record<string, unknown>) {
   if (!ctx.postcardId) throw new Error('No postcard record to update');
 
-  // Only postcard-own fields can be updated here (template, backMessage, contactName, deliveryAddress).
+  // Only postcard-own fields can be updated here (template, backMessage).
   // Visual data (logo, teamPhotos, openRoles, contactPhoto) lives in Contact + CompanyEnrichment.
   const data: Record<string, unknown> = { ...changes };
 
@@ -607,8 +603,6 @@ function getCurrentData(ctx: CorrectionContext, target: CorrectionStage): Record
     return {
       template: ctx.postcard.template,
       backMessage: ctx.postcard.backMessage,
-      contactName: ctx.postcard.contactName,
-      deliveryAddress: ctx.postcard.deliveryAddress,
     };
   }
   return {};

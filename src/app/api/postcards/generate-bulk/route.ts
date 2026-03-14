@@ -83,14 +83,7 @@ export async function POST(request: Request) {
     const autoTemplate: "warroom" | "zoom" = isFullyRemote ? "zoom" : "warroom";
     const template = (latestPostcard?.template as "warroom" | "zoom") ?? autoTemplate;
 
-    const deliveryAddress =
-      contact.recommendation === "HOME"
-        ? contact.homeAddress
-        : contact.recommendation === "OFFICE"
-        ? contact.officeAddress
-        : contact.homeAddress || contact.officeAddress;
-
-    // No snapshot — Contact + CompanyEnrichment are the single source of truth.
+    // Contact + CompanyEnrichment are the single source of truth.
     // The /run route reads live data from those tables during generation.
     const postcard = await prisma.postcard.create({
       data: {
@@ -99,8 +92,6 @@ export async function POST(request: Request) {
         template,
         status: "pending",
         retryCount: 0,
-        contactName: contact.name,
-        deliveryAddress,
         customPrompt: latestPostcard?.customPrompt ?? null,
         ...(backMessage ? { backMessage } : {}),
       },

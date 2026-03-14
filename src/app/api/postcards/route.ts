@@ -46,6 +46,7 @@ export async function GET(request: Request) {
       contact: {
         select: {
           id: true, name: true, company: true, title: true, linkedinUrl: true, profileImageUrl: true,
+          recommendation: true, homeAddress: true, officeAddress: true,
           companyEnrichments: {
             where: { isLatest: true },
             take: 1,
@@ -68,5 +69,20 @@ export async function GET(request: Request) {
     });
   }
 
-  return NextResponse.json({ postcards });
+  // Compute contactName and deliveryAddress from the Contact relation (single source of truth)
+  const mapped = postcards.map((p) => {
+    const c = p.contact;
+    const deliveryAddress = c
+      ? c.recommendation === "HOME" ? c.homeAddress
+        : c.recommendation === "OFFICE" ? c.officeAddress
+        : c.homeAddress || c.officeAddress
+      : null;
+    return {
+      ...p,
+      contactName: c?.name ?? "Unknown",
+      deliveryAddress,
+    };
+  });
+
+  return NextResponse.json({ postcards: mapped });
 }

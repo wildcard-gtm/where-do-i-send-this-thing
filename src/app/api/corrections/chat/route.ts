@@ -149,8 +149,6 @@ export async function POST(request: Request) {
     template: string;
     status: string;
     backMessage: string | null;
-    contactName: string;
-    deliveryAddress: string | null;
     imageUrl: string | null;
     references: Array<{ id: string; label: string; imageUrl: string }>;
   }>)?.[0];
@@ -161,8 +159,6 @@ export async function POST(request: Request) {
       template: postcard.template,
       status: postcard.status,
       backMessage: postcard.backMessage,
-      contactName: postcard.contactName,
-      deliveryAddress: postcard.deliveryAddress,
       imageUrl: postcard.imageUrl,
     };
     context.referenceImages = postcard.references?.map((r) => ({

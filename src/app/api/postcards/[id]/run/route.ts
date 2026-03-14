@@ -85,7 +85,6 @@ export async function POST(
         select: {
           template: true,
           customPrompt: true,
-          contactName: true,
           contactId: true,
         },
       });
@@ -117,7 +116,7 @@ export async function POST(
       const prospectPhotoUrl = refByLabel("prospect_photo") ?? contact?.profileImageUrl ?? undefined;
 
       // Filter out the prospect from team photos to avoid duplicates
-      const prospectName = (existing?.contactName ?? contact?.name)?.toLowerCase().trim();
+      const prospectName = contact?.name?.toLowerCase().trim();
       const filteredTeamPhotos = teamPhotos.filter((p) => {
         if (prospectPhotoUrl && p.photoUrl === prospectPhotoUrl) return false;
         if (prospectName && p.name?.toLowerCase().trim() === prospectName) return false;
@@ -135,7 +134,7 @@ export async function POST(
           title: p.title,
         })),
         openRoles: openRoles.map((r) => ({ title: r.title, location: r.location })),
-        prospectName: existing?.contactName ?? contact?.name ?? undefined,
+        prospectName: contact?.name ?? undefined,
         customPrompt: existing?.customPrompt ?? undefined,
       };
 
