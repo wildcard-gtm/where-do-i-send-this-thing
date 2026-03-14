@@ -183,7 +183,6 @@ export async function GET(
             });
             const researchLog = buildResearchLog(events);
 
-            // Each job always creates a fresh Contact — campaigns are fully isolated
             const savedImageUrl = decision.profile_image_url || null;
 
             // Parse CSV row data for fallback field values
@@ -203,27 +202,39 @@ export async function GET(
               return null;
             };
 
-            const contact = await prisma.contact.create({
-              data: {
-                userId: user.id,
-                teamId: user.teamId ?? null,
-                linkedinUrl: decision.corrected_linkedin_url || job.linkedinUrl,
-                name: personName || "Unknown",
-                company: decision.company || csvVal('company', 'companyname', 'employer', 'organization') || null,
-                title: decision.job_title || csvVal('title', 'jobtitle', 'role', 'position') || null,
-                email: decision.email || csvVal('email', 'emailaddress', 'workemail') || null,
-                recommendation: decision.recommendation,
-                confidence: decision.confidence,
-                homeAddress: decision.home_address?.address || null,
-                officeAddress: decision.office_address?.address || null,
-                profileImageUrl: savedImageUrl,
-                careerSummary: decision.career_summary || null,
-                lastScannedAt: new Date(),
-                jobId,
-                csvRowData: job.csvRowData ?? null,
-                notes: researchLog,
-              },
-            });
+            const contactData = {
+              linkedinUrl: decision.corrected_linkedin_url || job.linkedinUrl,
+              name: personName || "Unknown",
+              company: decision.company || csvVal('company', 'companyname', 'employer', 'organization') || null,
+              title: decision.job_title || csvVal('title', 'jobtitle', 'role', 'position') || null,
+              email: decision.email || csvVal('email', 'emailaddress', 'workemail') || null,
+              recommendation: decision.recommendation,
+              confidence: decision.confidence,
+              homeAddress: decision.home_address?.address || null,
+              officeAddress: decision.office_address?.address || null,
+              profileImageUrl: savedImageUrl,
+              careerSummary: decision.career_summary || null,
+              lastScannedAt: new Date(),
+              csvRowData: job.csvRowData ?? null,
+              notes: researchLog,
+            };
+
+            // Check if a contact already exists for this job (re-scan case)
+            const existingContact = await prisma.contact.findUnique({ where: { jobId } });
+
+            const contact = existingContact
+              ? await prisma.contact.update({
+                  where: { id: existingContact.id },
+                  data: contactData,
+                })
+              : await prisma.contact.create({
+                  data: {
+                    ...contactData,
+                    userId: user.id,
+                    teamId: user.teamId ?? null,
+                    jobId,
+                  },
+                });
 
             // Post-scan photo fix: if profile image is missing or a placeholder,
             // attempt a lightweight refresh (same logic as /api/contacts/[id]/refresh-photo)
@@ -271,7 +282,7 @@ export async function GET(
             }
           }
         } catch (contactErr) {
-          console.error(`Failed to create contact for job ${jobId}:`, contactErr);
+          console.error(`Failed to create/update contact for job ${jobId}:`, contactErr);
         }
       } catch (err) {
         const message = (err as Error).message;
